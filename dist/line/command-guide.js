@@ -1,0 +1,140 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.buildCommandKeywordGuidance = exports.buildStepByStepGuide = exports.isGuideCommand = void 0;
+const COMMAND_SPECS = [
+    { key: 'OPTIONS', examples: ['OPTIONS'], aliases: ['MENU', 'HELP', 'START', 'เริ่มต้น'] },
+    { key: 'FEATURES', examples: ['FEATURES'], aliases: ['ฟีเจอร์'] },
+    { key: 'JOURNEY', examples: ['JOURNEY'], aliases: ['DEMO JOURNEY'] },
+    { key: 'RUN DEMO JOURNEY', examples: ['RUN DEMO JOURNEY'] },
+    { key: 'NAME', examples: ['NAME'], aliases: ['BOT NAME', 'WHAT IS YOUR NAME', 'ชื่ออะไร'] },
+    { key: 'DEMO ODOO', examples: ['DEMO ODOO'] },
+    { key: 'DEMO PRODUCT', examples: ['DEMO PRODUCT App'] },
+    { key: 'DEMO QUOTE', examples: ['DEMO QUOTE App Premium Plan,1,Somchai,0812345678'] },
+    { key: 'DEMO ORDER', examples: ['DEMO ORDER SO0001'] },
+    { key: 'DEMO REPORT', examples: ['DEMO REPORT'] },
+    { key: 'DEMO SEGMENT', examples: ['DEMO SEGMENT'] },
+    { key: 'DEMO SEED ODOO', examples: ['DEMO SEED ODOO'] },
+    { key: 'USER CREATE', examples: ['USER CREATE Somchai,0812345678,somchai@example.com'] },
+    { key: 'USER READ', examples: ['USER READ 0812345678'] },
+    { key: 'USER UPDATE', examples: ['USER UPDATE 0812345678,Somchai CEO,0812345678,somchai.ceo@example.com'] },
+    { key: 'USER DELETE', examples: ['USER DELETE 0812345678'] },
+    { key: 'SERVICE LIST', examples: ['SERVICE LIST'] },
+    { key: 'SERVICE CREATE', examples: ['SERVICE CREATE Premium Support,SVC-PREMIUM,990'] },
+    { key: 'SERVICE READ', examples: ['SERVICE READ SVC-PREMIUM'] },
+    { key: 'SERVICE UPDATE', examples: ['SERVICE UPDATE SVC-PREMIUM,Premium Support Pro,1290,SVC-PRO'] },
+    { key: 'SERVICE DELETE', examples: ['SERVICE DELETE SVC-PRO'] },
+    { key: 'ADMIN VERIFY', examples: ['ADMIN VERIFY'] },
+    { key: 'ADMIN ENABLE', examples: ['ADMIN ENABLE'] },
+    { key: 'LANG EN', examples: ['LANG EN'], aliases: ['ENGLISH'] },
+    { key: 'LANG TH', examples: ['LANG TH'], aliases: ['THAI', 'ภาษาไทย'] },
+    { key: 'GUIDE', examples: ['GUIDE'], aliases: ['STEP BY STEP', 'MENU GUIDE', 'คู่มือ'] },
+];
+const normalize = (raw) => raw.trim().toUpperCase().replace(/\s+/g, ' ');
+const isLikelyCommand = (input) => {
+    const value = normalize(input);
+    if (!value)
+        return false;
+    if (/[,<>]/.test(value))
+        return true;
+    const tokens = value.split(' ');
+    if (tokens.length >= 2)
+        return true;
+    return /^[A-Z\u0E00-\u0E7F]+$/.test(value);
+};
+const extractIntentKey = (input) => {
+    const normalized = normalize(input);
+    const tokens = normalized.split(' ').filter(Boolean);
+    if (!tokens.length)
+        return '';
+    if (tokens[0] === 'RUN' && tokens.length >= 3) {
+        return tokens.slice(0, 3).join(' ');
+    }
+    if (tokens[0] === 'DEMO' && tokens.length >= 2) {
+        if (tokens[1] === 'SEED' && tokens.length >= 3)
+            return tokens.slice(0, 3).join(' ');
+        return tokens.slice(0, 2).join(' ');
+    }
+    if ((tokens[0] === 'USER' || tokens[0] === 'SERVICE' || tokens[0] === 'ADMIN' || tokens[0] === 'LANG') && tokens.length >= 2) {
+        return tokens.slice(0, 2).join(' ');
+    }
+    if (tokens[0] === 'WHAT' && tokens.length >= 4)
+        return 'WHAT IS YOUR NAME';
+    if (tokens[0] === 'BOT' && tokens.length >= 2)
+        return 'BOT NAME';
+    return tokens[0];
+};
+const levenshtein = (a, b) => {
+    const rows = a.length + 1;
+    const cols = b.length + 1;
+    const matrix = Array.from({ length: rows }, () => Array(cols).fill(0));
+    for (let i = 0; i < rows; i += 1)
+        matrix[i][0] = i;
+    for (let j = 0; j < cols; j += 1)
+        matrix[0][j] = j;
+    for (let i = 1; i < rows; i += 1) {
+        for (let j = 1; j < cols; j += 1) {
+            const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+            matrix[i][j] = Math.min(matrix[i - 1][j] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j - 1] + cost);
+        }
+    }
+    return matrix[a.length][b.length];
+};
+const scoreSimilarity = (input, candidate) => {
+    const maxLen = Math.max(input.length, candidate.length) || 1;
+    const distance = levenshtein(input, candidate);
+    return 1 - distance / maxLen;
+};
+const allCommandKeys = () => COMMAND_SPECS.flatMap(spec => [spec.key, ...(spec.aliases || [])]).map(normalize);
+const topMatches = (intent) => {
+    const keys = allCommandKeys();
+    const ranked = keys
+        .map(key => ({ key, score: scoreSimilarity(intent, key) }))
+        .filter(item => item.score >= 0.45)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 3)
+        .map(item => item.key);
+    return Array.from(new Set(ranked));
+};
+const toCanonicalExample = (match) => {
+    const normalizedMatch = normalize(match);
+    for (const spec of COMMAND_SPECS) {
+        const keys = [spec.key, ...(spec.aliases || [])].map(normalize);
+        if (keys.includes(normalizedMatch))
+            return spec.examples[0];
+    }
+    return null;
+};
+const isGuideCommand = (input) => {
+    const intent = extractIntentKey(input);
+    const guideKeys = ['GUIDE', 'STEP BY STEP', 'MENU GUIDE', 'คู่มือ'].map(normalize);
+    return guideKeys.includes(intent);
+};
+exports.isGuideCommand = isGuideCommand;
+const buildStepByStepGuide = (language, agentName) => {
+    if (language === 'en') {
+        return `${agentName} step-by-step command guide\n\n1) Start and menu\n- OPTIONS\n- FEATURES\n\n2) Environment and journey\n- ADMIN VERIFY\n- ADMIN ENABLE\n- RUN DEMO JOURNEY\n\n3) Odoo demo flow\n- DEMO ODOO\n- DEMO PRODUCT App\n- DEMO QUOTE App Premium Plan,1,Somchai,0812345678\n- DEMO ORDER SO0001\n- DEMO REPORT\n\n4) User CRUD\n- USER CREATE <name>,<phone>,<email?>\n- USER READ <phone>\n- USER UPDATE <phone>,<name?>,<newPhone?>,<email?>\n- USER DELETE <phone>\n\n5) Service CRUD\n- SERVICE LIST\n- SERVICE CREATE <name>,<code>,<price>\n- SERVICE READ <code_or_name>\n- SERVICE UPDATE <code_or_name>,<name?>,<price?>,<newCode?>\n- SERVICE DELETE <code_or_name>\n\n6) Language\n- LANG EN\n- LANG TH\n\nTip: If a command fails, send GUIDE and copy a command exactly.`;
+    }
+    return `${agentName} คู่มือคำสั่งทีละขั้น\n\n1) เริ่มต้นและดูเมนู\n- OPTIONS\n- FEATURES\n\n2) เตรียมสภาพแวดล้อม\n- ADMIN VERIFY\n- ADMIN ENABLE\n- RUN DEMO JOURNEY\n\n3) เดโม Odoo ครบวงจร\n- DEMO ODOO\n- DEMO PRODUCT App\n- DEMO QUOTE App Premium Plan,1,สมชาย,0812345678\n- DEMO ORDER SO0001\n- DEMO REPORT\n\n4) จัดการผู้ใช้\n- USER CREATE <ชื่อ>,<เบอร์>,<อีเมล?>\n- USER READ <เบอร์>\n- USER UPDATE <เบอร์>,<ชื่อใหม่?>,<เบอร์ใหม่?>,<อีเมล?>\n- USER DELETE <เบอร์>\n\n5) จัดการบริการ\n- SERVICE LIST\n- SERVICE CREATE <ชื่อ>,<รหัส>,<ราคา>\n- SERVICE READ <รหัสหรือชื่อ>\n- SERVICE UPDATE <รหัสหรือชื่อ>,<ชื่อใหม่?>,<ราคาใหม่?>,<รหัสใหม่?>\n- SERVICE DELETE <รหัสหรือชื่อ>\n\n6) เปลี่ยนภาษา\n- LANG EN\n- LANG TH\n\nเคล็ดลับ: ถ้าคำสั่งผิด ให้พิมพ์ GUIDE แล้วคัดลอกคำสั่งตามตัวอย่างได้เลย`;
+};
+exports.buildStepByStepGuide = buildStepByStepGuide;
+const buildCommandKeywordGuidance = (input, language, agentName) => {
+    if (!isLikelyCommand(input))
+        return null;
+    const intent = extractIntentKey(input);
+    if (!intent)
+        return null;
+    const exact = allCommandKeys();
+    if (exact.includes(intent))
+        return null;
+    const matches = topMatches(intent)
+        .map(toCanonicalExample)
+        .filter((value) => Boolean(value));
+    const unique = Array.from(new Set(matches)).slice(0, 3);
+    if (!unique.length)
+        return null;
+    if (language === 'en') {
+        return `${agentName} could not find this command: "${input.trim()}"\n\nTry one of these close matches:\n${unique.map(example => `- ${example}`).join('\n')}\n\nYou can also type GUIDE for the full command walkthrough.`;
+    }
+    return `${agentName} ไม่พบคำสั่ง: "${input.trim()}"\n\nคำสั่งที่ใกล้เคียง:\n${unique.map(example => `- ${example}`).join('\n')}\n\nพิมพ์ GUIDE เพื่อดูคู่มือคำสั่งแบบทีละขั้นได้ค่ะ`;
+};
+exports.buildCommandKeywordGuidance = buildCommandKeywordGuidance;
