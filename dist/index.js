@@ -49,8 +49,26 @@ const firestore_1 = require("./services/firestore");
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 const port = process.env.PORT || 8080;
+const isProduction = process.env.NODE_ENV === 'production';
+const isWebhookTestEnabled = !isProduction || /^(1|true|yes|on)$/i.test(process.env.ENABLE_WEBHOOK_TEST || '');
+const webhookTestToken = process.env.WEBHOOK_TEST_TOKEN?.trim() || '';
 const tr = (language, th, en) => language === 'en' ? en : th;
 const parseCsv = (raw) => raw.split(',').map(v => v.trim());
+app.get('/healthz', (_req, res) => {
+    res.status(200).json({
+        ok: true,
+        service: 'cns-line-oa',
+        environment: process.env.NODE_ENV || 'development',
+        timestamp: new Date().toISOString(),
+    });
+});
+app.get('/readyz', (_req, res) => {
+    res.status(200).json({
+        ready: true,
+        uptimeSeconds: Number(process.uptime().toFixed(0)),
+        timestamp: new Date().toISOString(),
+    });
+});
 // LINE Webhook endpoint
 app.post('/webhook', webhook_1.handleWebhook);
 // Trigger daily report manually
@@ -115,6 +133,17 @@ app.post('/jobs/seed-odoo', express_1.default.json(), async (req, res) => {
 // Remove this before deploying to production
 app.post('/webhook-test', express_1.default.json(), async (req, res) => {
     try {
+        if (!isWebhookTestEnabled) {
+            return res.status(404).json({
+                error: 'webhook-test is disabled in production. Set ENABLE_WEBHOOK_TEST=true to enable it.',
+            });
+        }
+        if (webhookTestToken) {
+            const incomingToken = req.get('x-webhook-test-token') || '';
+            if (incomingToken !== webhookTestToken) {
+                return res.status(401).json({ error: 'Invalid webhook test token' });
+            }
+        }
         const userId = req.body.userId || 'test_user';
         const text = req.body.text || 'hello';
         console.log(`[TEST] userId=${userId} text="${text}"`);

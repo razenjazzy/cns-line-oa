@@ -8,6 +8,7 @@
     "dev": "nodemon --watch src --ext ts --exec ts-node src/index.ts",
     "build": "tsc",
     "cloudflare": "bash ./deploy-cloudflare.sh",
+    "railway:validate": "bash ./scripts/validate-railway.sh",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
