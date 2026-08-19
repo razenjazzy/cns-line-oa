@@ -80,7 +80,7 @@ jobs:
 
       - name: Upload staging deploy evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: staging-deploy-evidence
           path: ./artifacts/staging-deploy-evidence.json
@@ -151,7 +151,7 @@ jobs:
 
       - name: Upload production deploy evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: production-deploy-evidence
           path: ./artifacts/production-deploy-evidence.json
