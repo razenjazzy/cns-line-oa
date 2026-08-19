@@ -1,8 +1,11 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.cancelGroupBuy = exports.confirmGroupBuy = exports.joinGroupBuy = exports.attachGroupBuyOdooOrder = exports.listGroupBuysByCreator = exports.getGroupBuyById = exports.createGroupBuy = exports.consumeOdooVerificationByToken = exports.consumeOdooVerificationByOtp = exports.createOdooVerificationChallenge = exports.setPlatformConfig = exports.getPlatformConfig = exports.setUserOdooVerificationStatus = exports.setUserOdooPartner = exports.setUserRole = exports.getUserProfile = exports.setUserLanguage = exports.getUserLanguage = exports.setEscalationState = exports.getEscalationState = exports.saveConversationMessage = exports.getConversationHistory = exports.updateUserScore = exports.saveReportLog = exports.checkFirestoreReady = void 0;
+exports.listRecentAuditEvents = exports.recordAuditEvent = exports.cancelGroupBuy = exports.confirmGroupBuy = exports.joinGroupBuy = exports.attachGroupBuyOdooOrder = exports.listGroupBuysByCreator = exports.getGroupBuyById = exports.createGroupBuy = exports.consumeOdooVerificationByToken = exports.consumeOdooVerificationByOtp = exports.createOdooVerificationChallenge = exports.setPlatformConfig = exports.getPlatformConfig = exports.setUserOdooVerificationStatus = exports.setUserOdooPartner = exports.setUserRole = exports.setUserPendingFlow = exports.getUserProfile = exports.setUserLanguage = exports.getUserLanguage = exports.setEscalationState = exports.getEscalationState = exports.saveConversationMessage = exports.getConversationHistory = exports.updateUserScore = exports.saveReportLog = exports.checkFirestoreReady = void 0;
 const firestore_1 = require("@google-cloud/firestore");
 let db = null;
+const isPendingFlowActive = (pendingFlow) => {
+    return Boolean(pendingFlow) && new Date(pendingFlow.expiresAt).getTime() > Date.now();
+};
 const USER_STATE_CACHE_MAX = Number(process.env.USER_STATE_CACHE_MAX || 10000);
 const USER_STATE_CACHE_TTL_MS = Number(process.env.USER_STATE_CACHE_TTL_MS || 60 * 60 * 1000);
 const userStateCache = new Map();
@@ -102,7 +105,17 @@ const getDb = () => {
     if (!projectId)
         return null;
     try {
-        db = new firestore_1.Firestore({ projectId });
+        // On Cloud Run, Application Default Credentials resolve automatically
+        // via the attached service account. On a non-GCP host (e.g. a Railway
+        // test deploy) there's no such identity, so allow credentials to be
+        // supplied inline as JSON instead of relying on ADC.
+        const credentialsJson = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON?.trim();
+        if (credentialsJson) {
+            db = new firestore_1.Firestore({ projectId, credentials: JSON.parse(credentialsJson) });
+        }
+        else {
+            db = new firestore_1.Firestore({ projectId });
+        }
     }
     catch (error) {
         console.warn('Failed to initialize Firestore:', error);
@@ -225,6 +238,7 @@ const setEscalationState = async (userId, escalated) => {
     return result;
 };
 exports.setEscalationState = setEscalationState;
+const ODOO_VERIFY_OTP_MAX_ATTEMPTS = Number(process.env.ODOO_VERIFY_OTP_MAX_ATTEMPTS || 5);
 const odooVerificationCollection = 'odooVerifications';
 const odooVerificationTokenIndexCollection = 'odooVerificationTokens';
 const platformConfigCollection = 'platformConfig';
@@ -285,10 +299,12 @@ const getUserProfile = async (userId) => {
         odooVerifiedAt: cached.odooVerifiedAt,
         displayName: cached.displayName,
         phone: cached.phone,
+        pendingFlow: isPendingFlowActive(cached.pendingFlow) ? cached.pendingFlow : undefined,
     };
     return withFirestoreRead('getUserProfile', fallbackProfile, async (database) => {
         const doc = await database.collection('users').doc(userId).get();
         const data = doc.data() || {};
+        const rawPendingFlow = data.pendingFlow;
         const profile = {
             language: data.language === 'th' ? 'th' : 'en',
             role: data.role === 'admin' ? 'admin' : 'user',
@@ -297,12 +313,30 @@ const getUserProfile = async (userId) => {
             odooVerifiedAt: typeof data.odooVerifiedAt === 'string' ? data.odooVerifiedAt : undefined,
             displayName: typeof data.displayName === 'string' ? data.displayName : undefined,
             phone: typeof data.phone === 'string' ? data.phone : undefined,
+            pendingFlow: isPendingFlowActive(rawPendingFlow) ? rawPendingFlow : undefined,
         };
         mergeCachedUserState(userId, profile);
         return profile;
     });
 };
 exports.getUserProfile = getUserProfile;
+const setUserPendingFlow = async (userId, pendingFlow) => {
+    const previous = userStateCache.get(userId);
+    mergeCachedUserState(userId, { pendingFlow: pendingFlow || undefined });
+    const result = await withFirestoreWrite('setUserPendingFlow', async (database) => {
+        await database.collection('users').doc(userId).set({ pendingFlow }, { merge: true });
+    });
+    if (!result.ok) {
+        if (previous) {
+            userStateCache.set(userId, previous);
+        }
+        else {
+            userStateCache.delete(userId);
+        }
+    }
+    return result;
+};
+exports.setUserPendingFlow = setUserPendingFlow;
 const setUserRole = async (userId, role) => {
     const previous = userStateCache.get(userId);
     mergeCachedUserState(userId, { role });
@@ -464,6 +498,16 @@ const consumeOdooVerificationByOtp = async (params) => {
             const pending = await tx.get(query);
             if (pending.empty)
                 throw new Error('verification_not_found');
+            const newest = pending.docs[0];
+            const newestChallenge = toOdooVerificationChallenge(newest.id, (newest.data() || {}));
+            if (newestChallenge.attemptCount >= ODOO_VERIFY_OTP_MAX_ATTEMPTS) {
+                tx.update(newest.ref, {
+                    status: 'expired',
+                    updatedAt: new Date().toISOString(),
+                    updatedAtServer: firestore_1.FieldValue.serverTimestamp(),
+                });
+                throw new Error('verification_locked');
+            }
             let selectedRef = null;
             let selected = null;
             for (const doc of pending.docs) {
@@ -475,7 +519,6 @@ const consumeOdooVerificationByOtp = async (params) => {
                 }
             }
             if (!selectedRef || !selected) {
-                const newest = pending.docs[0];
                 tx.update(newest.ref, {
                     attemptCount: firestore_1.FieldValue.increment(1),
                     updatedAt: new Date().toISOString(),
@@ -785,3 +828,51 @@ const cancelGroupBuy = async (groupBuyId, actorUserId, actorIsAdmin) => {
     return updateGroupBuyStatus({ groupBuyId, actorUserId, actorIsAdmin, nextStatus: 'cancelled' });
 };
 exports.cancelGroupBuy = cancelGroupBuy;
+const auditLogCollection = 'auditLog';
+/**
+ * Append-only audit trail for admin/privileged actions. Never blocks or
+ * fails the caller's command reply — logging failures are only warned.
+ */
+const recordAuditEvent = async (params) => {
+    const database = getDb();
+    if (!database)
+        return;
+    try {
+        await database.collection(auditLogCollection).add({
+            action: params.action,
+            outcome: params.outcome,
+            actorUserId: params.actorUserId,
+            channelId: params.channelId || null,
+            targetId: params.targetId || null,
+            detail: params.detail || null,
+            createdAt: new Date().toISOString(),
+            createdAtServer: firestore_1.FieldValue.serverTimestamp(),
+        });
+    }
+    catch (error) {
+        logFirestoreError('recordAuditEvent', error);
+    }
+};
+exports.recordAuditEvent = recordAuditEvent;
+const listRecentAuditEvents = async (limit = 50) => {
+    return withFirestoreRead('listRecentAuditEvents', [], async (database) => {
+        const snapshot = await database.collection(auditLogCollection)
+            .orderBy('createdAt', 'desc')
+            .limit(Math.min(Math.max(limit, 1), 200))
+            .get();
+        return snapshot.docs.map(doc => {
+            const raw = (doc.data() || {});
+            return {
+                id: doc.id,
+                action: toOptionalString(raw.action) || 'unknown',
+                outcome: toOptionalString(raw.outcome) || 'unknown',
+                actorUserId: toOptionalString(raw.actorUserId) || '',
+                channelId: toOptionalString(raw.channelId) || null,
+                targetId: toOptionalString(raw.targetId) || null,
+                detail: toOptionalString(raw.detail) || null,
+                createdAt: toOptionalString(raw.createdAt) || new Date(0).toISOString(),
+            };
+        });
+    });
+};
+exports.listRecentAuditEvents = listRecentAuditEvents;

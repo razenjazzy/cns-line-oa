@@ -1,16 +1,19 @@
 import { messagingApi } from '@line/bot-sdk';
+import { DEFAULT_CHANNEL_ID, resolveChannelConfig } from './channels';
 
-// Lazy: read env vars at call time so dotenv.config() has already run
-const getClient = (): messagingApi.MessagingApiClient | null => {
-  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
-  if (!token) return null;
-  return new messagingApi.MessagingApiClient({ channelAccessToken: token });
+// Reuses the same channel resolver as webhook.ts so channel credentials
+// have a single source of truth. Defaults to the backward-compatible
+// default channel when no channelId is given.
+const getClient = (channelId: string): messagingApi.MessagingApiClient | null => {
+  const channelConfig = resolveChannelConfig(channelId);
+  if (!channelConfig) return null;
+  return new messagingApi.MessagingApiClient({ channelAccessToken: channelConfig.channelAccessToken });
 };
 
-export const sendTargetedMessage = async (userIds: string[], text: string) => {
-  const client = getClient();
+export const sendTargetedMessage = async (userIds: string[], text: string, channelId: string = DEFAULT_CHANNEL_ID) => {
+  const client = getClient(channelId);
   if (!client) {
-    console.warn('LINE Client not initialized. Cannot send targeted messages.');
+    console.warn(`LINE Client not initialized for channel "${channelId}". Cannot send targeted messages.`);
     console.log(`[DRY RUN] Would send to ${userIds.length} users: ${text}`);
     return;
   }
@@ -27,9 +30,9 @@ export const sendTargetedMessage = async (userIds: string[], text: string) => {
               to: chunk,
               messages: [{ type: 'text', text }]
           });
-          console.log(`Sent targeted message to ${chunk.length} users.`);
+          console.log(`Sent targeted message to ${chunk.length} users on channel "${channelId}".`);
       } catch (error) {
-          console.error('Error sending multicast message:', error);
+          console.error(`Error sending multicast message on channel "${channelId}":`, error);
       }
   }
 };

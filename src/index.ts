@@ -3,12 +3,13 @@ import dotenv from 'dotenv';
 import { buildDemoPage } from './demo/page';
 import { isGuideCommand } from './line/command-guide';
 import { handleWebhook } from './line/webhook';
+import { resolveChannelConfig } from './line/channels';
 import { resolveCommandReply } from './line/command-router';
 import { runDailyReport } from './jobs/daily-report';
 import { pingOdoo, seedOdooSampleSalesData } from './services/odoo';
 import { getDemoOverview, runDemoJourney } from './services/demo';
 import { getKpiSnapshot, recordHttpRequest } from './services/kpi';
-import { checkFirestoreReady, getPlatformConfig, getUserLanguage, getUserProfile, setPlatformConfig } from './services/firestore';
+import { checkFirestoreReady, getPlatformConfig, getUserLanguage, getUserProfile, listRecentAuditEvents, setPlatformConfig } from './services/firestore';
 import { createDemoSessionToken, parseCookieValue, safeTokenMatch, verifyDemoSessionTokenWithSecrets } from './services/demo-session';
 import { getPricingModel, runPricingSimulation, updatePricingModel } from './services/pricing-control';
 import { createRateLimitStoreFromEnv, getRateLimitRuntimeStatus, InMemoryRateLimitStore, type RateLimitStore } from './services/rate-limit-store';
@@ -341,6 +342,12 @@ app.get('/ops/kpi', requireOpsToken, (_req, res) => {
     });
 });
 
+app.get('/ops/audit-log', requireOpsToken, async (req, res) => {
+    const limit = Number(req.query.limit) || 50;
+    const events = await listRecentAuditEvents(limit);
+    res.status(200).json({ events, count: events.length });
+});
+
 app.post('/ops/demo-session/rotate', requireOpsToken, jsonParser, async (req, res) => {
     await ensureDemoSessionStateLoaded();
 
@@ -465,6 +472,7 @@ app.get('/ops/workflow-audit', requireOpsToken, async (_req, res) => {
     if (isProduction && !audit.checks.security.demoControlTokenConfigured) failures.push('DEMO_CONTROL_TOKEN is not configured for production');
     if (isProduction && !audit.checks.security.demoSessionSecretConfigured) failures.push('DEMO_SESSION_SECRET (or DEMO_CONTROL_TOKEN fallback) is not configured for production');
     if (isProduction && allowDemoHeaderTokenFallbackInProd) failures.push('ALLOW_DEMO_HEADER_TOKEN_FALLBACK should be disabled in production for session-only access');
+    if (isProduction && isDemoControlEnabled) failures.push('Demo control panel (ENABLE_DEMO_CONTROL_PANEL) is enabled in production — confirm this is intentional and time-boxed, then disable it again.');
     if (!audit.checks.security.webhookTestProductionSafe) failures.push('ENABLE_WEBHOOK_TEST is active in production without WEBHOOK_TEST_TOKEN');
     if (!runtimeChecks.firestoreReady.ok) failures.push(`Firestore runtime probe failed: ${runtimeChecks.firestoreReady.message}`);
     if (!runtimeChecks.odooReady.ok) failures.push(`Odoo runtime probe failed: ${runtimeChecks.odooReady.message}`);
@@ -548,8 +556,11 @@ app.get('/demo/session/status', (req, res) => {
     });
 });
 
-// LINE Webhook endpoint
+// LINE Webhook endpoint (default channel, backward compatible)
 app.post('/webhook', webhookLimiter, handleWebhook);
+
+// LINE Webhook endpoint for additional configured channels
+app.post('/webhook/:channelId', webhookLimiter, handleWebhook);
 
 // Trigger daily report manually
 app.post('/jobs/daily-report', jsonParser, adminOnly, opsJobLimiter, async (_req, res) => {
@@ -761,7 +772,19 @@ app.post('/webhook-test', jsonParser, webhookTestLimiter, async (req, res) => {
             });
         }
 
-        console.log(`[TEST] userId=${userId} text="${toSafeLogText(text)}"`);
+        // Optional: exercise multi-channel/service-gating behavior in tests.
+        // Omitting channelId preserves prior behavior (unrestricted, no channel context).
+        const rawChannelId = typeof req.body.channelId === 'string' ? req.body.channelId.trim() : '';
+        let channel: { channelId: string; enabledServices: string[] | null } | undefined;
+        if (rawChannelId) {
+            const channelConfig = resolveChannelConfig(rawChannelId);
+            if (!channelConfig) {
+                return res.status(400).json({ error: `Unknown or unconfigured LINE channel: ${rawChannelId}` });
+            }
+            channel = { channelId: channelConfig.channelId, enabledServices: channelConfig.enabledServices };
+        }
+
+        console.log(`[TEST] userId=${userId} channelId=${rawChannelId || 'default'} text="${toSafeLogText(text)}"`);
 
         const agentName = process.env.LINE_AGENT_NAME?.trim() || 'น้องโซระ';
         const userLanguage = await getUserLanguage(userId);
@@ -775,6 +798,7 @@ app.post('/webhook-test', jsonParser, webhookTestLimiter, async (req, res) => {
             profile,
             agentName,
             baseUrl,
+            channel,
         });
         return res.json(botMessages);
     } catch (error) {
@@ -783,12 +807,39 @@ app.post('/webhook-test', jsonParser, webhookTestLimiter, async (req, res) => {
     }
 });
 
+const SHUTDOWN_TIMEOUT_MS = Number(process.env.SHUTDOWN_TIMEOUT_MS || 10000);
+
 const startServer = async () => {
     rateStore = await createRateLimitStoreFromEnv(fallbackRateStore);
     await ensureDemoSessionStateLoaded();
-    app.listen(port, () => {
+    const server = app.listen(port, () => {
         console.log(`Server listening on port ${port}`);
     });
+
+    // Cloud Run (and most orchestrators) send SIGTERM before killing an
+    // instance on scale-down/redeploy. Stop accepting new connections and let
+    // in-flight requests finish, instead of dropping them mid-response.
+    const shutdown = (signal: string) => {
+        console.log(`Received ${signal}, shutting down gracefully...`);
+        const forceExitTimer = setTimeout(() => {
+            console.warn(`Graceful shutdown timed out after ${SHUTDOWN_TIMEOUT_MS}ms; forcing exit.`);
+            process.exit(1);
+        }, SHUTDOWN_TIMEOUT_MS);
+        forceExitTimer.unref();
+
+        server.close((err) => {
+            if (err) {
+                console.error('Error during server close:', err);
+                process.exit(1);
+            }
+            clearTimeout(forceExitTimer);
+            console.log('Server closed. Exiting.');
+            process.exit(0);
+        });
+    };
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
 };
 
 startServer().catch(error => {

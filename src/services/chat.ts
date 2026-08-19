@@ -163,7 +163,7 @@ export const processChatMessage = async (userId: string, userText: string, langu
 
         const parts = ((response as any)?.candidates?.[0]?.content?.parts || []) as any[];
         
-        let messages: messagingApi.Message[] = [];
+        const messages: messagingApi.Message[] = [];
         let aiTextResponse = '';
 
         for (const part of parts) {

@@ -152,7 +152,7 @@ const processChatMessage = async (userId, userText, language = 'th') => {
             throw lastError || new Error('No response from GenAI');
         }
         const parts = (response?.candidates?.[0]?.content?.parts || []);
-        let messages = [];
+        const messages = [];
         let aiTextResponse = '';
         for (const part of parts) {
             if (part.text) {

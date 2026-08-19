@@ -30,6 +30,9 @@ const COMMAND_SPECS: CommandSpec[] = [
   { key: 'SERVICE DELETE', examples: ['SERVICE DELETE SVC-PRO'] },
   { key: 'ADMIN VERIFY', examples: ['ADMIN VERIFY'] },
   { key: 'ADMIN ENABLE', examples: ['ADMIN ENABLE'] },
+  { key: 'ADMIN DISABLE', examples: ['ADMIN DISABLE'], aliases: ['ADMIN REVOKE'] },
+  { key: 'NAV HOME', examples: ['NAV HOME'], aliases: ['NAV'] },
+  { key: 'BACK', examples: ['BACK'] },
   { key: 'LANG EN', examples: ['LANG EN'], aliases: ['ENGLISH'] },
   { key: 'LANG TH', examples: ['LANG TH'], aliases: ['THAI', 'ภาษาไทย'] },
   { key: 'GUIDE', examples: ['GUIDE'], aliases: ['STEP BY STEP', 'MENU GUIDE', 'คู่มือ'] },
@@ -129,10 +132,10 @@ export const isGuideCommand = (input: string): boolean => {
 
 export const buildStepByStepGuide = (language: UiLanguage, agentName: string): string => {
   if (language === 'en') {
-    return `${agentName} step-by-step command guide\n\n1) Start and menu\n- OPTIONS\n- FEATURES\n\n2) Environment and journey\n- ADMIN VERIFY\n- ADMIN ENABLE\n- RUN DEMO JOURNEY\n\n3) Odoo demo flow\n- DEMO ODOO\n- DEMO PRODUCT App\n- DEMO QUOTE App Premium Plan,1,Somchai,0812345678\n- DEMO ORDER SO0001\n- DEMO REPORT\n\n4) User CRUD\n- USER CREATE <name>,<phone>,<email?>\n- USER READ <phone>\n- USER UPDATE <phone>,<name?>,<newPhone?>,<email?>\n- USER DELETE <phone>\n\n5) Service CRUD\n- SERVICE LIST\n- SERVICE CREATE <name>,<code>,<price>\n- SERVICE READ <code_or_name>\n- SERVICE UPDATE <code_or_name>,<name?>,<price?>,<newCode?>\n- SERVICE DELETE <code_or_name>\n\n6) Language\n- LANG EN\n- LANG TH\n\nTip: If a command fails, send GUIDE and copy a command exactly.`;
+    return `${agentName} step-by-step command guide\n\n1) Start and menu\n- OPTIONS\n- FEATURES\n\n2) Environment and journey\n- ADMIN VERIFY\n- ADMIN ENABLE\n- ADMIN DISABLE\n- RUN DEMO JOURNEY\n\n3) Odoo demo flow\n- DEMO ODOO\n- DEMO PRODUCT App\n- DEMO QUOTE App Premium Plan,1,Somchai,0812345678\n- DEMO ORDER SO0001\n- DEMO REPORT\n\n4) User CRUD\n- USER CREATE <name>,<phone>,<email?>\n- USER READ <phone>\n- USER UPDATE <phone>,<name?>,<newPhone?>,<email?>\n- USER DELETE <phone>\n\n5) Service CRUD\n- SERVICE LIST\n- SERVICE CREATE <name>,<code>,<price>\n- SERVICE READ <code_or_name>\n- SERVICE UPDATE <code_or_name>,<name?>,<price?>,<newCode?>\n- SERVICE DELETE <code_or_name>\n\n6) Language\n- LANG EN\n- LANG TH\n\n7) Navigation menu\n- NAV HOME (browse services available on this channel)\n- BACK (return to the home menu)\n\nTip: If a command fails, send GUIDE and copy a command exactly.`;
   }
 
-  return `${agentName} คู่มือคำสั่งทีละขั้น\n\n1) เริ่มต้นและดูเมนู\n- OPTIONS\n- FEATURES\n\n2) เตรียมสภาพแวดล้อม\n- ADMIN VERIFY\n- ADMIN ENABLE\n- RUN DEMO JOURNEY\n\n3) เดโม Odoo ครบวงจร\n- DEMO ODOO\n- DEMO PRODUCT App\n- DEMO QUOTE App Premium Plan,1,สมชาย,0812345678\n- DEMO ORDER SO0001\n- DEMO REPORT\n\n4) จัดการผู้ใช้\n- USER CREATE <ชื่อ>,<เบอร์>,<อีเมล?>\n- USER READ <เบอร์>\n- USER UPDATE <เบอร์>,<ชื่อใหม่?>,<เบอร์ใหม่?>,<อีเมล?>\n- USER DELETE <เบอร์>\n\n5) จัดการบริการ\n- SERVICE LIST\n- SERVICE CREATE <ชื่อ>,<รหัส>,<ราคา>\n- SERVICE READ <รหัสหรือชื่อ>\n- SERVICE UPDATE <รหัสหรือชื่อ>,<ชื่อใหม่?>,<ราคาใหม่?>,<รหัสใหม่?>\n- SERVICE DELETE <รหัสหรือชื่อ>\n\n6) เปลี่ยนภาษา\n- LANG EN\n- LANG TH\n\nเคล็ดลับ: ถ้าคำสั่งผิด ให้พิมพ์ GUIDE แล้วคัดลอกคำสั่งตามตัวอย่างได้เลย`;
+  return `${agentName} คู่มือคำสั่งทีละขั้น\n\n1) เริ่มต้นและดูเมนู\n- OPTIONS\n- FEATURES\n\n2) เตรียมสภาพแวดล้อม\n- ADMIN VERIFY\n- ADMIN ENABLE\n- ADMIN DISABLE\n- RUN DEMO JOURNEY\n\n3) เดโม Odoo ครบวงจร\n- DEMO ODOO\n- DEMO PRODUCT App\n- DEMO QUOTE App Premium Plan,1,สมชาย,0812345678\n- DEMO ORDER SO0001\n- DEMO REPORT\n\n4) จัดการผู้ใช้\n- USER CREATE <ชื่อ>,<เบอร์>,<อีเมล?>\n- USER READ <เบอร์>\n- USER UPDATE <เบอร์>,<ชื่อใหม่?>,<เบอร์ใหม่?>,<อีเมล?>\n- USER DELETE <เบอร์>\n\n5) จัดการบริการ\n- SERVICE LIST\n- SERVICE CREATE <ชื่อ>,<รหัส>,<ราคา>\n- SERVICE READ <รหัสหรือชื่อ>\n- SERVICE UPDATE <รหัสหรือชื่อ>,<ชื่อใหม่?>,<ราคาใหม่?>,<รหัสใหม่?>\n- SERVICE DELETE <รหัสหรือชื่อ>\n\n6) เปลี่ยนภาษา\n- LANG EN\n- LANG TH\n\n7) เมนูนำทาง\n- NAV HOME (ดูบริการที่เปิดใช้งานบนช่องทางนี้)\n- BACK (กลับไปหน้าเมนูหลัก)\n\nเคล็ดลับ: ถ้าคำสั่งผิด ให้พิมพ์ GUIDE แล้วคัดลอกคำสั่งตามตัวอย่างได้เลย`;
 };
 
 export const buildCommandKeywordGuidance = (input: string, language: UiLanguage, agentName: string): string | null => {

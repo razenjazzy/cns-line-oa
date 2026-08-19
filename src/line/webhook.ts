@@ -1,19 +1,17 @@
 import { middleware, messagingApi, webhook } from '@line/bot-sdk';
 import express from 'express';
-import { classifyIntent } from '../services/vertexai';
+import type { Readable } from 'node:stream';
+import { classifyIntent, transcribeAudioToText } from '../services/vertexai';
 import { resolveCommandReply } from './command-router';
 import { getEscalationState, getUserLanguage, getUserProfile, updateUserScore } from '../services/firestore';
+import { ChannelConfig, DEFAULT_CHANNEL_ID, resolveChannelConfig } from './channels';
 
-// Lazy config: read env vars at request time (after dotenv.config() has run)
-const getConfig = () => ({
-  channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN || '',
-  channelSecret: process.env.LINE_CHANNEL_SECRET || '',
-});
-
-const getClient = () => {
-  const config = getConfig();
-  if (!config.channelAccessToken) return null;
-  return new messagingApi.MessagingApiClient({ channelAccessToken: config.channelAccessToken });
+const streamToBuffer = async (stream: Readable): Promise<Buffer> => {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
 };
 
 const getAgentName = (): string => process.env.LINE_AGENT_NAME?.trim() || 'น้องโซระ';
@@ -33,30 +31,41 @@ const tr = (language: UiLanguage, th: string, en: string): string => language ==
 
 export const handleWebhook = [
   (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    const config = getConfig();
-    if (!config.channelAccessToken || !config.channelSecret) {
-      console.warn('LINE credentials not configured. Webhook disabled.');
-      return res.status(200).send('Webhook disabled due to missing config');
+    const channelId = String(req.params.channelId || DEFAULT_CHANNEL_ID).trim();
+    const channelConfig = resolveChannelConfig(channelId);
+
+    if (!channelConfig) {
+      if (channelId === DEFAULT_CHANNEL_ID) {
+        // Preserve current behavior: a fully unconfigured default channel is a
+        // graceful no-op (200) so LINE doesn't retry, not a hard failure.
+        console.warn('LINE credentials not configured. Webhook disabled.');
+        return res.status(200).send('Webhook disabled due to missing config');
+      }
+      console.warn(`Webhook request for unconfigured LINE channel "${channelId}" rejected.`);
+      return res.status(404).json({ error: 'Unknown or unconfigured LINE channel.' });
     }
+
+    res.locals.channelConfig = channelConfig;
     next();
   },
   (req: express.Request, res: express.Response, next: express.NextFunction) => {
-      middleware(getConfig())(req, res, next);
+      const channelConfig = res.locals.channelConfig as ChannelConfig;
+      middleware({ channelSecret: channelConfig.channelSecret })(req, res, next);
   },
   async (req: express.Request, res: express.Response) => {
-    const client = getClient();
-    if (!client) return res.status(500).end();
+    const channelConfig = res.locals.channelConfig as ChannelConfig;
+    const client = new messagingApi.MessagingApiClient({ channelAccessToken: channelConfig.channelAccessToken });
 
     try {
       const events: webhook.Event[] = req.body.events;
       const baseUrl = `${req.protocol}://${req.get('host')}`;
+      const channel = { channelId: channelConfig.channelId, enabledServices: channelConfig.enabledServices };
 
       const results = await Promise.all(
         events.map(async (event) => {
-          if (event.type !== 'message' || event.message.type !== 'text') {
+          if (event.type !== 'message' || (event.message.type !== 'text' && event.message.type !== 'audio')) {
             return null;
           }
-          const textMessage = event.message as { type: 'text', text: string };
           const replyToken = (event as any).replyToken as string;
           const source = (event as any).source as { userId?: string; groupId?: string; roomId?: string; type?: string };
 
@@ -72,11 +81,36 @@ export const handleWebhook = [
           const profile = await getUserProfile(conversationId);
           const agentName = getAgentName();
 
+          let inputText: string | null;
+          if (event.message.type === 'text') {
+            inputText = (event.message as { type: 'text'; text: string }).text;
+          } else {
+            // Voice message: fetch the audio bytes and transcribe with the
+            // same Gemini clients already used for insights/intent, then feed
+            // the transcript into the exact same command path as typed text.
+            const messageId = (event.message as { id: string }).id;
+            try {
+              const blobClient = new messagingApi.MessagingApiBlobClient({ channelAccessToken: channelConfig.channelAccessToken });
+              const audioBuffer = await streamToBuffer(await blobClient.getMessageContent(messageId));
+              inputText = await transcribeAudioToText(audioBuffer, 'audio/m4a');
+            } catch (err) {
+              console.error('Failed to fetch/transcribe voice message:', err);
+              inputText = null;
+            }
+
+            if (!inputText) {
+              return client!.replyMessage({
+                replyToken,
+                messages: [{ type: 'text', text: tr(userLanguage, `${agentName} ไม่สามารถแปลงข้อความเสียงได้ กรุณาลองพิมพ์คำสั่งแทน`, `${agentName} could not understand that voice message. Please try typing instead.`) }],
+              });
+            }
+          }
+
           // Log user ID to help find ADMIN_USER_ID for .env
-          console.log(`📩 Message from source=${source?.type || 'unknown'}:${conversationId} | text: "${toSafeLogText(textMessage.text)}"`);
+          console.log(`📩 Message from source=${source?.type || 'unknown'}:${conversationId} | text: "${toSafeLogText(inputText)}"`);
           // Asynchronously score the user based on intent without blocking the reply
           if (!isAiOff()) {
-            classifyIntent(textMessage.text).then((classification) => {
+            classifyIntent(inputText).then((classification) => {
               updateUserScore(conversationId, classification.intent).catch(err => {
                 console.error('Failed to update user score:', err);
               });
@@ -93,12 +127,14 @@ export const handleWebhook = [
           }
 
           const messages = await resolveCommandReply({
-            text: textMessage.text,
+            text: inputText,
             userId: conversationId,
             userLanguage,
             profile,
             agentName,
             baseUrl,
+            channel,
+            isGroupContext: source?.type === 'group' || source?.type === 'room',
           });
 
           return client!.replyMessage({

@@ -2,6 +2,13 @@ import { Firestore, FieldValue } from '@google-cloud/firestore';
 
 let db: Firestore | null = null;
 
+export type PendingFlowState = {
+    flow: string;
+    stepIndex: number;
+    collected: Record<string, string>;
+    expiresAt: string;
+};
+
 type CachedUserState = {
     language?: UserLanguage;
     role?: UserRole;
@@ -11,6 +18,11 @@ type CachedUserState = {
     displayName?: string;
     phone?: string;
     escalatedToHuman?: boolean;
+    pendingFlow?: PendingFlowState;
+};
+
+const isPendingFlowActive = (pendingFlow: PendingFlowState | undefined | null): pendingFlow is PendingFlowState => {
+    return Boolean(pendingFlow) && new Date((pendingFlow as PendingFlowState).expiresAt).getTime() > Date.now();
 };
 
 type CachedUserStateEntry = {
@@ -164,7 +176,16 @@ const getDb = (): Firestore | null => {
   const projectId = process.env.GOOGLE_CLOUD_PROJECT;
   if (!projectId) return null;
   try {
-    db = new Firestore({ projectId });
+    // On Cloud Run, Application Default Credentials resolve automatically
+    // via the attached service account. On a non-GCP host (e.g. a Railway
+    // test deploy) there's no such identity, so allow credentials to be
+    // supplied inline as JSON instead of relying on ADC.
+    const credentialsJson = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON?.trim();
+    if (credentialsJson) {
+      db = new Firestore({ projectId, credentials: JSON.parse(credentialsJson) });
+    } else {
+      db = new Firestore({ projectId });
+    }
   } catch (error) {
     console.warn('Failed to initialize Firestore:', error);
   }
@@ -304,6 +325,7 @@ export type UserProfile = {
     odooVerifiedAt?: string;
     displayName?: string;
     phone?: string;
+    pendingFlow?: PendingFlowState;
 };
 
 export type OdooVerificationChallenge = {
@@ -327,6 +349,7 @@ export type OdooVerificationChallengeResult = {
     error?: string;
 };
 
+const ODOO_VERIFY_OTP_MAX_ATTEMPTS = Number(process.env.ODOO_VERIFY_OTP_MAX_ATTEMPTS || 5);
 const odooVerificationCollection = 'odooVerifications';
 const odooVerificationTokenIndexCollection = 'odooVerificationTokens';
 const platformConfigCollection = 'platformConfig';
@@ -389,12 +412,14 @@ export const getUserProfile = async (userId: string): Promise<UserProfile> => {
         odooVerifiedAt: cached.odooVerifiedAt,
         displayName: cached.displayName,
         phone: cached.phone,
+        pendingFlow: isPendingFlowActive(cached.pendingFlow) ? cached.pendingFlow : undefined,
     };
 
     return withFirestoreRead('getUserProfile', fallbackProfile, async (database) => {
         const doc = await database.collection('users').doc(userId).get();
         const data = doc.data() || {};
 
+        const rawPendingFlow = data.pendingFlow as PendingFlowState | undefined;
         const profile: UserProfile = {
             language: data.language === 'th' ? 'th' : 'en',
             role: data.role === 'admin' ? 'admin' : 'user',
@@ -403,11 +428,28 @@ export const getUserProfile = async (userId: string): Promise<UserProfile> => {
             odooVerifiedAt: typeof data.odooVerifiedAt === 'string' ? data.odooVerifiedAt : undefined,
             displayName: typeof data.displayName === 'string' ? data.displayName : undefined,
             phone: typeof data.phone === 'string' ? data.phone : undefined,
+            pendingFlow: isPendingFlowActive(rawPendingFlow) ? rawPendingFlow : undefined,
         };
 
         mergeCachedUserState(userId, profile);
         return profile;
     });
+};
+
+export const setUserPendingFlow = async (userId: string, pendingFlow: PendingFlowState | null) => {
+    const previous = userStateCache.get(userId);
+    mergeCachedUserState(userId, { pendingFlow: pendingFlow || undefined });
+    const result = await withFirestoreWrite('setUserPendingFlow', async (database) => {
+        await database.collection('users').doc(userId).set({ pendingFlow }, { merge: true });
+    });
+    if (!result.ok) {
+        if (previous) {
+            userStateCache.set(userId, previous);
+        } else {
+            userStateCache.delete(userId);
+        }
+    }
+    return result;
 };
 
 export const setUserRole = async (userId: string, role: UserRole) => {
@@ -586,6 +628,17 @@ export const consumeOdooVerificationByOtp = async (params: {
 
             if (pending.empty) throw new Error('verification_not_found');
 
+            const newest = pending.docs[0];
+            const newestChallenge = toOdooVerificationChallenge(newest.id, (newest.data() || {}) as Record<string, unknown>);
+            if (newestChallenge.attemptCount >= ODOO_VERIFY_OTP_MAX_ATTEMPTS) {
+                tx.update(newest.ref, {
+                    status: 'expired',
+                    updatedAt: new Date().toISOString(),
+                    updatedAtServer: FieldValue.serverTimestamp(),
+                });
+                throw new Error('verification_locked');
+            }
+
             let selectedRef: any = null;
             let selected: OdooVerificationChallenge | null = null;
 
@@ -599,7 +652,6 @@ export const consumeOdooVerificationByOtp = async (params: {
             }
 
             if (!selectedRef || !selected) {
-                const newest = pending.docs[0];
                 tx.update(newest.ref, {
                     attemptCount: FieldValue.increment(1),
                     updatedAt: new Date().toISOString(),
@@ -949,4 +1001,83 @@ export const confirmGroupBuy = async (groupBuyId: string, actorUserId: string, a
 
 export const cancelGroupBuy = async (groupBuyId: string, actorUserId: string, actorIsAdmin: boolean): Promise<GroupBuyWriteResult> => {
     return updateGroupBuyStatus({ groupBuyId, actorUserId, actorIsAdmin, nextStatus: 'cancelled' });
+};
+
+export type AuditAction =
+    | 'role_grant'
+    | 'role_revoke'
+    | 'user_create'
+    | 'user_update'
+    | 'user_delete'
+    | 'service_create'
+    | 'service_update'
+    | 'service_delete';
+
+export type AuditOutcome = 'success' | 'failure';
+
+const auditLogCollection = 'auditLog';
+
+/**
+ * Append-only audit trail for admin/privileged actions. Never blocks or
+ * fails the caller's command reply — logging failures are only warned.
+ */
+export const recordAuditEvent = async (params: {
+    action: AuditAction;
+    outcome: AuditOutcome;
+    actorUserId: string;
+    channelId?: string;
+    targetId?: string;
+    detail?: string;
+}): Promise<void> => {
+    const database = getDb();
+    if (!database) return;
+
+    try {
+        await database.collection(auditLogCollection).add({
+            action: params.action,
+            outcome: params.outcome,
+            actorUserId: params.actorUserId,
+            channelId: params.channelId || null,
+            targetId: params.targetId || null,
+            detail: params.detail || null,
+            createdAt: new Date().toISOString(),
+            createdAtServer: FieldValue.serverTimestamp(),
+        });
+    } catch (error) {
+        logFirestoreError('recordAuditEvent', error);
+    }
+};
+
+export type AuditLogEntry = {
+    id: string;
+    action: string;
+    outcome: string;
+    actorUserId: string;
+    channelId: string | null;
+    targetId: string | null;
+    detail: string | null;
+    createdAt: string;
+};
+
+export const listRecentAuditEvents = async (limit: number = 50): Promise<AuditLogEntry[]> => {
+    return withFirestoreRead('listRecentAuditEvents', [], async (database) => {
+        const snapshot = await database.collection(auditLogCollection)
+            .orderBy('createdAt', 'desc')
+            .limit(Math.min(Math.max(limit, 1), 200))
+            .get();
+
+        return snapshot.docs.map(doc => {
+            const raw = (doc.data() || {}) as Record<string, unknown>;
+            return {
+                id: doc.id,
+                action: toOptionalString(raw.action) || 'unknown',
+                outcome: toOptionalString(raw.outcome) || 'unknown',
+                actorUserId: toOptionalString(raw.actorUserId) || '',
+                channelId: toOptionalString(raw.channelId) || null,
+                targetId: toOptionalString(raw.targetId) || null,
+                detail: toOptionalString(raw.detail) || null,
+                createdAt: toOptionalString(raw.createdAt) || new Date(0).toISOString(),
+            };
+        });
+    });
 };

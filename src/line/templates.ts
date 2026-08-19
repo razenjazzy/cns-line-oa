@@ -88,6 +88,85 @@ export const createProductCardFlexMessage = (productName: string, price: number,
     };
 };
 
+export const createServiceHomeFlexMessage = (
+  services: { key: string; label: string }[],
+  language: ReportLanguage,
+  agentName: string
+): messagingApi.FlexMessage => {
+  return {
+    type: 'flex',
+    altText: language === 'en' ? `${agentName} services menu` : `เมนูบริการของ ${agentName}`,
+    contents: {
+      type: 'carousel',
+      contents: services.slice(0, 10).map(service => ({
+        type: 'bubble',
+        size: 'micro',
+        body: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            { type: 'text', text: service.label, weight: 'bold', size: 'md', wrap: true },
+          ],
+        },
+        footer: {
+          type: 'box',
+          layout: 'vertical',
+          contents: [
+            {
+              type: 'button',
+              style: 'primary',
+              color: '#0F766E',
+              action: { type: 'message', label: language === 'en' ? 'Open' : 'เปิด', text: `NAV ${service.key}` },
+            },
+          ],
+        },
+      })),
+    },
+  };
+};
+
+export const createServiceActionFlexMessage = (
+  serviceLabel: string,
+  actions: { text: string; label: string }[],
+  language: ReportLanguage
+): messagingApi.FlexMessage => {
+  return {
+    type: 'flex',
+    altText: serviceLabel,
+    contents: {
+      type: 'bubble',
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          { type: 'text', text: serviceLabel, weight: 'bold', size: 'md', wrap: true },
+        ],
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        contents: actions.slice(0, 10).map(action => ({
+          type: 'button',
+          style: 'secondary',
+          action: { type: 'message', label: action.label, text: action.text },
+        })),
+      },
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        contents: [
+          {
+            type: 'button',
+            style: 'link',
+            action: { type: 'message', label: language === 'en' ? 'Home' : 'หน้าหลัก', text: 'NAV HOME' },
+          },
+        ],
+      },
+    },
+  };
+};
+
 export const createOrderSummaryFlexMessage = (total: number): messagingApi.FlexMessage => {
   const language = (process.env.DEFAULT_UI_LANGUAGE || 'th').toLowerCase() === 'en' ? 'en' : 'th';
     return {

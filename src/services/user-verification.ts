@@ -112,6 +112,9 @@ export const verifyOdooUserByOtp = async (input: VerifyOtpInput): Promise<string
     if (reason.includes('verification_invalid_otp')) {
       return tr(input.language, `${input.agentName} รหัส OTP ไม่ถูกต้อง`, `${input.agentName} invalid OTP.`);
     }
+    if (reason.includes('verification_locked')) {
+      return tr(input.language, `${input.agentName} กรอก OTP ผิดหลายครั้งเกินไป กรุณาเริ่มใหม่ด้วย VERIFY START <phone>`, `${input.agentName} too many incorrect OTP attempts. Start again with VERIFY START <phone>.`);
+    }
     if (reason.includes('verification_expired')) {
       return tr(input.language, `${input.agentName} OTP หมดอายุแล้ว กรุณาเริ่มใหม่ด้วย VERIFY START <phone>`, `${input.agentName} OTP expired. Start again with VERIFY START <phone>.`);
     }

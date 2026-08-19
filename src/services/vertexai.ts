@@ -220,6 +220,56 @@ export const generateInsights = async (salesData: string, language: InsightLangu
   }
 };
 
+/**
+ * Transcribes a LINE voice message to text using the same Gemini clients
+ * already configured for insights/intent classification (Gemini accepts
+ * audio as inline data directly, so no separate speech-to-text service or
+ * dependency is needed). Returns null if transcription isn't possible so
+ * callers can fall back to a "please type instead" reply.
+ */
+export const transcribeAudioToText = async (audioBuffer: Buffer, mimeType: string): Promise<string | null> => {
+  if (isAiOff()) return null;
+  if (vertexUnavailable) return null;
+
+  const clients = getGenAIClients();
+  if (!clients.length) {
+    console.warn('GenAI is not configured (set GOOGLE_AI_STUDIO_API_KEY or GOOGLE_CLOUD_PROJECT). Cannot transcribe voice messages.');
+    return null;
+  }
+
+  const prompt = 'Transcribe this voice message to plain text. Respond with only the transcript, no commentary, no quotes.';
+
+  try {
+    let lastError: unknown;
+    for (const { client } of clients) {
+      for (const model of getModelCandidates()) {
+        try {
+          const response = await client.models.generateContent({
+            model,
+            contents: [prompt, { inlineData: { mimeType, data: audioBuffer.toString('base64') } }],
+            config: { temperature: 0.1 },
+          });
+          const transcript = extractText(response);
+          if (transcript) return transcript.trim();
+        } catch (error) {
+          lastError = error;
+          const code = getErrorCode(error);
+          if (code !== 404) break;
+        }
+      }
+    }
+    throw lastError;
+  } catch (error) {
+    if (getErrorCode(error) === 404) {
+      vertexUnavailable = true;
+      console.warn('Vertex model unavailable for this project/region. Voice transcription disabled.');
+    } else {
+      console.error('Error transcribing voice message with Vertex AI:', error);
+    }
+    return null;
+  }
+};
+
 export const classifyIntent = async (text: string): Promise<{ intent: string; confidence: number }> => {
   if (isAiOff()) {
     return { intent: 'unknown', confidence: 0.1 };

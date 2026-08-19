@@ -41,6 +41,7 @@ const dotenv_1 = __importDefault(require("dotenv"));
 const page_1 = require("./demo/page");
 const command_guide_1 = require("./line/command-guide");
 const webhook_1 = require("./line/webhook");
+const channels_1 = require("./line/channels");
 const command_router_1 = require("./line/command-router");
 const daily_report_1 = require("./jobs/daily-report");
 const odoo_1 = require("./services/odoo");
@@ -335,6 +336,11 @@ app.get('/ops/kpi', opsAuth_1.requireOpsToken, (_req, res) => {
         rateLimitRuntime: (0, rate_limit_store_1.getRateLimitRuntimeStatus)(),
     });
 });
+app.get('/ops/audit-log', opsAuth_1.requireOpsToken, async (req, res) => {
+    const limit = Number(req.query.limit) || 50;
+    const events = await (0, firestore_1.listRecentAuditEvents)(limit);
+    res.status(200).json({ events, count: events.length });
+});
 app.post('/ops/demo-session/rotate', opsAuth_1.requireOpsToken, jsonParser, async (req, res) => {
     await ensureDemoSessionStateLoaded();
     const newSecret = String(req.body?.newSecret || '').trim();
@@ -441,6 +447,8 @@ app.get('/ops/workflow-audit', opsAuth_1.requireOpsToken, async (_req, res) => {
         failures.push('DEMO_SESSION_SECRET (or DEMO_CONTROL_TOKEN fallback) is not configured for production');
     if (isProduction && allowDemoHeaderTokenFallbackInProd)
         failures.push('ALLOW_DEMO_HEADER_TOKEN_FALLBACK should be disabled in production for session-only access');
+    if (isProduction && isDemoControlEnabled)
+        failures.push('Demo control panel (ENABLE_DEMO_CONTROL_PANEL) is enabled in production — confirm this is intentional and time-boxed, then disable it again.');
     if (!audit.checks.security.webhookTestProductionSafe)
         failures.push('ENABLE_WEBHOOK_TEST is active in production without WEBHOOK_TEST_TOKEN');
     if (!runtimeChecks.firestoreReady.ok)
@@ -514,8 +522,10 @@ app.get('/demo/session/status', (req, res) => {
         return res.status(500).json({ error: String(error) });
     });
 });
-// LINE Webhook endpoint
+// LINE Webhook endpoint (default channel, backward compatible)
 app.post('/webhook', webhookLimiter, webhook_1.handleWebhook);
+// LINE Webhook endpoint for additional configured channels
+app.post('/webhook/:channelId', webhookLimiter, webhook_1.handleWebhook);
 // Trigger daily report manually
 app.post('/jobs/daily-report', jsonParser, adminAuth_1.adminOnly, opsJobLimiter, async (_req, res) => {
     try {
@@ -708,7 +718,18 @@ app.post('/webhook-test', jsonParser, webhookTestLimiter, async (req, res) => {
                 error: 'Mutating webhook-test commands are disabled in production.',
             });
         }
-        console.log(`[TEST] userId=${userId} text="${toSafeLogText(text)}"`);
+        // Optional: exercise multi-channel/service-gating behavior in tests.
+        // Omitting channelId preserves prior behavior (unrestricted, no channel context).
+        const rawChannelId = typeof req.body.channelId === 'string' ? req.body.channelId.trim() : '';
+        let channel;
+        if (rawChannelId) {
+            const channelConfig = (0, channels_1.resolveChannelConfig)(rawChannelId);
+            if (!channelConfig) {
+                return res.status(400).json({ error: `Unknown or unconfigured LINE channel: ${rawChannelId}` });
+            }
+            channel = { channelId: channelConfig.channelId, enabledServices: channelConfig.enabledServices };
+        }
+        console.log(`[TEST] userId=${userId} channelId=${rawChannelId || 'default'} text="${toSafeLogText(text)}"`);
         const agentName = process.env.LINE_AGENT_NAME?.trim() || 'น้องโซระ';
         const userLanguage = await (0, firestore_1.getUserLanguage)(userId);
         const profile = await (0, firestore_1.getUserProfile)(userId);
@@ -720,6 +741,7 @@ app.post('/webhook-test', jsonParser, webhookTestLimiter, async (req, res) => {
             profile,
             agentName,
             baseUrl,
+            channel,
         });
         return res.json(botMessages);
     }
@@ -728,12 +750,35 @@ app.post('/webhook-test', jsonParser, webhookTestLimiter, async (req, res) => {
         res.status(500).json({ error: String(error) });
     }
 });
+const SHUTDOWN_TIMEOUT_MS = Number(process.env.SHUTDOWN_TIMEOUT_MS || 10000);
 const startServer = async () => {
     rateStore = await (0, rate_limit_store_1.createRateLimitStoreFromEnv)(fallbackRateStore);
     await ensureDemoSessionStateLoaded();
-    app.listen(port, () => {
+    const server = app.listen(port, () => {
         console.log(`Server listening on port ${port}`);
     });
+    // Cloud Run (and most orchestrators) send SIGTERM before killing an
+    // instance on scale-down/redeploy. Stop accepting new connections and let
+    // in-flight requests finish, instead of dropping them mid-response.
+    const shutdown = (signal) => {
+        console.log(`Received ${signal}, shutting down gracefully...`);
+        const forceExitTimer = setTimeout(() => {
+            console.warn(`Graceful shutdown timed out after ${SHUTDOWN_TIMEOUT_MS}ms; forcing exit.`);
+            process.exit(1);
+        }, SHUTDOWN_TIMEOUT_MS);
+        forceExitTimer.unref();
+        server.close((err) => {
+            if (err) {
+                console.error('Error during server close:', err);
+                process.exit(1);
+            }
+            clearTimeout(forceExitTimer);
+            console.log('Server closed. Exiting.');
+            process.exit(0);
+        });
+    };
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
 };
 startServer().catch(error => {
     console.error('Failed to start server:', error);

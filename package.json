@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "",
   "main": "dist/index.js",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "start": "node dist/index.js",
     "dev": "nodemon --watch src --ext ts --exec ts-node src/index.ts",
@@ -21,7 +24,8 @@
     "railway:validate": "bash ./scripts/validate-railway.sh",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:validators": "vitest run tests/command-validators.test.ts"
+    "test:validators": "vitest run tests/command-validators.test.ts",
+    "lint": "eslint src tests"
   },
   "keywords": [],
   "author": "",
@@ -41,9 +45,11 @@
     "@line/line-bot-mcp-server": "^0.5.0",
     "@types/express": "^5.0.6",
     "@types/node": "^26.0.1",
+    "eslint": "^10.8.1",
     "nodemon": "^3.1.14",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.3",
+    "typescript-eslint": "^8.67.0",
     "vitest": "^4.1.10"
   }
 }

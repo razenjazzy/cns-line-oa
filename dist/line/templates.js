@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.createOrderSummaryFlexMessage = exports.createProductCardFlexMessage = exports.createDailyReportFlexMessage = void 0;
+exports.createOrderSummaryFlexMessage = exports.createServiceActionFlexMessage = exports.createServiceHomeFlexMessage = exports.createProductCardFlexMessage = exports.createDailyReportFlexMessage = void 0;
 const createDailyReportFlexMessage = (reportData, insights, language = 'th') => {
     const agentName = process.env.LINE_AGENT_NAME?.trim() || 'น้องโซระ';
     const rows = (() => {
@@ -87,6 +87,77 @@ const createProductCardFlexMessage = (productName, price, stock) => {
     };
 };
 exports.createProductCardFlexMessage = createProductCardFlexMessage;
+const createServiceHomeFlexMessage = (services, language, agentName) => {
+    return {
+        type: 'flex',
+        altText: language === 'en' ? `${agentName} services menu` : `เมนูบริการของ ${agentName}`,
+        contents: {
+            type: 'carousel',
+            contents: services.slice(0, 10).map(service => ({
+                type: 'bubble',
+                size: 'micro',
+                body: {
+                    type: 'box',
+                    layout: 'vertical',
+                    contents: [
+                        { type: 'text', text: service.label, weight: 'bold', size: 'md', wrap: true },
+                    ],
+                },
+                footer: {
+                    type: 'box',
+                    layout: 'vertical',
+                    contents: [
+                        {
+                            type: 'button',
+                            style: 'primary',
+                            color: '#0F766E',
+                            action: { type: 'message', label: language === 'en' ? 'Open' : 'เปิด', text: `NAV ${service.key}` },
+                        },
+                    ],
+                },
+            })),
+        },
+    };
+};
+exports.createServiceHomeFlexMessage = createServiceHomeFlexMessage;
+const createServiceActionFlexMessage = (serviceLabel, actions, language) => {
+    return {
+        type: 'flex',
+        altText: serviceLabel,
+        contents: {
+            type: 'bubble',
+            header: {
+                type: 'box',
+                layout: 'vertical',
+                contents: [
+                    { type: 'text', text: serviceLabel, weight: 'bold', size: 'md', wrap: true },
+                ],
+            },
+            body: {
+                type: 'box',
+                layout: 'vertical',
+                spacing: 'sm',
+                contents: actions.slice(0, 10).map(action => ({
+                    type: 'button',
+                    style: 'secondary',
+                    action: { type: 'message', label: action.label, text: action.text },
+                })),
+            },
+            footer: {
+                type: 'box',
+                layout: 'vertical',
+                contents: [
+                    {
+                        type: 'button',
+                        style: 'link',
+                        action: { type: 'message', label: language === 'en' ? 'Home' : 'หน้าหลัก', text: 'NAV HOME' },
+                    },
+                ],
+            },
+        },
+    };
+};
+exports.createServiceActionFlexMessage = createServiceActionFlexMessage;
 const createOrderSummaryFlexMessage = (total) => {
     const language = (process.env.DEFAULT_UI_LANGUAGE || 'th').toLowerCase() === 'en' ? 'en' : 'th';
     return {

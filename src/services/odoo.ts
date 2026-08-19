@@ -104,6 +104,34 @@ const withReadRetry = async <T>(label: string, operation: () => Promise<T>): Pro
   throw lastError;
 };
 
+const ODOO_WRITE_RETRY_ATTEMPTS = Number(process.env.ODOO_WRITE_RETRY_ATTEMPTS || 2);
+
+/**
+ * Only safe for idempotent mutations (write/unlink on a known id) — never
+ * wrap `create` in this, since retrying a create after an ambiguous
+ * (timeout-like) failure risks creating a duplicate record.
+ */
+const withIdempotentWriteRetry = async <T>(label: string, operation: () => Promise<T>): Promise<T> => {
+  const maxAttempts = Math.max(1, ODOO_WRITE_RETRY_ATTEMPTS);
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      const shouldRetry = attempt < maxAttempts && isTransientOdooError(error);
+      if (!shouldRetry) break;
+
+      const backoffMs = ODOO_READ_RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+      console.warn(`Odoo write retry ${attempt}/${maxAttempts} for ${label} after error: ${String(error)}`);
+      await delay(backoffMs);
+    }
+  }
+
+  throw lastError;
+};
+
 const jsonRpc = async <T>(config: OdooConfig, service: string, method: string, args: unknown[]): Promise<T> => {
   const endpoint = `${config.url.replace(/\/$/, '')}/jsonrpc`;
   const body = {
@@ -396,40 +424,48 @@ export const createQuotationFromLine = async (
   const config = getConfig();
   if (!config) return null;
 
-  const uid = await login(config);
-  if (!uid) return null;
+  try {
+    const uid = await login(config);
+    if (!uid) return null;
 
-  const product = await findProductByQuery(productQuery);
-  if (!product) return null;
+    const product = await findProductByQuery(productQuery);
+    if (!product) return null;
 
-  const partnerId = explicitPartnerId || await findOrCreatePartner(config, uid, customerName, customerPhone);
+    const partnerId = explicitPartnerId || await findOrCreatePartner(config, uid, customerName, customerPhone);
 
-  const orderId = await executeKw<number>(
-    config,
-    uid,
-    'sale.order',
-    'create',
-    [{
-      partner_id: partnerId,
-      order_line: [[0, 0, { product_id: product.id, product_uom_qty: qty }]],
-    }]
-  );
+    // No reliable natural key to reconcile a sale order against before it
+    // exists, so unlike partner/service creates this is not retried or
+    // reconciled — a failed attempt should be safely re-runnable by the user.
+    const orderId = await executeKw<number>(
+      config,
+      uid,
+      'sale.order',
+      'create',
+      [{
+        partner_id: partnerId,
+        order_line: [[0, 0, { product_id: product.id, product_uom_qty: qty }]],
+      }]
+    );
 
-  const rows = await executeKw<Record<string, unknown>[]>(
-    config,
-    uid,
-    'sale.order',
-    'read',
-    [[orderId]],
-    { fields: ['name', 'amount_total'] }
-  );
+    const rows = await executeKw<Record<string, unknown>[]>(
+      config,
+      uid,
+      'sale.order',
+      'read',
+      [[orderId]],
+      { fields: ['name', 'amount_total'] }
+    );
 
-  if (!rows.length) return null;
-  return {
-    orderName: str(rows[0].name),
-    total: num(rows[0].amount_total),
-    orderId,
-  };
+    if (!rows.length) return null;
+    return {
+      orderName: str(rows[0].name),
+      total: num(rows[0].amount_total),
+      orderId,
+    };
+  } catch (error) {
+    console.error('createQuotationFromLine failed:', error);
+    return null;
+  }
 };
 
 export const getPartnerByPhone = async (phone: string): Promise<OdooPartner | null> => {
@@ -456,36 +492,49 @@ export const createPartnerFromLine = async (name: string, phone: string, email?:
   const config = getConfig();
   if (!config) return null;
 
-  const uid = await login(config);
-  if (!uid) return null;
+  try {
+    const uid = await login(config);
+    if (!uid) return null;
 
-  const partnerId = await executeKw<number>(
-    config,
-    uid,
-    'res.partner',
-    'create',
-    [{ name, phone, ...(email ? { email } : {}) }]
-  );
+    const partnerId = await executeKw<number>(
+      config,
+      uid,
+      'res.partner',
+      'create',
+      [{ name, phone, ...(email ? { email } : {}) }]
+    );
 
-  const rows = await executeKw<Record<string, unknown>[]>(
-    config,
-    uid,
-    'res.partner',
-    'read',
-    [[partnerId]],
-    { fields: ['id', 'name', 'phone', 'email'] }
-  );
+    const rows = await executeKw<Record<string, unknown>[]>(
+      config,
+      uid,
+      'res.partner',
+      'read',
+      [[partnerId]],
+      { fields: ['id', 'name', 'phone', 'email'] }
+    );
 
-  if (!rows.length) return null;
-  return parsePartner(rows[0]);
+    if (!rows.length) return null;
+    return parsePartner(rows[0]);
+  } catch (error) {
+    console.error('createPartnerFromLine failed:', error);
+    // Never blindly retry a create (risks a duplicate partner). Instead,
+    // reconcile: check whether it actually landed despite the client-side
+    // error before reporting failure.
+    if (isTransientOdooError(error)) {
+      try {
+        const reconciled = await getPartnerByPhone(phone);
+        if (reconciled) return reconciled;
+      } catch (reconcileError) {
+        console.error('createPartnerFromLine reconciliation check failed:', reconcileError);
+      }
+    }
+    return null;
+  }
 };
 
 export const updatePartnerFromLine = async (partnerId: number, name?: string, phone?: string, email?: string): Promise<OdooPartner | null> => {
   const config = getConfig();
   if (!config) return null;
-
-  const uid = await login(config);
-  if (!uid) return null;
 
   const values: Record<string, unknown> = {};
   if (name) values.name = name;
@@ -493,41 +542,55 @@ export const updatePartnerFromLine = async (partnerId: number, name?: string, ph
   if (email) values.email = email;
   if (!Object.keys(values).length) return null;
 
-  await executeKw<boolean>(
-    config,
-    uid,
-    'res.partner',
-    'write',
-    [[partnerId], values]
-  );
+  try {
+    const uid = await login(config);
+    if (!uid) return null;
 
-  const rows = await executeKw<Record<string, unknown>[]>(
-    config,
-    uid,
-    'res.partner',
-    'read',
-    [[partnerId]],
-    { fields: ['id', 'name', 'phone', 'email'] }
-  );
+    // write/read on a known id is idempotent, safe to retry on transient errors.
+    await withIdempotentWriteRetry('updatePartner', () => executeKw<boolean>(
+      config,
+      uid,
+      'res.partner',
+      'write',
+      [[partnerId], values]
+    ));
 
-  if (!rows.length) return null;
-  return parsePartner(rows[0]);
+    const rows = await executeKw<Record<string, unknown>[]>(
+      config,
+      uid,
+      'res.partner',
+      'read',
+      [[partnerId]],
+      { fields: ['id', 'name', 'phone', 'email'] }
+    );
+
+    if (!rows.length) return null;
+    return parsePartner(rows[0]);
+  } catch (error) {
+    console.error('updatePartnerFromLine failed:', error);
+    return null;
+  }
 };
 
 export const deletePartnerFromLine = async (partnerId: number): Promise<boolean> => {
   const config = getConfig();
   if (!config) return false;
 
-  const uid = await login(config);
-  if (!uid) return false;
+  try {
+    const uid = await login(config);
+    if (!uid) return false;
 
-  return executeKw<boolean>(
-    config,
-    uid,
-    'res.partner',
-    'unlink',
-    [[partnerId]]
-  );
+    return await withIdempotentWriteRetry('deletePartner', () => executeKw<boolean>(
+      config,
+      uid,
+      'res.partner',
+      'unlink',
+      [[partnerId]]
+    ));
+  } catch (error) {
+    console.error('deletePartnerFromLine failed:', error);
+    return false;
+  }
 };
 
 const findServiceByIdentifierInternal = async (config: OdooConfig, uid: number, identifier: string): Promise<OdooServiceItem | null> => {
@@ -598,39 +661,56 @@ export const createServiceCatalogItem = async (name: string, code: string, price
   const config = getConfig();
   if (!config) return null;
 
-  const uid = await login(config);
-  if (!uid) return null;
+  try {
+    const uid = await login(config);
+    if (!uid) return null;
 
-  const exists = await findServiceByIdentifierInternal(config, uid, code);
-  if (exists) return exists;
+    const exists = await findServiceByIdentifierInternal(config, uid, code);
+    if (exists) return exists;
 
-  const productId = await executeKw<number>(
-    config,
-    uid,
-    'product.product',
-    'create',
-    [{
-      name,
-      default_code: code.toUpperCase(),
-      list_price: price,
-      type: 'service',
-      detailed_type: 'service',
-      sale_ok: true,
-      purchase_ok: false,
-    }]
-  );
+    const productId = await executeKw<number>(
+      config,
+      uid,
+      'product.product',
+      'create',
+      [{
+        name,
+        default_code: code.toUpperCase(),
+        list_price: price,
+        type: 'service',
+        detailed_type: 'service',
+        sale_ok: true,
+        purchase_ok: false,
+      }]
+    );
 
-  const rows = await executeKw<Record<string, unknown>[]>(
-    config,
-    uid,
-    'product.product',
-    'read',
-    [[productId]],
-    { fields: ['id', 'name', 'default_code', 'list_price', 'qty_available'] }
-  );
+    const rows = await executeKw<Record<string, unknown>[]>(
+      config,
+      uid,
+      'product.product',
+      'read',
+      [[productId]],
+      { fields: ['id', 'name', 'default_code', 'list_price', 'qty_available'] }
+    );
 
-  if (!rows.length) return null;
-  return parseService(rows[0]);
+    if (!rows.length) return null;
+    return parseService(rows[0]);
+  } catch (error) {
+    console.error('createServiceCatalogItem failed:', error);
+    // Never blindly retry a create; reconcile by code before reporting failure.
+    if (isTransientOdooError(error)) {
+      try {
+        const uid = await login(config);
+        if (uid) {
+          const reconciled = await findServiceByIdentifierInternal(config, uid, code);
+          if (reconciled) return reconciled;
+        }
+      } catch (reconcileError) {
+        console.error('createServiceCatalogItem reconciliation check failed:', reconcileError);
+      }
+    }
+    return null;
+  }
 };
 
 export const updateServiceCatalogItem = async (
@@ -640,56 +720,66 @@ export const updateServiceCatalogItem = async (
   const config = getConfig();
   if (!config) return null;
 
-  const uid = await login(config);
-  if (!uid) return null;
+  try {
+    const uid = await login(config);
+    if (!uid) return null;
 
-  const existing = await findServiceByIdentifierInternal(config, uid, identifier);
-  if (!existing) return null;
+    const existing = await findServiceByIdentifierInternal(config, uid, identifier);
+    if (!existing) return null;
 
-  const values: Record<string, unknown> = {};
-  if (fields.name) values.name = fields.name;
-  if (typeof fields.price === 'number' && !Number.isNaN(fields.price)) values.list_price = fields.price;
-  if (fields.code) values.default_code = fields.code.toUpperCase();
-  if (!Object.keys(values).length) return existing;
+    const values: Record<string, unknown> = {};
+    if (fields.name) values.name = fields.name;
+    if (typeof fields.price === 'number' && !Number.isNaN(fields.price)) values.list_price = fields.price;
+    if (fields.code) values.default_code = fields.code.toUpperCase();
+    if (!Object.keys(values).length) return existing;
 
-  await executeKw<boolean>(
-    config,
-    uid,
-    'product.product',
-    'write',
-    [[existing.id], values]
-  );
+    await withIdempotentWriteRetry('updateService', () => executeKw<boolean>(
+      config,
+      uid,
+      'product.product',
+      'write',
+      [[existing.id], values]
+    ));
 
-  const rows = await executeKw<Record<string, unknown>[]>(
-    config,
-    uid,
-    'product.product',
-    'read',
-    [[existing.id]],
-    { fields: ['id', 'name', 'default_code', 'list_price', 'qty_available'] }
-  );
+    const rows = await executeKw<Record<string, unknown>[]>(
+      config,
+      uid,
+      'product.product',
+      'read',
+      [[existing.id]],
+      { fields: ['id', 'name', 'default_code', 'list_price', 'qty_available'] }
+    );
 
-  if (!rows.length) return null;
-  return parseService(rows[0]);
+    if (!rows.length) return null;
+    return parseService(rows[0]);
+  } catch (error) {
+    console.error('updateServiceCatalogItem failed:', error);
+    return null;
+  }
 };
 
 export const deleteServiceCatalogItem = async (identifier: string): Promise<boolean> => {
   const config = getConfig();
   if (!config) return false;
 
-  const uid = await login(config);
-  if (!uid) return false;
+  try {
+    const uid = await login(config);
+    if (!uid) return false;
 
-  const existing = await findServiceByIdentifierInternal(config, uid, identifier);
-  if (!existing) return false;
+    const existing = await findServiceByIdentifierInternal(config, uid, identifier);
+    if (!existing) return false;
 
-  return executeKw<boolean>(
-    config,
-    uid,
-    'product.product',
-    'unlink',
-    [[existing.id]]
-  );
+    return await withIdempotentWriteRetry('deleteService', () => executeKw<boolean>(
+      config,
+      uid,
+      'product.product',
+      'unlink',
+      [[existing.id]]
+    ));
+  } catch (error) {
+    console.error('deleteServiceCatalogItem failed:', error);
+    return false;
+  }
 };
 
 const fetchSalesSnapshotByWindow = async (
