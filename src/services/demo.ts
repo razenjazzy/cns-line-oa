@@ -29,6 +29,9 @@ export type DemoOverview = {
       demoPage: string;
       connections: string;
       journey: string;
+      pricingModel: string;
+      pricingSimulation: string;
+      workflowAudit: string;
       simulatedLineWebhook: string;
       lineWebhook: string;
     };
@@ -49,6 +52,10 @@ export type DemoOverview = {
     };
   };
   demo: {
+    accessControl: {
+      enabled: boolean;
+      productionProtected: boolean;
+    };
     recommendedJourney: string[];
     sampleLinePayload: {
       userId: string;
@@ -84,6 +91,9 @@ const isOdooConfigured = (): boolean => {
   return Boolean(url && db && username && apiKey);
 };
 
+const isProduction = process.env.NODE_ENV === 'production';
+const isDemoControlEnabled = !isProduction || /^(1|true|yes|on)$/i.test(process.env.ENABLE_DEMO_CONTROL_PANEL || '');
+
 const normalizeBaseUrl = (baseUrl?: string): string => {
   const fallbackPort = process.env.PORT || '8080';
   return (baseUrl || `http://localhost:${fallbackPort}`).replace(/\/$/, '');
@@ -118,6 +128,9 @@ export const getDemoOverview = async (baseUrl?: string): Promise<DemoOverview> =
         demoPage: `${resolvedBaseUrl}/demo`,
         connections: `${resolvedBaseUrl}/demo/connections`,
         journey: `${resolvedBaseUrl}/demo/journey`,
+        pricingModel: `${resolvedBaseUrl}/demo/pricing-model`,
+        pricingSimulation: `${resolvedBaseUrl}/demo/pricing-simulation`,
+        workflowAudit: `${resolvedBaseUrl}/demo/workflow-audit`,
         simulatedLineWebhook: `${resolvedBaseUrl}/webhook-test`,
         lineWebhook: `${resolvedBaseUrl}/webhook`,
       },
@@ -138,8 +151,14 @@ export const getDemoOverview = async (baseUrl?: string): Promise<DemoOverview> =
       },
     },
     demo: {
+      accessControl: {
+        enabled: isDemoControlEnabled,
+        productionProtected: !isProduction || Boolean((process.env.DEMO_CONTROL_TOKEN || process.env.OPS_API_TOKEN || '').trim()),
+      },
       recommendedJourney: [
         'Open /demo to inspect connectivity and run the guided flow.',
+        'If production-gated, provide demo token in panel before loading secured API actions.',
+        'Load pricing model, tune markups/cost assumptions, and run simulation for target margin.',
         'Use POST /webhook-test or the demo console to simulate a LINE user message.',
         'Run the demo journey to seed Odoo, create or reuse a partner, create a quotation, and read it back.',
       ],

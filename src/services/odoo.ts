@@ -5,6 +5,10 @@ type OdooConfig = {
   apiKey: string;
 };
 
+const ODOO_RPC_TIMEOUT_MS = Number(process.env.ODOO_RPC_TIMEOUT_MS || 7000);
+const ODOO_READ_RETRY_ATTEMPTS = Number(process.env.ODOO_READ_RETRY_ATTEMPTS || 3);
+const ODOO_READ_RETRY_BASE_DELAY_MS = Number(process.env.ODOO_READ_RETRY_BASE_DELAY_MS || 250);
+
 type JsonRpcResponse<T> = {
   jsonrpc: string;
   id: number;
@@ -65,6 +69,41 @@ const getConfig = (): OdooConfig | null => {
   return { url, db, username, apiKey };
 };
 
+const delay = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
+
+const isTransientOdooError = (error: unknown): boolean => {
+  const message = String(error || '');
+  if (/timed out/i.test(message)) return true;
+  if (/fetch failed|network|ECONNRESET|ENOTFOUND|EAI_AGAIN|ETIMEDOUT/i.test(message)) return true;
+
+  const httpMatch = message.match(/Odoo HTTP\s+(\d{3})/i);
+  if (!httpMatch) return false;
+
+  const status = Number(httpMatch[1]);
+  return status === 429 || status >= 500;
+};
+
+const withReadRetry = async <T>(label: string, operation: () => Promise<T>): Promise<T> => {
+  const maxAttempts = Math.max(1, ODOO_READ_RETRY_ATTEMPTS);
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      const shouldRetry = attempt < maxAttempts && isTransientOdooError(error);
+      if (!shouldRetry) break;
+
+      const backoffMs = ODOO_READ_RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+      console.warn(`Odoo read retry ${attempt}/${maxAttempts} for ${label} after error: ${String(error)}`);
+      await delay(backoffMs);
+    }
+  }
+
+  throw lastError;
+};
+
 const jsonRpc = async <T>(config: OdooConfig, service: string, method: string, args: unknown[]): Promise<T> => {
   const endpoint = `${config.url.replace(/\/$/, '')}/jsonrpc`;
   const body = {
@@ -78,11 +117,25 @@ const jsonRpc = async <T>(config: OdooConfig, service: string, method: string, a
     id: Date.now(),
   };
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => controller.abort(), ODOO_RPC_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Odoo RPC timed out after ${ODOO_RPC_TIMEOUT_MS}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
 
   if (!response.ok) {
     throw new Error(`Odoo HTTP ${response.status}`);
@@ -125,6 +178,21 @@ const executeKw = async <T>(
     positionalArgs,
     keywordArgs,
   ]);
+};
+
+const loginRead = async (config: OdooConfig): Promise<number> => {
+  return withReadRetry('login', async () => login(config));
+};
+
+const executeKwRead = async <T>(
+  config: OdooConfig,
+  uid: number,
+  model: string,
+  method: string,
+  positionalArgs: unknown[],
+  keywordArgs: Record<string, unknown> = {}
+): Promise<T> => {
+  return withReadRetry(`${model}.${method}`, async () => executeKw<T>(config, uid, model, method, positionalArgs, keywordArgs));
 };
 
 const num = (value: unknown): number => {
@@ -177,6 +245,17 @@ const parseService = (row: Record<string, unknown>): OdooServiceItem => ({
   qty_available: num(row.qty_available),
 });
 
+const normalizeLookupText = (value: string, maxLength = 80): string => {
+  // Strip control chars and cap size to avoid oversized Odoo query payloads.
+  const sanitized = value.replace(/[\u0000-\u001F\u007F]/g, ' ').trim();
+  return sanitized.slice(0, maxLength);
+};
+
+const normalizeOrderReference = (value: string): string => {
+  const compact = normalizeLookupText(value, 40).toUpperCase();
+  return compact.replace(/\s+/g, '');
+};
+
 const toOdooDateTime = (date: Date): string => {
   const pad = (value: number): string => String(value).padStart(2, '0');
   const y = date.getUTCFullYear();
@@ -194,7 +273,7 @@ export const pingOdoo = async (): Promise<string> => {
   const config = getConfig();
   if (!config) return 'Odoo is not configured (missing ODOO_URL/ODOO_DB/ODOO_USERNAME/ODOO_API_KEY).';
 
-  const uid = await login(config);
+  const uid = await loginRead(config);
   if (!uid) return 'Odoo login failed. Check ODOO_USERNAME and ODOO_API_KEY.';
   return `Odoo connected successfully (uid=${uid}).`;
 };
@@ -205,12 +284,12 @@ export const verifyOdooAdminAccess = async (): Promise<{ ok: boolean; message: s
     return { ok: false, message: 'Odoo is not configured.' };
   }
 
-  const uid = await login(config);
+  const uid = await loginRead(config);
   if (!uid) {
     return { ok: false, message: 'Odoo login failed.' };
   }
 
-  const canWritePartners = await executeKw<boolean>(
+  const canWritePartners = await executeKwRead<boolean>(
     config,
     uid,
     'res.partner',
@@ -227,18 +306,21 @@ export const verifyOdooAdminAccess = async (): Promise<{ ok: boolean; message: s
 };
 
 export const findProductByQuery = async (query: string): Promise<OdooProduct | null> => {
+  const normalizedQuery = normalizeLookupText(query);
+  if (!normalizedQuery) return null;
+
   const config = getConfig();
   if (!config) return null;
 
-  const uid = await login(config);
+  const uid = await loginRead(config);
   if (!uid) return null;
 
-  const rows = await executeKw<Record<string, unknown>[]>(
+  const rows = await executeKwRead<Record<string, unknown>[]>(
     config,
     uid,
     'product.product',
     'search_read',
-    [[['name', 'ilike', query]]],
+    [[['name', 'ilike', normalizedQuery]]],
     {
       fields: ['id', 'name', 'list_price', 'qty_available', 'default_code'],
       limit: 1,
@@ -250,18 +332,21 @@ export const findProductByQuery = async (query: string): Promise<OdooProduct | n
 };
 
 export const findOrderByReference = async (reference: string): Promise<OdooSaleOrder | null> => {
+  const normalizedReference = normalizeOrderReference(reference);
+  if (!normalizedReference) return null;
+
   const config = getConfig();
   if (!config) return null;
 
-  const uid = await login(config);
+  const uid = await loginRead(config);
   if (!uid) return null;
 
-  const rows = await executeKw<Record<string, unknown>[]>(
+  const rows = await executeKwRead<Record<string, unknown>[]>(
     config,
     uid,
     'sale.order',
     'search_read',
-    [[['name', '=', reference.toUpperCase()]]],
+    [[['name', '=', normalizedReference]]],
     {
       fields: ['id', 'name', 'state', 'amount_total', 'partner_id'],
       limit: 1,
@@ -273,17 +358,23 @@ export const findOrderByReference = async (reference: string): Promise<OdooSaleO
 };
 
 const findOrCreatePartner = async (config: OdooConfig, uid: number, name: string, phone: string): Promise<number> => {
-  const found = await executeKw<Record<string, unknown>[]>(
-    config,
-    uid,
-    'res.partner',
-    'search_read',
-    [[['phone', '=', phone]]],
-    { fields: ['id'], limit: 1 }
-  );
+  const normalizedPhone = phone.trim();
 
-  if (found.length > 0) {
-    return num(found[0].id);
+  // Only search by phone when we actually have one — matching on an empty
+  // string can return an unrelated partner that also has no phone on file.
+  if (normalizedPhone) {
+    const found = await executeKwRead<Record<string, unknown>[]>(
+      config,
+      uid,
+      'res.partner',
+      'search_read',
+      [[['phone', '=', normalizedPhone]]],
+      { fields: ['id'], limit: 1 }
+    );
+
+    if (found.length > 0) {
+      return num(found[0].id);
+    }
   }
 
   return executeKw<number>(
@@ -291,7 +382,7 @@ const findOrCreatePartner = async (config: OdooConfig, uid: number, name: string
     uid,
     'res.partner',
     'create',
-    [{ name, phone }]
+    [{ name, ...(normalizedPhone ? { phone: normalizedPhone } : {}) }]
   );
 };
 
@@ -299,8 +390,9 @@ export const createQuotationFromLine = async (
   customerName: string,
   customerPhone: string,
   productQuery: string,
-  qty: number
-): Promise<{ orderName: string; total: number } | null> => {
+  qty: number,
+  explicitPartnerId?: number
+): Promise<{ orderName: string; total: number; orderId: number } | null> => {
   const config = getConfig();
   if (!config) return null;
 
@@ -310,7 +402,7 @@ export const createQuotationFromLine = async (
   const product = await findProductByQuery(productQuery);
   if (!product) return null;
 
-  const partnerId = await findOrCreatePartner(config, uid, customerName, customerPhone);
+  const partnerId = explicitPartnerId || await findOrCreatePartner(config, uid, customerName, customerPhone);
 
   const orderId = await executeKw<number>(
     config,
@@ -336,6 +428,7 @@ export const createQuotationFromLine = async (
   return {
     orderName: str(rows[0].name),
     total: num(rows[0].amount_total),
+    orderId,
   };
 };
 
@@ -343,10 +436,10 @@ export const getPartnerByPhone = async (phone: string): Promise<OdooPartner | nu
   const config = getConfig();
   if (!config) return null;
 
-  const uid = await login(config);
+  const uid = await loginRead(config);
   if (!uid) return null;
 
-  const rows = await executeKw<Record<string, unknown>[]>(
+  const rows = await executeKwRead<Record<string, unknown>[]>(
     config,
     uid,
     'res.partner',
@@ -438,7 +531,7 @@ export const deletePartnerFromLine = async (partnerId: number): Promise<boolean>
 };
 
 const findServiceByIdentifierInternal = async (config: OdooConfig, uid: number, identifier: string): Promise<OdooServiceItem | null> => {
-  const byCode = await executeKw<Record<string, unknown>[]>(
+  const byCode = await executeKwRead<Record<string, unknown>[]>(
     config,
     uid,
     'product.product',
@@ -452,7 +545,7 @@ const findServiceByIdentifierInternal = async (config: OdooConfig, uid: number, 
 
   if (byCode.length) return parseService(byCode[0]);
 
-  const byName = await executeKw<Record<string, unknown>[]>(
+  const byName = await executeKwRead<Record<string, unknown>[]>(
     config,
     uid,
     'product.product',
@@ -472,10 +565,10 @@ export const listServiceCatalogItems = async (limit = 10): Promise<OdooServiceIt
   const config = getConfig();
   if (!config) return [];
 
-  const uid = await login(config);
+  const uid = await loginRead(config);
   if (!uid) return [];
 
-  const rows = await executeKw<Record<string, unknown>[]>(
+  const rows = await executeKwRead<Record<string, unknown>[]>(
     config,
     uid,
     'product.product',
@@ -495,7 +588,7 @@ export const getServiceByIdentifier = async (identifier: string): Promise<OdooSe
   const config = getConfig();
   if (!config) return null;
 
-  const uid = await login(config);
+  const uid = await loginRead(config);
   if (!uid) return null;
 
   return findServiceByIdentifierInternal(config, uid, identifier);
@@ -608,7 +701,7 @@ const fetchSalesSnapshotByWindow = async (
   const startStr = toOdooDateTime(start);
   const endStr = toOdooDateTime(end);
 
-  const orders = await executeKw<Record<string, unknown>[]>(
+  const orders = await executeKwRead<Record<string, unknown>[]>(
     config,
     uid,
     'sale.order',
@@ -628,7 +721,7 @@ const fetchSalesSnapshotByWindow = async (
   const orderIds = orders.map(row => num(row.id)).filter(Boolean);
   if (!orderIds.length) return [];
 
-  const lines = await executeKw<Record<string, unknown>[]>(
+  const lines = await executeKwRead<Record<string, unknown>[]>(
     config,
     uid,
     'sale.order.line',
@@ -663,7 +756,7 @@ const fetchSalesSnapshotByWindow = async (
 
   const productIds = Array.from(aggregate.keys());
   const products = productIds.length
-    ? await executeKw<Record<string, unknown>[]>(
+    ? await executeKwRead<Record<string, unknown>[]>(
       config,
       uid,
       'product.product',
@@ -693,7 +786,7 @@ export const getDailySalesSnapshot = async (): Promise<OdooDailySalesItem[]> => 
   const config = getConfig();
   if (!config) return [];
 
-  const uid = await login(config);
+  const uid = await loginRead(config);
   if (!uid) return [];
 
   const now = new Date();
@@ -710,7 +803,7 @@ export const getDailySalesSnapshot = async (): Promise<OdooDailySalesItem[]> => 
   if (rollingSnapshot.length) return rollingSnapshot;
 
   // Final fallback: real Odoo product inventory snapshot (no mock data).
-  const products = await executeKw<Record<string, unknown>[]>(
+  const products = await executeKwRead<Record<string, unknown>[]>(
     config,
     uid,
     'product.product',
@@ -738,7 +831,7 @@ const findOrCreateProduct = async (
   defaultCode: string,
   listPrice: number
 ): Promise<number> => {
-  const found = await executeKw<Record<string, unknown>[]>(
+  const found = await executeKwRead<Record<string, unknown>[]>(
     config,
     uid,
     'product.product',
@@ -799,7 +892,7 @@ export const seedOdooSampleSalesData = async (): Promise<string> => {
 
   let createdCount = 0;
   for (const values of orderValues) {
-    const existing = await executeKw<Record<string, unknown>[]>(
+    const existing = await executeKwRead<Record<string, unknown>[]>(
       config,
       uid,
       'sale.order',

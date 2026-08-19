@@ -9,7 +9,7 @@ const getAgentName = () => process.env.LINE_AGENT_NAME?.trim() || 'น้อง�
 let chatModelUnavailable = false;
 const isAiOff = () => /^(1|true|yes|on)$/i.test(process.env.AI_OFF || '');
 const getLocationCandidates = () => {
-    const primary = process.env.GOOGLE_CLOUD_LOCATION || 'asia-southeast1';
+    const primary = process.env.GOOGLE_CLOUD_LOCATION || 'us-central1-a';
     return Array.from(new Set([primary, 'us-central1']));
 };
 const getModelCandidates = () => [
@@ -187,7 +187,9 @@ const processChatMessage = async (userId, userText, language = 'th') => {
                         : null;
                     const qty = args?.quantity || 1;
                     if (product && product.stock >= qty) {
-                        const quotation = await (0, odoo_1.createQuotationFromLine)(`LINE-${userId}`, userId, product.name, qty);
+                        const profile = await (0, firestore_1.getUserProfile)(userId);
+                        const partnerName = profile.displayName || `LINE Customer ${userId.slice(-6)}`;
+                        const quotation = await (0, odoo_1.createQuotationFromLine)(partnerName, profile.phone || '', product.name, qty, profile.odooPartnerId);
                         const total = quotation?.total ?? (product.price * qty);
                         aiTextResponse += quotation
                             ? `[Created Odoo quotation ${quotation.orderName} for ${qty}x ${product.name}]`
@@ -206,7 +208,15 @@ const processChatMessage = async (userId, userText, language = 'th') => {
                     }
                 }
                 else if (call.name === 'escalateToHuman') {
-                    await (0, firestore_1.setEscalationState)(userId, true);
+                    const escalationResult = await (0, firestore_1.setEscalationState)(userId, true);
+                    if (!escalationResult.ok) {
+                        const msg = isThai
+                            ? `${agentName} ยังไม่สามารถโอนเคสให้แอดมินได้ในตอนนี้ กรุณาลองใหม่อีกครั้งค่ะ`
+                            : `${agentName} could not escalate to a human agent right now. Please try again.`;
+                        aiTextResponse += msg;
+                        messages.push({ type: 'text', text: msg });
+                        continue;
+                    }
                     const msg = isThai
                         ? `${agentName} โอนเคสให้แอดมินแล้วนะคะ เดี๋ยวเจ้าหน้าที่จะดูแลต่อทันที`
                         : `${agentName} has escalated this chat to a human agent.`;

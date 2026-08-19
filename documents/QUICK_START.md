@@ -23,7 +23,8 @@ npm start          # Run from dist/index.js
 ```bash
 docker build -t cns-line-oa .              # Build image
 docker run -p 8080:8080 --env-file .env cns-line-oa  # Run locally
-./deploy.sh        # Deploy to Cloud Run
+npm run deploy:staging   # Deploy to Cloud Run (staging profile)
+npm run deploy:prod      # Deploy to Cloud Run (production profile)
 ```
 
 ### Free Cloudflare Tunnel
@@ -40,6 +41,7 @@ docker run -p 8080:8080 --env-file .env cns-line-oa  # Run locally
 ✅ **Dependencies** - 434 npm packages  
 ✅ **Environment Config** - .env file  
 ✅ **Docker Setup** - Dockerfile + deploy.sh  
+✅ **Secure Deploy Profiles** - deploy env templates + validation script  
 ✅ **Build Tools** - TypeScript, nodemon, ts-node  
 
 ---
@@ -53,6 +55,8 @@ docker run -p 8080:8080 --env-file .env cns-line-oa  # Run locally
 | Config | `.env`, `tsconfig.json` |
 | Package Info | `package.json` |
 | Docker | `Dockerfile`, `deploy.sh` |
+| Deploy Profiles | `deploy.env.production.yaml.example`, `deploy.env.staging.yaml.example` |
+| Deploy Validation | `scripts/validate-deploy-env.sh` |
 | Cloudflare Tunnel | `deploy-cloudflare.sh` |
 
 ---
@@ -84,7 +88,7 @@ Open `http://localhost:8080/demo` to run the guided demo console.
 ```env
 PORT=8080                              # Server port
 GOOGLE_CLOUD_PROJECT=your-project-id   # GCP project
-GOOGLE_CLOUD_LOCATION=asia-southeast1   # GCP region
+GOOGLE_CLOUD_LOCATION=us-central1-a   # GCP region
 LINE_CHANNEL_ACCESS_TOKEN=...          # Your LINE token
 LINE_CHANNEL_SECRET=...                # Your LINE secret
 ADMIN_USER_ID=...                      # Your LINE user ID (for reports)
@@ -162,8 +166,46 @@ Request → Express Server
 
 4. **Deploy to Cloud Run**
    ```bash
-   ./deploy.sh
+   cp deploy.env.staging.yaml.example deploy.env.staging.yaml
+   cp deploy.env.production.yaml.example deploy.env.production.yaml
    ```
+
+   Set secret mappings once per shell (example format):
+   ```bash
+   export CLOUD_RUN_SECRETS="LINE_CHANNEL_ACCESS_TOKEN=projects/<project>/secrets/LINE_CHANNEL_ACCESS_TOKEN:latest,LINE_CHANNEL_SECRET=projects/<project>/secrets/LINE_CHANNEL_SECRET:latest,ODOO_API_KEY=projects/<project>/secrets/ODOO_API_KEY:latest,DEMO_CONTROL_TOKEN=projects/<project>/secrets/DEMO_CONTROL_TOKEN:latest,OPS_API_TOKEN=projects/<project>/secrets/OPS_API_TOKEN:latest,REDIS_URL=projects/<project>/secrets/REDIS_URL:latest"
+   ```
+
+   For shared rate limiting across multiple Cloud Run instances, keep:
+   ```yaml
+   RATE_LIMIT_STORE: "redis"
+   ```
+   and provide `REDIS_URL` via Secret Manager mapping above.
+
+   Validate and deploy:
+   ```bash
+   npm run preflight:staging
+   npm run deploy:staging
+
+   PRODUCTION_APPROVED=true npm run preflight:prod
+   npm run deploy:prod
+
+   # post-deploy sanity check
+   npm run smoke -- https://YOUR-CLOUD-RUN-URL
+
+   # generate machine-readable deploy evidence artifact
+   npm run evidence -- https://YOUR-CLOUD-RUN-URL ./artifacts/deploy-evidence.json production
+   ```
+
+   `preflight:*` includes: deploy-env validation + cutover validation + build + test.
+
+   CI/CD workflow:
+   - File: `.github/workflows/release.yml`
+   - On `main` push: staging pipeline runs `preflight -> deploy -> smoke`.
+   - Deployment evidence: workflow always generates and uploads JSON artifacts (`staging-deploy-evidence`, `production-deploy-evidence`) after smoke checks.
+   - For production: run workflow manually with `deploy_production=true`.
+   - Approval gate: configure GitHub Environments `staging` and `production`; add required reviewers on `production` to enforce manual promotion approval.
+   - Production policy check: deployment also requires `PRODUCTION_APPROVED=true` and verifies critical secret mappings before deploy starts.
+   - Required GitHub secrets: `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT`, `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`, `CLOUD_RUN_SERVICE_NAME`, `CLOUD_RUN_SECRETS`, `OPS_API_TOKEN`, `STAGING_BASE_URL`, `PRODUCTION_BASE_URL`, `DEPLOY_ENV_STAGING_YAML`, `DEPLOY_ENV_PRODUCTION_YAML`.
 
    Or use the free Cloudflare Tunnel path:
    ```bash
@@ -196,4 +238,4 @@ For issues with:
 
 Your project is **built, configured, and ready to deploy**. 
 
-Start with `npm run dev` for development or `./deploy.sh` for production! 🎉
+Start with `npm run dev` for development or `npm run deploy:staging` for cloud deployment.

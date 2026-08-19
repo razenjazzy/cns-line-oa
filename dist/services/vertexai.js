@@ -8,7 +8,7 @@ const getProject = () => {
     return project || null;
 };
 const getLocationCandidates = () => {
-    const primary = process.env.GOOGLE_CLOUD_LOCATION || 'asia-southeast1';
+    const primary = process.env.GOOGLE_CLOUD_LOCATION || 'us-central1-a';
     const candidates = [primary, 'us-central1'];
     return Array.from(new Set(candidates));
 };

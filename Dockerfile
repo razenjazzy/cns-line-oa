@@ -31,10 +31,13 @@ ENV PUPPETEER_SKIP_DOWNLOAD=true
 COPY package*.json ./
 
 # Install only production dependencies
-RUN npm ci --only=production --ignore-scripts
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 
 # Copy the compiled JS files from the builder stage
 COPY --from=builder /usr/src/app/dist ./dist
+
+# Run with a non-root user in production.
+RUN addgroup -S app && adduser -S -G app app && chown -R app:app /usr/src/app
 
 # Set standard Node.js environment variables
 ENV NODE_ENV=production
@@ -42,6 +45,8 @@ ENV PORT=8080
 
 # Expose the Cloud Run port
 EXPOSE 8080
+
+USER app
 
 # Start the application
 CMD [ "npm", "start" ]

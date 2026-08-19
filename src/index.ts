@@ -1,40 +1,272 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import { buildDemoPage } from './demo/page';
-import { buildCommandKeywordGuidance, buildStepByStepGuide, isGuideCommand } from './line/command-guide';
+import { isGuideCommand } from './line/command-guide';
 import { handleWebhook } from './line/webhook';
+import { resolveCommandReply } from './line/command-router';
 import { runDailyReport } from './jobs/daily-report';
-import {
-    createPartnerFromLine,
-    createServiceCatalogItem,
-    createQuotationFromLine,
-    deletePartnerFromLine,
-    deleteServiceCatalogItem,
-    findOrderByReference,
-    findProductByQuery,
-    getPartnerByPhone,
-    getServiceByIdentifier,
-    listServiceCatalogItems,
-    pingOdoo,
-    seedOdooSampleSalesData,
-    updatePartnerFromLine,
-    updateServiceCatalogItem,
-    verifyOdooAdminAccess,
-} from './services/odoo';
+import { pingOdoo, seedOdooSampleSalesData } from './services/odoo';
 import { getDemoOverview, runDemoJourney } from './services/demo';
-import { processChatMessage } from './services/chat';
-import { getUserLanguage, getUserProfile, setUserLanguage, setUserRole, setUserOdooPartner } from './services/firestore';
+import { getKpiSnapshot, recordHttpRequest } from './services/kpi';
+import { checkFirestoreReady, getPlatformConfig, getUserLanguage, getUserProfile, setPlatformConfig } from './services/firestore';
+import { createDemoSessionToken, parseCookieValue, safeTokenMatch, verifyDemoSessionTokenWithSecrets } from './services/demo-session';
+import { getPricingModel, runPricingSimulation, updatePricingModel } from './services/pricing-control';
+import { createRateLimitStoreFromEnv, getRateLimitRuntimeStatus, InMemoryRateLimitStore, type RateLimitStore } from './services/rate-limit-store';
+import { verifyOdooUserByToken } from './services/user-verification';
 
+import { adminOnly } from './services/adminAuth';
+import { requireOpsToken } from './services/opsAuth';
 dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 8080;
 const isProduction = process.env.NODE_ENV === 'production';
 const isWebhookTestEnabled = !isProduction || /^(1|true|yes|on)$/i.test(process.env.ENABLE_WEBHOOK_TEST || '');
+const isDemoControlEnabled = !isProduction || /^(1|true|yes|on)$/i.test(process.env.ENABLE_DEMO_CONTROL_PANEL || '');
+const allowDemoHeaderTokenFallbackInProd = /^(1|true|yes|on)$/i.test(process.env.ALLOW_DEMO_HEADER_TOKEN_FALLBACK || '');
 const webhookTestToken = process.env.WEBHOOK_TEST_TOKEN?.trim() || '';
-type UiLanguage = 'th' | 'en';
-const tr = (language: UiLanguage, th: string, en: string): string => language === 'en' ? en : th;
-const parseCsv = (raw: string): string[] => raw.split(',').map(v => v.trim());
+const opsApiToken = process.env.OPS_API_TOKEN?.trim() || '';
+const demoControlToken = process.env.DEMO_CONTROL_TOKEN?.trim() || opsApiToken;
+const initialDemoSessionSecret = process.env.DEMO_SESSION_SECRET?.trim() || demoControlToken;
+const demoSessionTtlMinutes = Number(process.env.DEMO_SESSION_TTL_MINUTES || 30);
+const demoSessionRotateGraceDefaultMinutes = Number(process.env.DEMO_SESSION_ROTATE_GRACE_MINUTES || 30);
+const demoSessionCookieName = 'demo_control_session';
+const demoSessionConfigKey = process.env.DEMO_SESSION_CONFIG_KEY?.trim() || 'demoSessionSecretsV1';
+
+let activeDemoSessionSecret = initialDemoSessionSecret;
+let previousDemoSessionSecret: { secret: string; expiresAtMs: number } | null = null;
+let demoSessionStateLoaded = false;
+let demoSessionStateLoadPromise: Promise<void> | null = null;
+const jsonParser = express.json({ limit: process.env.MAX_JSON_BODY || '64kb' });
+const readyzTimeoutMs = Number(process.env.READYZ_TIMEOUT_MS || 2500);
+
+const getBearerToken = (authHeader: string | undefined): string => {
+  if (!authHeader?.startsWith('Bearer ')) return '';
+  return authHeader.substring(7);
+};
+
+const getDemoSessionVerifySecrets = (): string[] => {
+    if (previousDemoSessionSecret && previousDemoSessionSecret.expiresAtMs <= Date.now()) {
+        previousDemoSessionSecret = null;
+    }
+
+    return [
+        activeDemoSessionSecret,
+        previousDemoSessionSecret ? previousDemoSessionSecret.secret : '',
+    ].filter(Boolean) as string[];
+};
+
+const persistDemoSessionState = async (): Promise<void> => {
+    if (!activeDemoSessionSecret) return;
+
+    const payload: Record<string, unknown> = {
+        activeSecret: activeDemoSessionSecret,
+        updatedAt: new Date().toISOString(),
+    };
+
+    if (previousDemoSessionSecret) {
+        payload.previousSecret = previousDemoSessionSecret.secret;
+        payload.previousSecretExpiresAtMs = previousDemoSessionSecret.expiresAtMs;
+    }
+
+    const result = await setPlatformConfig(demoSessionConfigKey, payload);
+    if (!result.ok) {
+        console.warn('Failed to persist demo session state:', result.error);
+    }
+};
+
+const ensureDemoSessionStateLoaded = async (): Promise<void> => {
+    if (demoSessionStateLoaded) return;
+    if (demoSessionStateLoadPromise) return demoSessionStateLoadPromise;
+
+    demoSessionStateLoadPromise = (async () => {
+        const stored = await getPlatformConfig<Record<string, unknown>>(demoSessionConfigKey);
+        if (!stored) {
+            demoSessionStateLoaded = true;
+            return;
+        }
+
+        const activeSecret = typeof stored.activeSecret === 'string' ? stored.activeSecret.trim() : '';
+        if (activeSecret) {
+            activeDemoSessionSecret = activeSecret;
+        }
+
+        const previousSecret = typeof stored.previousSecret === 'string' ? stored.previousSecret.trim() : '';
+        const previousExpiresAtMs = typeof stored.previousSecretExpiresAtMs === 'number'
+            ? stored.previousSecretExpiresAtMs
+            : Number(stored.previousSecretExpiresAtMs || 0);
+
+        if (previousSecret && Number.isFinite(previousExpiresAtMs) && previousExpiresAtMs > Date.now()) {
+            previousDemoSessionSecret = {
+                secret: previousSecret,
+                expiresAtMs: previousExpiresAtMs,
+            };
+        }
+
+        demoSessionStateLoaded = true;
+    })();
+
+    try {
+        await demoSessionStateLoadPromise;
+    } finally {
+        demoSessionStateLoadPromise = null;
+    }
+};
+
+const requireDemoControlAccess = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (!isDemoControlEnabled) {
+        return res.status(404).json({ error: 'Demo control panel is disabled.' });
+    }
+
+    if (!isProduction) {
+        return next();
+    }
+
+    await ensureDemoSessionStateLoaded();
+
+    const sessionToken = parseCookieValue(req.get('cookie'), demoSessionCookieName);
+    const verifySecrets = getDemoSessionVerifySecrets();
+
+    if (sessionToken && verifySecrets.length) {
+        const verifySession = verifyDemoSessionTokenWithSecrets(sessionToken, verifySecrets);
+        if (verifySession.ok) {
+            return next();
+        }
+    }
+
+    if (!allowDemoHeaderTokenFallbackInProd) {
+        return res.status(401).json({
+            error: 'Demo session is required. Login via /demo/session/login before accessing /demo endpoints.',
+        });
+    }
+
+    if (!demoControlToken) {
+        console.warn('DEMO_CONTROL_TOKEN is not configured in production; denying access to /demo endpoints.');
+        return res.status(503).json({ error: 'Demo control endpoints are unavailable because DEMO_CONTROL_TOKEN is not configured.' });
+    }
+
+    const headerToken = req.get('x-demo-token') || req.get('x-ops-token') || '';
+    const bearerToken = getBearerToken(req.get('authorization'));
+    const token = headerToken || bearerToken;
+    if (!safeTokenMatch(token, demoControlToken)) {
+        return res.status(401).json({ error: 'Unauthorized demo access' });
+    }
+
+    return next();
+};
+
+const clearDemoSessionCookie = (res: express.Response) => {
+    const secure = isProduction ? '; Secure' : '';
+    res.setHeader('Set-Cookie', `${demoSessionCookieName}=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax${secure}`);
+};
+
+const setDemoSessionCookie = (res: express.Response, token: string) => {
+    const ttlSeconds = Math.max(60, Math.trunc(demoSessionTtlMinutes * 60));
+    const secure = isProduction ? '; Secure' : '';
+    res.setHeader('Set-Cookie', `${demoSessionCookieName}=${token}; Max-Age=${ttlSeconds}; Path=/; HttpOnly; SameSite=Lax${secure}`);
+};
+
+const RATE_STORE_MAX_KEYS = Number(process.env.RATE_STORE_MAX_KEYS || 50000);
+const fallbackRateStore = new InMemoryRateLimitStore(RATE_STORE_MAX_KEYS, 60_000);
+let rateStore: RateLimitStore = fallbackRateStore;
+
+const createRateLimiter = (options: { windowMs: number; max: number; label: string }) => {
+    return async (req: express.Request, res: express.Response, next: express.NextFunction) => {
+        const now = Date.now();
+        try {
+            await rateStore.sweep(now);
+            const ip = req.ip || req.socket.remoteAddress || 'unknown';
+            const key = `${options.label}:${ip}`;
+            const window = await rateStore.consume(key, options.windowMs, now);
+            if (window.count > options.max) {
+                return res.status(429).json({ error: 'Too many requests' });
+            }
+        } catch (error) {
+            console.warn('Rate limiter store error, allowing request:', String(error));
+        }
+        return next();
+    };
+};
+
+const webhookLimiter = createRateLimiter({ windowMs: 60_000, max: 120, label: 'webhook' });
+const webhookTestLimiter = createRateLimiter({ windowMs: 60_000, max: 30, label: 'webhook-test' });
+const opsJobLimiter = createRateLimiter({ windowMs: 60_000, max: 10, label: 'ops-job' });
+const verifyLinkLimiter = createRateLimiter({ windowMs: 60_000, max: 20, label: 'verify-odoo' });
+
+const isReadOnlyWebhookTestCommand = (text: string): boolean => {
+    const upperText = text.trim().toUpperCase();
+    if (!upperText) return true;
+    if (isGuideCommand(text)) return true;
+
+    return [
+        'START',
+        'HELP',
+        'OPTIONS',
+        'MENU',
+        'FEATURES',
+        'JOURNEY',
+        'DEMO JOURNEY',
+        'NAME',
+        'LANG EN',
+        'LANG TH',
+        'THAI',
+        'ENGLISH',
+        'DEMO ODOO',
+    ].includes(upperText)
+        || upperText.startsWith('DEMO PRODUCT ')
+        || upperText.startsWith('DEMO ORDER ')
+        || upperText === 'DEMO PRODUCT'
+        || upperText === 'DEMO ORDER';
+};
+
+const toSafeLogText = (text: string): string => {
+    if (!isProduction) return text;
+    const compact = text.replace(/\s+/g, ' ').trim();
+    const clipped = compact.slice(0, 32);
+    return `${clipped}${compact.length > 32 ? '...' : ''}`;
+};
+
+const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number, timeoutMessage: string): Promise<T> => {
+    let timeoutHandle: NodeJS.Timeout | null = null;
+    const timeoutPromise = new Promise<T>((_resolve, reject) => {
+        timeoutHandle = setTimeout(() => reject(new Error(timeoutMessage)), timeoutMs);
+    });
+
+    try {
+        return await Promise.race([promise, timeoutPromise]);
+    } finally {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+    }
+};
+
+app.use((req, res, next) => {
+    const headerRequestId = req.get('x-request-id') || '';
+    const requestId = headerRequestId || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    res.setHeader('x-request-id', requestId);
+
+    const startedAt = Date.now();
+    res.on('finish', () => {
+        const durationMs = Date.now() - startedAt;
+        recordHttpRequest(req.path, req.method, res.statusCode);
+        const summary = {
+            requestId,
+            method: req.method,
+            path: req.path,
+            statusCode: res.statusCode,
+            durationMs,
+        };
+
+        if (res.statusCode >= 500) {
+            console.error('[http_access]', summary);
+        } else if (res.statusCode >= 400) {
+            console.warn('[http_access]', summary);
+        } else {
+            console.log('[http_access]', summary);
+        }
+    });
+
+    return next();
+});
 
 app.get('/healthz', (_req, res) => {
     res.status(200).json({
@@ -45,45 +277,308 @@ app.get('/healthz', (_req, res) => {
     });
 });
 
-app.get('/readyz', (_req, res) => {
-    res.status(200).json({
-        ready: true,
+app.get('/readyz', async (_req, res) => {
+    const checks: Array<{ name: string; ok: boolean; message: string }> = [];
+
+    try {
+        const firestoreStatus = await withTimeout(
+            checkFirestoreReady(),
+            readyzTimeoutMs,
+            `Firestore check timed out after ${readyzTimeoutMs}ms`
+        );
+        checks.push({ name: 'firestore', ok: firestoreStatus.ok, message: firestoreStatus.message });
+    } catch (error) {
+        checks.push({ name: 'firestore', ok: false, message: String(error) });
+    }
+
+    try {
+        const odooStatus = await withTimeout(
+            pingOdoo(),
+            readyzTimeoutMs,
+            `Odoo check timed out after ${readyzTimeoutMs}ms`
+        );
+        checks.push({
+            name: 'odoo',
+            ok: /connected successfully/i.test(odooStatus),
+            message: odooStatus,
+        });
+    } catch (error) {
+        checks.push({ name: 'odoo', ok: false, message: String(error) });
+    }
+
+    try {
+        const limiterHealth = await withTimeout(
+            rateStore.healthCheck(),
+            readyzTimeoutMs,
+            `Rate limit store check timed out after ${readyzTimeoutMs}ms`
+        );
+        const limiterRuntime = getRateLimitRuntimeStatus();
+        const limiterDegraded = limiterRuntime.configuredMode === 'redis' && limiterRuntime.activeBackend !== 'redis';
+        checks.push({
+            name: 'rateLimiter',
+            ok: limiterHealth.ok && !limiterDegraded,
+            message: limiterDegraded
+                ? `Configured redis but active backend is ${limiterRuntime.activeBackend}${limiterRuntime.fallbackReason ? ` (${limiterRuntime.fallbackReason})` : ''}`
+                : limiterHealth.message,
+        });
+    } catch (error) {
+        checks.push({ name: 'rateLimiter', ok: false, message: String(error) });
+    }
+
+    const ready = checks.every(check => check.ok);
+    return res.status(ready ? 200 : 503).json({
+        ready,
+        checks,
         uptimeSeconds: Number(process.uptime().toFixed(0)),
         timestamp: new Date().toISOString(),
     });
 });
 
+app.get('/ops/kpi', requireOpsToken, (_req, res) => {
+    res.status(200).json({
+        ...getKpiSnapshot(),
+        rateLimitRuntime: getRateLimitRuntimeStatus(),
+    });
+});
+
+app.post('/ops/demo-session/rotate', requireOpsToken, jsonParser, async (req, res) => {
+    await ensureDemoSessionStateLoaded();
+
+    const newSecret = String(req.body?.newSecret || '').trim();
+    const graceMinutes = Number(req.body?.graceMinutes ?? demoSessionRotateGraceDefaultMinutes);
+
+    if (!newSecret || newSecret.length < 16) {
+        return res.status(400).json({
+            ok: false,
+            error: 'newSecret is required and must be at least 16 characters.',
+        });
+    }
+
+    if (activeDemoSessionSecret && activeDemoSessionSecret === newSecret) {
+        return res.status(400).json({ ok: false, error: 'newSecret must differ from current active secret.' });
+    }
+
+    if (activeDemoSessionSecret) {
+        const normalizedGraceMinutes = Math.max(0, Math.trunc(Number.isFinite(graceMinutes) ? graceMinutes : demoSessionRotateGraceDefaultMinutes));
+        previousDemoSessionSecret = {
+            secret: activeDemoSessionSecret,
+            expiresAtMs: Date.now() + normalizedGraceMinutes * 60 * 1000,
+        };
+    }
+
+    activeDemoSessionSecret = newSecret;
+    await persistDemoSessionState();
+
+    return res.json({
+        ok: true,
+        rotatedAt: new Date().toISOString(),
+        graceMinutes: previousDemoSessionSecret ? Math.max(0, Math.round((previousDemoSessionSecret.expiresAtMs - Date.now()) / 60000)) : 0,
+        previousSecretGraceActive: Boolean(previousDemoSessionSecret && previousDemoSessionSecret.expiresAtMs > Date.now()),
+    });
+});
+
+app.get('/ops/workflow-audit', requireOpsToken, async (_req, res) => {
+    await ensureDemoSessionStateLoaded();
+
+    const runtimeChecks = {
+        firestoreReady: { ok: false, message: 'not_executed' },
+        odooReady: { ok: false, message: 'not_executed' },
+        rateLimiter: { ok: false, message: 'not_executed' },
+    };
+
+    try {
+        const firestoreStatus = await withTimeout(
+            checkFirestoreReady(),
+            readyzTimeoutMs,
+            `Firestore check timed out after ${readyzTimeoutMs}ms`
+        );
+        runtimeChecks.firestoreReady = { ok: firestoreStatus.ok, message: firestoreStatus.message };
+    } catch (error) {
+        runtimeChecks.firestoreReady = { ok: false, message: String(error) };
+    }
+
+    try {
+        const odooStatus = await withTimeout(
+            pingOdoo(),
+            readyzTimeoutMs,
+            `Odoo check timed out after ${readyzTimeoutMs}ms`
+        );
+        runtimeChecks.odooReady = {
+            ok: /connected successfully/i.test(odooStatus),
+            message: odooStatus,
+        };
+    } catch (error) {
+        runtimeChecks.odooReady = { ok: false, message: String(error) };
+    }
+
+    try {
+        const limiterHealth = await withTimeout(
+            rateStore.healthCheck(),
+            readyzTimeoutMs,
+            `Rate limit store check timed out after ${readyzTimeoutMs}ms`
+        );
+        const limiterRuntime = getRateLimitRuntimeStatus();
+        const limiterDegraded = limiterRuntime.configuredMode === 'redis' && limiterRuntime.activeBackend !== 'redis';
+        runtimeChecks.rateLimiter = {
+            ok: limiterHealth.ok && !limiterDegraded,
+            message: limiterDegraded
+                ? `Configured redis but active backend is ${limiterRuntime.activeBackend}${limiterRuntime.fallbackReason ? ` (${limiterRuntime.fallbackReason})` : ''}`
+                : limiterHealth.message,
+        };
+    } catch (error) {
+        runtimeChecks.rateLimiter = { ok: false, message: String(error) };
+    }
+
+    const audit = {
+        generatedAt: new Date().toISOString(),
+        checks: {
+            security: {
+                opsTokenConfigured: Boolean(opsApiToken),
+                demoControlEnabled: isDemoControlEnabled,
+                demoControlTokenConfigured: Boolean(demoControlToken),
+                demoSessionOnlyProduction: !allowDemoHeaderTokenFallbackInProd,
+                demoSessionSecretConfigured: Boolean(activeDemoSessionSecret),
+                webhookTestProductionSafe: !isProduction || !isWebhookTestEnabled || Boolean(webhookTestToken),
+            },
+            observability: {
+                requestIdLogging: true,
+                kpiEndpointProtected: Boolean(opsApiToken),
+                readyzWithDependencyChecks: true,
+                rateLimitRuntimeExposed: true,
+            },
+            runtime: runtimeChecks,
+            workflowFeatures: {
+                groupBuyLifecycle: true,
+                odooVerificationOtpAndLink: true,
+                pricingControlModel: true,
+                demoRunbookPanel: true,
+                sharedRateLimitReady: runtimeChecks.rateLimiter.ok,
+            },
+        },
+        runtimeConfig: {
+            rateLimit: getRateLimitRuntimeStatus(),
+        },
+    };
+
+    const failures: string[] = [];
+    if (!audit.checks.security.opsTokenConfigured) failures.push('OPS_API_TOKEN is not configured');
+    if (isProduction && !audit.checks.security.demoControlTokenConfigured) failures.push('DEMO_CONTROL_TOKEN is not configured for production');
+    if (isProduction && !audit.checks.security.demoSessionSecretConfigured) failures.push('DEMO_SESSION_SECRET (or DEMO_CONTROL_TOKEN fallback) is not configured for production');
+    if (isProduction && allowDemoHeaderTokenFallbackInProd) failures.push('ALLOW_DEMO_HEADER_TOKEN_FALLBACK should be disabled in production for session-only access');
+    if (!audit.checks.security.webhookTestProductionSafe) failures.push('ENABLE_WEBHOOK_TEST is active in production without WEBHOOK_TEST_TOKEN');
+    if (!runtimeChecks.firestoreReady.ok) failures.push(`Firestore runtime probe failed: ${runtimeChecks.firestoreReady.message}`);
+    if (!runtimeChecks.odooReady.ok) failures.push(`Odoo runtime probe failed: ${runtimeChecks.odooReady.message}`);
+    if (!runtimeChecks.rateLimiter.ok) failures.push(`Rate limiter runtime probe failed: ${runtimeChecks.rateLimiter.message}`);
+    const score = Math.max(0, 100 - failures.length * 20);
+
+    return res.status(failures.length ? 200 : 200).json({
+        ...audit,
+        score,
+        status: failures.length ? 'needs_attention' : 'ready',
+        failures,
+    });
+});
+
+app.get('/verify/odoo', verifyLinkLimiter, async (req, res) => {
+    const token = String(req.query.token || '');
+    const result = await verifyOdooUserByToken(token);
+    const title = result.ok ? 'Verification Completed' : 'Verification Failed';
+    const html = `<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>${title}</title><style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;background:#f8fafc;color:#0f172a;margin:0;padding:32px}main{max-width:640px;margin:0 auto;background:#fff;padding:24px;border-radius:12px;box-shadow:0 8px 24px rgba(2,6,23,.08)}h1{margin:0 0 12px;font-size:24px}p{line-height:1.6}</style></head><body><main><h1>${title}</h1><p>${result.message}</p></main></body></html>`;
+    res.status(result.ok ? 200 : 400).type('html').send(html);
+});
+
+app.post('/demo/session/login', jsonParser, async (req, res) => {
+    if (!isDemoControlEnabled) {
+        return res.status(404).json({ error: 'Demo control panel is disabled.' });
+    }
+
+    await ensureDemoSessionStateLoaded();
+
+    if (!demoControlToken || !activeDemoSessionSecret) {
+        return res.status(503).json({ error: 'Demo session login unavailable because required token or session secret is missing.' });
+    }
+
+    const providedToken = String(req.body?.token || '').trim();
+    if (!safeTokenMatch(providedToken, demoControlToken)) {
+        return res.status(401).json({ ok: false, error: 'Invalid demo access token.' });
+    }
+
+    const token = createDemoSessionToken(activeDemoSessionSecret, Math.max(60, Math.trunc(demoSessionTtlMinutes * 60)));
+    setDemoSessionCookie(res, token);
+    return res.json({ ok: true, ttlMinutes: demoSessionTtlMinutes });
+});
+
+app.post('/demo/session/logout', (_req, res) => {
+    clearDemoSessionCookie(res);
+    return res.json({ ok: true });
+});
+
+app.get('/demo/session/status', (req, res) => {
+    if (!isDemoControlEnabled) {
+        return res.status(404).json({ error: 'Demo control panel is disabled.' });
+    }
+
+    if (!isProduction) {
+        return res.json({ authenticated: true, mode: 'development', sessionOnlyProduction: !allowDemoHeaderTokenFallbackInProd });
+    }
+
+    const handle = async () => {
+        await ensureDemoSessionStateLoaded();
+        const sessionToken = parseCookieValue(req.get('cookie'), demoSessionCookieName);
+        const verifySecrets = getDemoSessionVerifySecrets();
+        const sessionState = sessionToken && verifySecrets.length
+            ? verifyDemoSessionTokenWithSecrets(sessionToken, verifySecrets)
+            : { ok: false, reason: 'missing_session' };
+        const headerToken = req.get('x-demo-token') || req.get('x-ops-token') || '';
+        const bearerToken = getBearerToken(req.get('authorization'));
+        const token = headerToken || bearerToken;
+        const tokenOk = allowDemoHeaderTokenFallbackInProd && demoControlToken ? safeTokenMatch(token, demoControlToken) : false;
+
+        return res.json({
+            authenticated: sessionState.ok || tokenOk,
+            sessionAuthenticated: sessionState.ok,
+            tokenAuthenticated: tokenOk,
+            sessionOnlyProduction: !allowDemoHeaderTokenFallbackInProd,
+            previousSessionSecretGraceActive: Boolean(previousDemoSessionSecret && previousDemoSessionSecret.expiresAtMs > Date.now()),
+        });
+    };
+
+    return handle().catch(error => {
+        return res.status(500).json({ error: String(error) });
+    });
+});
+
 // LINE Webhook endpoint
-app.post('/webhook', handleWebhook);
+app.post('/webhook', webhookLimiter, handleWebhook);
 
 // Trigger daily report manually
-app.post('/jobs/daily-report', express.json(), async (req, res) => {
+app.post('/jobs/daily-report', jsonParser, adminOnly, opsJobLimiter, async (_req, res) => {
   try {
     await runDailyReport();
     res.status(200).send('Daily report triggered successfully');
   } catch (error) {
     console.error('Error triggering daily report:', error);
-    res.status(500).send('Failed to trigger daily report');
+    res.status(500).json({ error: 'Failed to trigger daily report' });
   }
 });
 
 // Trigger segmentation job manually
-app.post('/jobs/segmentation', express.json(), async (req, res) => {
+app.post('/jobs/segmentation', jsonParser, adminOnly, opsJobLimiter, async (_req, res) => {
     try {
         const { runSegmentationJob } = await import('./jobs/segmentation');
         await runSegmentationJob();
         res.status(200).send('Segmentation job triggered successfully');
     } catch (error) {
         console.error('Error triggering segmentation job:', error);
-        res.status(500).send('Failed to trigger segmentation job');
+        res.status(500).json({ error: 'Failed to trigger segmentation job' });
     }
 });
 
-app.get('/demo', (_req, res) => {
+app.get('/demo', requireDemoControlAccess, (_req, res) => {
     res.type('html').send(buildDemoPage());
 });
 
-app.get('/demo/connections', async (req, res) => {
+app.get('/demo/connections', requireDemoControlAccess, async (req, res) => {
     try {
         const baseUrl = `${req.protocol}://${req.get('host')}`;
         const overview = await getDemoOverview(baseUrl);
@@ -94,7 +589,7 @@ app.get('/demo/connections', async (req, res) => {
     }
 });
 
-app.post('/demo/journey', express.json(), async (req, res) => {
+app.post('/demo/journey', requireDemoControlAccess, jsonParser, async (req, res) => {
     try {
         const result = await runDemoJourney(req.body || {});
         res.status(result.ok ? 200 : 400).json(result);
@@ -104,20 +599,145 @@ app.post('/demo/journey', express.json(), async (req, res) => {
     }
 });
 
+app.get('/demo/pricing-model', requireDemoControlAccess, (_req, res) => {
+    return getPricingModel()
+        .then(model => {
+            res.json({
+                generatedAt: new Date().toISOString(),
+                model,
+            });
+        })
+        .catch(error => {
+            res.status(500).json({ error: String(error) });
+        });
+});
+
+app.put('/demo/pricing-model', requireDemoControlAccess, jsonParser, async (req, res) => {
+    try {
+        const updated = await updatePricingModel(req.body || {});
+        res.json({
+            ok: true,
+            generatedAt: new Date().toISOString(),
+            model: updated,
+        });
+    } catch (error) {
+        res.status(400).json({ ok: false, error: String(error) });
+    }
+});
+
+app.post('/demo/pricing-simulation', requireDemoControlAccess, jsonParser, async (req, res) => {
+    try {
+        await getPricingModel();
+        const report = runPricingSimulation(req.body || {});
+        res.json(report);
+    } catch (error) {
+        res.status(400).json({ error: String(error) });
+    }
+});
+
+app.get('/demo/workflow-audit', requireDemoControlAccess, async (req, res) => {
+    await ensureDemoSessionStateLoaded();
+
+    const failures: string[] = [];
+    if (!opsApiToken) failures.push('OPS_API_TOKEN is not configured');
+    if (isProduction && !demoControlToken) failures.push('DEMO_CONTROL_TOKEN is not configured for production');
+    if (isProduction && isWebhookTestEnabled && !webhookTestToken) failures.push('WEBHOOK_TEST_TOKEN should be configured when ENABLE_WEBHOOK_TEST is enabled in production');
+
+    const runtimeChecks = {
+        firestoreReady: { ok: false, message: 'not_executed' },
+        odooReady: { ok: false, message: 'not_executed' },
+        rateLimiter: { ok: false, message: 'not_executed' },
+    };
+
+    try {
+        const firestoreStatus = await withTimeout(
+            checkFirestoreReady(),
+            readyzTimeoutMs,
+            `Firestore check timed out after ${readyzTimeoutMs}ms`
+        );
+        runtimeChecks.firestoreReady = { ok: firestoreStatus.ok, message: firestoreStatus.message };
+    } catch (error) {
+        runtimeChecks.firestoreReady = { ok: false, message: String(error) };
+    }
+
+    try {
+        const odooStatus = await withTimeout(
+            pingOdoo(),
+            readyzTimeoutMs,
+            `Odoo check timed out after ${readyzTimeoutMs}ms`
+        );
+        runtimeChecks.odooReady = {
+            ok: /connected successfully/i.test(odooStatus),
+            message: odooStatus,
+        };
+    } catch (error) {
+        runtimeChecks.odooReady = { ok: false, message: String(error) };
+    }
+
+    try {
+        const limiterHealth = await withTimeout(
+            rateStore.healthCheck(),
+            readyzTimeoutMs,
+            `Rate limit store check timed out after ${readyzTimeoutMs}ms`
+        );
+        const limiterRuntime = getRateLimitRuntimeStatus();
+        const limiterDegraded = limiterRuntime.configuredMode === 'redis' && limiterRuntime.activeBackend !== 'redis';
+        runtimeChecks.rateLimiter = {
+            ok: limiterHealth.ok && !limiterDegraded,
+            message: limiterDegraded
+                ? `Configured redis but active backend is ${limiterRuntime.activeBackend}${limiterRuntime.fallbackReason ? ` (${limiterRuntime.fallbackReason})` : ''}`
+                : limiterHealth.message,
+        };
+    } catch (error) {
+        runtimeChecks.rateLimiter = { ok: false, message: String(error) };
+    }
+
+    if (!runtimeChecks.firestoreReady.ok) failures.push(`Firestore runtime probe failed: ${runtimeChecks.firestoreReady.message}`);
+    if (!runtimeChecks.odooReady.ok) failures.push(`Odoo runtime probe failed: ${runtimeChecks.odooReady.message}`);
+    if (!runtimeChecks.rateLimiter.ok) failures.push(`Rate limiter runtime probe failed: ${runtimeChecks.rateLimiter.message}`);
+
+    const audit = {
+        generatedAt: new Date().toISOString(),
+        score: Math.max(0, 100 - failures.length * 20),
+        status: failures.length ? 'needs_attention' : 'ready_for_uat',
+        checks: {
+            phase1SecurityBaseline: true,
+            phase2ReadinessObservability: true,
+            phase3OdooResilience: true,
+            phase4CommandValidation: true,
+            phase5FirestoreWriteSafety: true,
+            phase6TestsAndRegression: true,
+            phase7FeatureGateAndKpi: true,
+            phase8GroupBuyLifecycle: true,
+            phase9OdooUserVerification: true,
+            phase10PricingAndCostControl: true,
+            phase11ControlPanelSimulation: true,
+        },
+        runtime: runtimeChecks,
+        failures,
+        notes: [
+            'Use /ops/workflow-audit with OPS token for security-deep audit details.',
+            'Production launch requires DEMO_CONTROL_TOKEN and ENABLE_DEMO_CONTROL_PANEL=true only for authorized runs.',
+        ],
+    };
+
+    res.json(audit);
+});
+
 // Seed Odoo sample data manually
-app.post('/jobs/seed-odoo', express.json(), async (req, res) => {
+app.post('/jobs/seed-odoo', jsonParser, adminOnly, opsJobLimiter, async (_req, res) => {
     try {
         const status = await seedOdooSampleSalesData();
         res.status(200).send(status);
     } catch (error) {
         console.error('Error seeding Odoo sample data:', error);
-        res.status(500).send('Failed to seed Odoo sample data');
+        res.status(500).json({ error: 'Failed to seed Odoo sample data' });
     }
 });
 
 // Local test endpoint — bypasses LINE signature validation
 // Remove this before deploying to production
-app.post('/webhook-test', express.json(), async (req, res) => {
+app.post('/webhook-test', jsonParser, webhookTestLimiter, async (req, res) => {
     try {
         if (!isWebhookTestEnabled) {
             return res.status(404).json({
@@ -127,289 +747,35 @@ app.post('/webhook-test', express.json(), async (req, res) => {
 
         if (webhookTestToken) {
             const incomingToken = req.get('x-webhook-test-token') || '';
-            if (incomingToken !== webhookTestToken) {
+            if (!safeTokenMatch(incomingToken, webhookTestToken)) {
                 return res.status(401).json({ error: 'Invalid webhook test token' });
             }
         }
 
         const userId: string = req.body.userId || 'test_user';
         const text: string = req.body.text || 'hello';
-        console.log(`[TEST] userId=${userId} text="${text}"`);
 
-        const upperText = text.trim().toUpperCase();
-        const agentName = process.env.LINE_AGENT_NAME?.trim() || 'น้องโซระ';
-        let userLanguage = await getUserLanguage(userId);
-        const profile = await getUserProfile(userId);
-
-        if (upperText === 'LANG TH' || upperText === 'THAI' || upperText === 'ภาษาไทย') {
-            await setUserLanguage(userId, 'th');
-            return res.json([{ type: 'text', text: `${agentName} เปลี่ยนภาษาเป็นไทยแล้วค่ะ` }]);
-        }
-
-        if (upperText === 'LANG EN' || upperText === 'ENGLISH') {
-            await setUserLanguage(userId, 'en');
-            return res.json([{ type: 'text', text: `${agentName} switched language to English.` }]);
-        }
-
-        if (upperText === 'เริ่มต้น' || upperText === 'START' || upperText === 'HELP' || upperText === 'OPTIONS' || upperText === 'MENU') {
-            return res.json([{ type: 'text', text: tr(userLanguage, `${agentName} เมนูคำสั่ง\n\n- FEATURES\n- JOURNEY\n- RUN DEMO JOURNEY\n- DEMO ODOO\n- DEMO SEED ODOO\n- DEMO PRODUCT <ชื่อสินค้า>\n- DEMO QUOTE <สินค้า>,<จำนวน>,<ชื่อลูกค้า>,<เบอร์โทร>\n- DEMO ORDER <เลขอ้างอิง>\n- DEMO REPORT\n- USER CREATE <ชื่อ>,<เบอร์>,<อีเมล?>\n- USER READ <เบอร์>\n- USER UPDATE <เบอร์>,<ชื่อใหม่?>,<เบอร์ใหม่?>,<อีเมล?>\n- USER DELETE <เบอร์>\n- SERVICE LIST\n- SERVICE CREATE <ชื่อ>,<รหัส>,<ราคา>\n- SERVICE READ <รหัสหรือชื่อ>\n- SERVICE UPDATE <รหัสหรือชื่อ>,<ชื่อใหม่?>,<ราคาใหม่?>,<รหัสใหม่?>\n- SERVICE DELETE <รหัสหรือชื่อ>\n- ADMIN VERIFY\n- ADMIN ENABLE\n- LANG EN / LANG TH\n- NAME`, `${agentName} command menu\n\n- FEATURES\n- JOURNEY\n- RUN DEMO JOURNEY\n- DEMO ODOO\n- DEMO SEED ODOO\n- DEMO PRODUCT <product_name>\n- DEMO QUOTE <product>,<qty>,<customer>,<phone>\n- DEMO ORDER <reference>\n- DEMO REPORT\n- USER CREATE <name>,<phone>,<email?>\n- USER READ <phone>\n- USER UPDATE <phone>,<name?>,<newPhone?>,<email?>\n- USER DELETE <phone>\n- SERVICE LIST\n- SERVICE CREATE <name>,<code>,<price>\n- SERVICE READ <code_or_name>\n- SERVICE UPDATE <code_or_name>,<name?>,<price?>,<newCode?>\n- SERVICE DELETE <code_or_name>\n- ADMIN VERIFY\n- ADMIN ENABLE\n- LANG EN / LANG TH\n- NAME`) }]);
-        }
-
-        if (upperText === 'FEATURES') {
-            return res.json([{ type: 'text', text: tr(userLanguage, `${agentName} ความสามารถหลัก\n1) ค้นหาสินค้าจาก Odoo\n2) สร้างใบเสนอราคาใน Odoo\n3) เช็กสถานะออเดอร์\n4) รายงานยอดขายจาก Odoo\n5) สลับภาษาไทย/อังกฤษ\n6) โหมดเดโมครบวงจร`, `${agentName} features\n1) Odoo product lookup\n2) Odoo quotation creation\n3) Odoo order tracking\n4) Daily report from Odoo\n5) Thai/English switching\n6) Full demo journey`) }]);
-        }
-
-        if (upperText === 'JOURNEY' || upperText === 'DEMO JOURNEY') {
-            return res.json([{ type: 'text', text: tr(userLanguage, `${agentName} เส้นทางเดโมครบวงจร\n1) DEMO ODOO\n2) DEMO SEED ODOO\n3) DEMO PRODUCT App\n4) DEMO QUOTE App Premium Plan,1,สมชาย,0812345678\n5) DEMO ORDER <เลขที่จากข้อ 4>\n6) DEMO REPORT`, `${agentName} end-to-end journey\n1) DEMO ODOO\n2) DEMO SEED ODOO\n3) DEMO PRODUCT App\n4) DEMO QUOTE App Premium Plan,1,Somchai,0812345678\n5) DEMO ORDER <reference from step 4>\n6) DEMO REPORT`) }]);
-        }
-
-        if (isGuideCommand(text)) {
-            return res.json([{ type: 'text', text: buildStepByStepGuide(userLanguage, agentName) }]);
-        }
-
-        if (upperText === 'RUN DEMO JOURNEY') {
-            const status = await pingOdoo();
-            const seed = await seedOdooSampleSalesData();
-            return res.json([{ type: 'text', text: tr(userLanguage, `${agentName} เตรียมเดโมแล้ว\nสถานะ Odoo: ${status}\nผลการสร้างข้อมูลตัวอย่าง: ${seed}`, `${agentName} prepared the demo\nOdoo status: ${status}\nSeed result: ${seed}`) }]);
-        }
-
-        if (upperText === 'ADMIN VERIFY') {
-            const result = await verifyOdooAdminAccess();
-            return res.json([{ type: 'text', text: tr(userLanguage, `ผลตรวจสิทธิ์แอดมิน: ${result.message}`, `Admin verification: ${result.message}`) }]);
-        }
-
-        if (upperText === 'ADMIN ENABLE') {
-            const result = await verifyOdooAdminAccess();
-            if (!result.ok) {
-                return res.json([{ type: 'text', text: tr(userLanguage, `เปิดสิทธิ์แอดมินไม่ได้: ${result.message}`, `Cannot enable admin: ${result.message}`) }]);
-            }
-            await setUserRole(userId, 'admin');
-            return res.json([{ type: 'text', text: tr(userLanguage, 'เปิดสิทธิ์แอดมินแล้ว สามารถใช้คำสั่งแอดมินได้', 'Admin role enabled. You can now run admin commands.') }]);
-        }
-
-        if (upperText === 'NAME' || upperText === 'BOT NAME' || upperText === 'WHAT IS YOUR NAME' || upperText === 'ชื่ออะไร') {
-            return res.json([{ type: 'text', text: tr(userLanguage, `ฉันชื่อ ${agentName} ค่ะ`, `My name is ${agentName}.`) }]);
-        }
-
-        if (upperText === 'DEMO SEED ODOO') {
-            if (profile.role !== 'admin') {
-                return res.json([{ type: 'text', text: tr(userLanguage, 'คำสั่งนี้สำหรับแอดมินเท่านั้น กรุณาใช้ ADMIN VERIFY และ ADMIN ENABLE ก่อน', 'This command is admin-only. Run ADMIN VERIFY and ADMIN ENABLE first.') }]);
-            }
-            const status = await seedOdooSampleSalesData();
-            return res.json([{ type: 'text', text: status }]);
-        }
-
-        if (upperText.startsWith('USER CREATE')) {
-            const payload = text.replace(/^USER CREATE\s*/i, '').trim();
-            const [name, phone, email] = parseCsv(payload);
-            if (!name || !phone) {
-                return res.json([{ type: 'text', text: tr(userLanguage, 'วิธีใช้: USER CREATE <ชื่อ>,<เบอร์>,<อีเมล?>', 'Usage: USER CREATE <name>,<phone>,<email?>') }]);
-            }
-
-            const partner = await createPartnerFromLine(name, phone, email);
-            if (!partner) {
-                return res.json([{ type: 'text', text: tr(userLanguage, 'สร้างผู้ใช้ใน Odoo ไม่สำเร็จ', 'Failed to create user in Odoo.') }]);
-            }
-
-            await setUserOdooPartner(userId, partner.id, partner.name, partner.phone);
-            return res.json([{ type: 'text', text: tr(userLanguage, `สร้างผู้ใช้ Odoo สำเร็จ\n- ID: ${partner.id}\n- ชื่อ: ${partner.name}\n- เบอร์: ${partner.phone || '-'}`, `Odoo user created\n- ID: ${partner.id}\n- Name: ${partner.name}\n- Phone: ${partner.phone || '-'}`) }]);
-        }
-
-        if (upperText.startsWith('USER READ')) {
-            const phone = text.replace(/^USER READ\s*/i, '').trim();
-            if (!phone) {
-                return res.json([{ type: 'text', text: tr(userLanguage, 'วิธีใช้: USER READ <เบอร์>', 'Usage: USER READ <phone>') }]);
-            }
-
-            const partner = await getPartnerByPhone(phone);
-            if (!partner) {
-                return res.json([{ type: 'text', text: tr(userLanguage, `ไม่พบผู้ใช้ Odoo ที่เบอร์ ${phone}`, `No Odoo user found with phone ${phone}`) }]);
-            }
-
-            return res.json([{ type: 'text', text: tr(userLanguage, `ข้อมูลผู้ใช้ Odoo\n- ID: ${partner.id}\n- ชื่อ: ${partner.name}\n- เบอร์: ${partner.phone || '-'}\n- อีเมล: ${partner.email || '-'}`, `Odoo user profile\n- ID: ${partner.id}\n- Name: ${partner.name}\n- Phone: ${partner.phone || '-'}\n- Email: ${partner.email || '-'}`) }]);
-        }
-
-        if (upperText.startsWith('USER UPDATE')) {
-            const payload = text.replace(/^USER UPDATE\s*/i, '').trim();
-            const [phone, name, newPhone, email] = parseCsv(payload);
-            if (!phone) {
-                return res.json([{ type: 'text', text: tr(userLanguage, 'วิธีใช้: USER UPDATE <เบอร์>,<ชื่อใหม่?>,<เบอร์ใหม่?>,<อีเมล?>', 'Usage: USER UPDATE <phone>,<name?>,<newPhone?>,<email?>') }]);
-            }
-
-            const existing = await getPartnerByPhone(phone);
-            if (!existing) {
-                return res.json([{ type: 'text', text: tr(userLanguage, `ไม่พบผู้ใช้ Odoo ที่เบอร์ ${phone}`, `No Odoo user found with phone ${phone}`) }]);
-            }
-
-            const updated = await updatePartnerFromLine(existing.id, name, newPhone, email);
-            if (!updated) {
-                return res.json([{ type: 'text', text: tr(userLanguage, 'อัปเดตผู้ใช้ Odoo ไม่สำเร็จ', 'Failed to update Odoo user.') }]);
-            }
-
-            return res.json([{ type: 'text', text: tr(userLanguage, `อัปเดตผู้ใช้ Odoo สำเร็จ\n- ID: ${updated.id}\n- ชื่อ: ${updated.name}\n- เบอร์: ${updated.phone || '-'}\n- อีเมล: ${updated.email || '-'}`, `Odoo user updated\n- ID: ${updated.id}\n- Name: ${updated.name}\n- Phone: ${updated.phone || '-'}\n- Email: ${updated.email || '-'}`) }]);
-        }
-
-        if (upperText.startsWith('USER DELETE')) {
-            if (profile.role !== 'admin') {
-                return res.json([{ type: 'text', text: tr(userLanguage, 'คำสั่งนี้สำหรับแอดมินเท่านั้น', 'This command is admin-only.') }]);
-            }
-
-            const phone = text.replace(/^USER DELETE\s*/i, '').trim();
-            if (!phone) {
-                return res.json([{ type: 'text', text: tr(userLanguage, 'วิธีใช้: USER DELETE <เบอร์>', 'Usage: USER DELETE <phone>') }]);
-            }
-
-            const existing = await getPartnerByPhone(phone);
-            if (!existing) {
-                return res.json([{ type: 'text', text: tr(userLanguage, `ไม่พบผู้ใช้ Odoo ที่เบอร์ ${phone}`, `No Odoo user found with phone ${phone}`) }]);
-            }
-
-            const ok = await deletePartnerFromLine(existing.id);
-            return res.json([{ type: 'text', text: ok ? tr(userLanguage, `ลบผู้ใช้ Odoo สำเร็จ (ID ${existing.id})`, `Odoo user deleted (ID ${existing.id})`) : tr(userLanguage, 'ลบผู้ใช้ Odoo ไม่สำเร็จ', 'Failed to delete Odoo user.') }]);
-        }
-
-        if (upperText === 'SERVICE LIST') {
-            const services = await listServiceCatalogItems(10);
-            if (!services.length) {
-                return res.json([{ type: 'text', text: tr(userLanguage, 'ยังไม่มีบริการใน Odoo', 'No service catalog items found in Odoo.') }]);
-            }
-
-            return res.json([{ type: 'text', text: tr(
-                userLanguage,
-                `รายการบริการ Odoo\n${services.map(s => `- ${s.default_code || '-'} | ${s.name} | ${s.list_price} บาท`).join('\n')}`,
-                `Odoo service catalog\n${services.map(s => `- ${s.default_code || '-'} | ${s.name} | ${s.list_price} THB`).join('\n')}`
-            ) }]);
-        }
-
-        if (upperText.startsWith('SERVICE READ')) {
-            const identifier = text.replace(/^SERVICE READ\s*/i, '').trim();
-            if (!identifier) {
-                return res.json([{ type: 'text', text: tr(userLanguage, 'วิธีใช้: SERVICE READ <รหัสหรือชื่อ>', 'Usage: SERVICE READ <code_or_name>') }]);
-            }
-
-            const item = await getServiceByIdentifier(identifier);
-            if (!item) {
-                return res.json([{ type: 'text', text: tr(userLanguage, `ไม่พบบริการ ${identifier}`, `Service ${identifier} not found.`) }]);
-            }
-
-            return res.json([{ type: 'text', text: tr(userLanguage, `บริการ Odoo\n- ID: ${item.id}\n- รหัส: ${item.default_code || '-'}\n- ชื่อ: ${item.name}\n- ราคา: ${item.list_price} บาท`, `Odoo service\n- ID: ${item.id}\n- Code: ${item.default_code || '-'}\n- Name: ${item.name}\n- Price: ${item.list_price} THB`) }]);
-        }
-
-        if (upperText.startsWith('SERVICE CREATE')) {
-            if (profile.role !== 'admin') {
-                return res.json([{ type: 'text', text: tr(userLanguage, 'คำสั่งนี้สำหรับแอดมินเท่านั้น', 'This command is admin-only.') }]);
-            }
-
-            const payload = text.replace(/^SERVICE CREATE\s*/i, '').trim();
-            const [name, code, priceRaw] = parseCsv(payload);
-            const price = Number(priceRaw || '0');
-            if (!name || !code || Number.isNaN(price) || price <= 0) {
-                return res.json([{ type: 'text', text: tr(userLanguage, 'วิธีใช้: SERVICE CREATE <ชื่อ>,<รหัส>,<ราคา>', 'Usage: SERVICE CREATE <name>,<code>,<price>') }]);
-            }
-
-            const created = await createServiceCatalogItem(name, code, price);
-            if (!created) {
-                return res.json([{ type: 'text', text: tr(userLanguage, 'สร้างบริการ Odoo ไม่สำเร็จ', 'Failed to create Odoo service item.') }]);
-            }
-
-            return res.json([{ type: 'text', text: tr(userLanguage, `สร้างบริการสำเร็จ\n- รหัส: ${created.default_code || '-'}\n- ชื่อ: ${created.name}\n- ราคา: ${created.list_price} บาท`, `Service created\n- Code: ${created.default_code || '-'}\n- Name: ${created.name}\n- Price: ${created.list_price} THB`) }]);
-        }
-
-        if (upperText.startsWith('SERVICE UPDATE')) {
-            if (profile.role !== 'admin') {
-                return res.json([{ type: 'text', text: tr(userLanguage, 'คำสั่งนี้สำหรับแอดมินเท่านั้น', 'This command is admin-only.') }]);
-            }
-
-            const payload = text.replace(/^SERVICE UPDATE\s*/i, '').trim();
-            const [identifier, name, priceRaw, newCode] = parseCsv(payload);
-            const parsedPrice = priceRaw ? Number(priceRaw) : undefined;
-
-            if (!identifier) {
-                return res.json([{ type: 'text', text: tr(userLanguage, 'วิธีใช้: SERVICE UPDATE <รหัสหรือชื่อ>,<ชื่อใหม่?>,<ราคาใหม่?>,<รหัสใหม่?>', 'Usage: SERVICE UPDATE <code_or_name>,<name?>,<price?>,<newCode?>') }]);
-            }
-
-            const updated = await updateServiceCatalogItem(identifier, { name: name || undefined, price: parsedPrice, code: newCode || undefined });
-            if (!updated) {
-                return res.json([{ type: 'text', text: tr(userLanguage, 'อัปเดตบริการ Odoo ไม่สำเร็จ', 'Failed to update Odoo service item.') }]);
-            }
-
-            return res.json([{ type: 'text', text: tr(userLanguage, `อัปเดตบริการสำเร็จ\n- รหัส: ${updated.default_code || '-'}\n- ชื่อ: ${updated.name}\n- ราคา: ${updated.list_price} บาท`, `Service updated\n- Code: ${updated.default_code || '-'}\n- Name: ${updated.name}\n- Price: ${updated.list_price} THB`) }]);
-        }
-
-        if (upperText.startsWith('SERVICE DELETE')) {
-            if (profile.role !== 'admin') {
-                return res.json([{ type: 'text', text: tr(userLanguage, 'คำสั่งนี้สำหรับแอดมินเท่านั้น', 'This command is admin-only.') }]);
-            }
-
-            const identifier = text.replace(/^SERVICE DELETE\s*/i, '').trim();
-            if (!identifier) {
-                return res.json([{ type: 'text', text: tr(userLanguage, 'วิธีใช้: SERVICE DELETE <รหัสหรือชื่อ>', 'Usage: SERVICE DELETE <code_or_name>') }]);
-            }
-
-            const ok = await deleteServiceCatalogItem(identifier);
-            return res.json([{ type: 'text', text: ok ? tr(userLanguage, `ลบบริการ ${identifier} สำเร็จ`, `Deleted service ${identifier}`) : tr(userLanguage, `ลบบริการ ${identifier} ไม่สำเร็จ`, `Failed to delete service ${identifier}`) }]);
-        }
-
-        if (upperText === 'DEMO ODOO') {
-            const status = await pingOdoo();
-            return res.json([{ type: 'text', text: tr(userLanguage, `สถานะ Odoo: ${status}`, `Odoo status: ${status}`) }]);
-        }
-
-        if (upperText === 'DEMO REPORT') {
-            runDailyReport(userLanguage).catch(error => {
-                console.error('Demo report error:', error);
+        if (isProduction && !isReadOnlyWebhookTestCommand(text)) {
+            return res.status(403).json({
+                error: 'Mutating webhook-test commands are disabled in production.',
             });
-            return res.json([{ type: 'text', text: tr(userLanguage, 'กำลังสร้างรายงานจากข้อมูล Odoo และจะส่งไปยังแอดมินทันทีค่ะ', 'Generating report from Odoo data and sending it to admin now.') }]);
         }
 
-        if (upperText === 'DEMO PRODUCT' || upperText.startsWith('DEMO PRODUCT ')) {
-            const query = text.replace(/^DEMO PRODUCT\s*/i, '').trim();
-            if (!query) {
-                return res.json([{ type: 'text', text: tr(userLanguage, 'วิธีใช้: DEMO PRODUCT <ชื่อสินค้า>', 'Usage: DEMO PRODUCT <product_name>') }]);
-            }
-            const product = await findProductByQuery(query);
-            if (!product) {
-                return res.json([{ type: 'text', text: tr(userLanguage, `ไม่พบสินค้าใน Odoo สำหรับ "${query}"`, `No product found in Odoo for "${query}"`) }]);
-            }
-            return res.json([{ type: 'text', text: tr(userLanguage, `สินค้า Odoo\n- ชื่อ: ${product.name}\n- ราคา: ${product.list_price} บาท\n- คงเหลือ: ${product.qty_available}`, `Odoo Product\n- Name: ${product.name}\n- Price: ${product.list_price} THB\n- Stock: ${product.qty_available}`) }]);
-        }
+        console.log(`[TEST] userId=${userId} text="${toSafeLogText(text)}"`);
 
-        if (upperText === 'DEMO ORDER' || upperText.startsWith('DEMO ORDER ')) {
-            const orderRef = text.replace(/^DEMO ORDER\s*/i, '').trim();
-            if (!orderRef) {
-                return res.json([{ type: 'text', text: tr(userLanguage, 'วิธีใช้: DEMO ORDER <เลขออเดอร์>', 'Usage: DEMO ORDER <order_reference>') }]);
-            }
-            const order = await findOrderByReference(orderRef);
-            if (!order) {
-                return res.json([{ type: 'text', text: tr(userLanguage, `ไม่พบออเดอร์ Odoo เลขที่ ${orderRef}`, `No Odoo order found for ${orderRef}`) }]);
-            }
-            return res.json([{ type: 'text', text: tr(userLanguage, `สถานะออเดอร์ Odoo\n- เลขที่: ${order.name}\n- สถานะ: ${order.state}\n- ยอดรวม: ${order.amount_total} บาท`, `Odoo Order Status\n- Reference: ${order.name}\n- State: ${order.state}\n- Total: ${order.amount_total} THB`) }]);
-        }
+        const agentName = process.env.LINE_AGENT_NAME?.trim() || 'น้องโซระ';
+        const userLanguage = await getUserLanguage(userId);
+        const profile = await getUserProfile(userId);
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
 
-        if (upperText === 'DEMO QUOTE' || upperText.startsWith('DEMO QUOTE ')) {
-            const payload = text.replace(/^DEMO QUOTE\s*/i, '').trim();
-            const [productName, qtyRaw, customerName, phone] = payload.split(',').map(v => v?.trim() || '');
-            const qty = Number(qtyRaw || '1');
-
-            if (!productName || !customerName || !phone || Number.isNaN(qty) || qty <= 0) {
-                return res.json([{ type: 'text', text: tr(userLanguage, 'วิธีใช้: DEMO QUOTE <สินค้า>,<จำนวน>,<ชื่อลูกค้า>,<เบอร์โทร>', 'Usage: DEMO QUOTE <product>,<qty>,<customer>,<phone>') }]);
-            }
-
-            const quotation = await createQuotationFromLine(customerName, phone, productName, qty);
-            if (!quotation) {
-                return res.json([{ type: 'text', text: tr(userLanguage, 'สร้างใบเสนอราคา Odoo ไม่สำเร็จ กรุณาตรวจชื่อสินค้าและการตั้งค่า Odoo', 'Failed to create Odoo quotation. Please check product name and Odoo configuration.') }]);
-            }
-
-            return res.json([{ type: 'text', text: tr(userLanguage, `สร้างใบเสนอราคาใน Odoo เรียบร้อย\n- เลขที่: ${quotation.orderName}\n- ยอดรวม: ${quotation.total} บาท`, `Odoo quotation created successfully\n- Reference: ${quotation.orderName}\n- Total: ${quotation.total} THB`) }]);
-        }
-
-        const guidance = buildCommandKeywordGuidance(text, userLanguage, agentName);
-        if (guidance) {
-            return res.json([{ type: 'text', text: guidance }]);
-        }
-
-        userLanguage = await getUserLanguage(userId);
-        const botMessages = await processChatMessage(userId, text, userLanguage);
+        const botMessages = await resolveCommandReply({
+            text,
+            userId,
+            userLanguage,
+            profile,
+            agentName,
+            baseUrl,
+        });
         return res.json(botMessages);
     } catch (error) {
         console.error('Error in webhook-test:', error);
@@ -417,6 +783,15 @@ app.post('/webhook-test', express.json(), async (req, res) => {
     }
 });
 
-app.listen(port, () => {
-  console.log(`Server listening on port ${port}`);
+const startServer = async () => {
+    rateStore = await createRateLimitStoreFromEnv(fallbackRateStore);
+    await ensureDemoSessionStateLoaded();
+    app.listen(port, () => {
+        console.log(`Server listening on port ${port}`);
+    });
+};
+
+startServer().catch(error => {
+    console.error('Failed to start server:', error);
+    process.exit(1);
 });

@@ -1,26 +1,69 @@
 #!/bin/bash
-# Exit on error
-set -e
+set -euo pipefail
 
-# Load environment variables from .env file if present
-if [ -f .env ]; then
-  export $(cat .env | grep -v '#' | awk '/=/ {print $1}')
+DEPLOY_ENV=${1:-${DEPLOY_ENV:-production}}
+PROJECT_ID=${GOOGLE_CLOUD_PROJECT:-}
+REGION=${GOOGLE_CLOUD_LOCATION:-"us-central1-a"}
+SERVICE_NAME=${CLOUD_RUN_SERVICE_NAME:-"line-oa-commerce-agent"}
+ENV_VARS_FILE=${CLOUD_RUN_ENV_VARS_FILE:-"deploy.env.${DEPLOY_ENV}.yaml"}
+SECRETS_MAPPING=${CLOUD_RUN_SECRETS:-}
+
+if ! command -v gcloud >/dev/null 2>&1; then
+  echo "Error: gcloud CLI is required but not installed." >&2
+  exit 1
 fi
 
-PROJECT_ID=${GOOGLE_CLOUD_PROJECT:-"YOUR_PROJECT_ID"}
-REGION=${GOOGLE_CLOUD_LOCATION:-"asia-southeast1"}
-SERVICE_NAME="line-oa-commerce-agent"
+if [ -z "$PROJECT_ID" ]; then
+  echo "Error: GOOGLE_CLOUD_PROJECT must be set." >&2
+  exit 1
+fi
+
+if [ "$DEPLOY_ENV" != "production" ] && [ "$DEPLOY_ENV" != "staging" ]; then
+  echo "Error: DEPLOY_ENV must be 'production' or 'staging' (got '$DEPLOY_ENV')." >&2
+  exit 1
+fi
+
+if [ -x "./scripts/validate-deploy-env.sh" ]; then
+  ./scripts/validate-deploy-env.sh "$DEPLOY_ENV" "$ENV_VARS_FILE"
+fi
+
+if [ -x "./scripts/validate-cutover.sh" ]; then
+  ./scripts/validate-cutover.sh "$DEPLOY_ENV" "$ENV_VARS_FILE"
+fi
 
 echo "Deploying to Cloud Run..."
 echo "Project: $PROJECT_ID"
 echo "Region: $REGION"
 echo "Service: $SERVICE_NAME"
+echo "Environment: $DEPLOY_ENV"
 
-gcloud run deploy $SERVICE_NAME \
-  --source . \
-  --project $PROJECT_ID \
-  --region $REGION \
-  --allow-unauthenticated \
-  --set-env-vars="LINE_CHANNEL_ACCESS_TOKEN=$LINE_CHANNEL_ACCESS_TOKEN,LINE_CHANNEL_SECRET=$LINE_CHANNEL_SECRET,ADMIN_USER_ID=$ADMIN_USER_ID,GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=$REGION,GOOGLE_AI_STUDIO_API_KEY=$GOOGLE_AI_STUDIO_API_KEY,ODOO_URL=$ODOO_URL,ODOO_DB=$ODOO_DB,ODOO_USERNAME=$ODOO_USERNAME,ODOO_API_KEY=$ODOO_API_KEY"
+DEPLOY_ARGS=(
+  --source .
+  --project "$PROJECT_ID"
+  --region "$REGION"
+)
 
-echo "Deployment complete! Don't forget to update your Webhook URL in the LINE Developer Console with the new Cloud Run URL."
+# Default to authenticated service in production-grade deployments.
+ALLOW_PUBLIC=${ALLOW_UNAUTHENTICATED:-false}
+if [ "$DEPLOY_ENV" = "production" ]; then
+  ALLOW_PUBLIC=false
+fi
+
+if [ "$ALLOW_PUBLIC" = "true" ]; then
+  DEPLOY_ARGS+=(--allow-unauthenticated)
+  echo "Warning: deploying with public unauthenticated access enabled."
+else
+  DEPLOY_ARGS+=(--no-allow-unauthenticated)
+fi
+
+if [ -f "$ENV_VARS_FILE" ]; then
+  DEPLOY_ARGS+=(--env-vars-file "$ENV_VARS_FILE")
+fi
+
+if [ -n "$SECRETS_MAPPING" ]; then
+  DEPLOY_ARGS+=(--update-secrets "$SECRETS_MAPPING")
+fi
+
+gcloud run deploy "$SERVICE_NAME" "${DEPLOY_ARGS[@]}"
+
+echo "Deployment complete."

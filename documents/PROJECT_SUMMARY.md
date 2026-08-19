@@ -96,7 +96,7 @@ Required `.env` variables (provided):
 ```env
 PORT=8080
 GOOGLE_CLOUD_PROJECT=antigravity-internal-app
-GOOGLE_CLOUD_LOCATION=asia-southeast1
+GOOGLE_CLOUD_LOCATION=us-central1-a
 
 # LINE Credentials
 LINE_CHANNEL_ID=2010526758

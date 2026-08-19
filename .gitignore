@@ -3,6 +3,9 @@ dist
 .env
 .env.*
 !.env.example
+deploy.env.yaml
+deploy.env.production.yaml
+deploy.env.staging.yaml
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

@@ -1,0 +1,158 @@
+name: release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      deploy_production:
+        description: Deploy production after staging succeeds
+        required: false
+        default: 'false'
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  staging:
+    name: Staging Deploy
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Materialize staging env file
+        run: |
+          cat > deploy.env.staging.yaml <<'EOF'
+          ${{ secrets.DEPLOY_ENV_STAGING_YAML }}
+          EOF
+
+      - name: Run staging preflight
+        env:
+          GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
+          GOOGLE_CLOUD_LOCATION: ${{ secrets.GOOGLE_CLOUD_LOCATION }}
+          CLOUD_RUN_SECRETS: ${{ secrets.CLOUD_RUN_SECRETS }}
+        run: npm run preflight:staging
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Setup gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy staging
+        env:
+          GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
+          GOOGLE_CLOUD_LOCATION: ${{ secrets.GOOGLE_CLOUD_LOCATION }}
+          CLOUD_RUN_SERVICE_NAME: ${{ secrets.CLOUD_RUN_SERVICE_NAME }}
+          CLOUD_RUN_SECRETS: ${{ secrets.CLOUD_RUN_SECRETS }}
+        run: npm run deploy:staging
+
+      - name: Smoke-check staging
+        env:
+          OPS_API_TOKEN: ${{ secrets.OPS_API_TOKEN }}
+        run: npm run smoke -- ${{ secrets.STAGING_BASE_URL }}
+
+      - name: Generate staging deploy evidence
+        if: always()
+        env:
+          OPS_API_TOKEN: ${{ secrets.OPS_API_TOKEN }}
+          EVIDENCE_STRICT: 'false'
+        run: npm run evidence -- "${{ secrets.STAGING_BASE_URL }}" ./artifacts/staging-deploy-evidence.json staging
+
+      - name: Upload staging deploy evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-deploy-evidence
+          path: ./artifacts/staging-deploy-evidence.json
+          if-no-files-found: warn
+
+  production:
+    name: Production Deploy
+    runs-on: ubuntu-latest
+    needs: staging
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_production == 'true'
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Materialize production env file
+        run: |
+          cat > deploy.env.production.yaml <<'EOF'
+          ${{ secrets.DEPLOY_ENV_PRODUCTION_YAML }}
+          EOF
+
+      - name: Run production preflight
+        env:
+          GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
+          GOOGLE_CLOUD_LOCATION: ${{ secrets.GOOGLE_CLOUD_LOCATION }}
+          CLOUD_RUN_SECRETS: ${{ secrets.CLOUD_RUN_SECRETS }}
+          PRODUCTION_APPROVED: 'true'
+        run: npm run preflight:prod
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Setup gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy production
+        env:
+          GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
+          GOOGLE_CLOUD_LOCATION: ${{ secrets.GOOGLE_CLOUD_LOCATION }}
+          CLOUD_RUN_SERVICE_NAME: ${{ secrets.CLOUD_RUN_SERVICE_NAME }}
+          CLOUD_RUN_SECRETS: ${{ secrets.CLOUD_RUN_SECRETS }}
+          PRODUCTION_APPROVED: 'true'
+        run: npm run deploy:prod
+
+      - name: Smoke-check production
+        env:
+          OPS_API_TOKEN: ${{ secrets.OPS_API_TOKEN }}
+        run: npm run smoke -- ${{ secrets.PRODUCTION_BASE_URL }}
+
+      - name: Generate production deploy evidence
+        if: always()
+        env:
+          OPS_API_TOKEN: ${{ secrets.OPS_API_TOKEN }}
+          EVIDENCE_STRICT: 'false'
+        run: npm run evidence -- "${{ secrets.PRODUCTION_BASE_URL }}" ./artifacts/production-deploy-evidence.json production
+
+      - name: Upload production deploy evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-deploy-evidence
+          path: ./artifacts/production-deploy-evidence.json
+          if-no-files-found: warn

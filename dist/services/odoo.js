@@ -1,6 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.seedOdooSampleSalesData = exports.getDailySalesSnapshot = exports.deleteServiceCatalogItem = exports.updateServiceCatalogItem = exports.createServiceCatalogItem = exports.getServiceByIdentifier = exports.listServiceCatalogItems = exports.deletePartnerFromLine = exports.updatePartnerFromLine = exports.createPartnerFromLine = exports.getPartnerByPhone = exports.createQuotationFromLine = exports.findOrderByReference = exports.findProductByQuery = exports.verifyOdooAdminAccess = exports.pingOdoo = exports.isOdooConfigured = void 0;
+const ODOO_RPC_TIMEOUT_MS = Number(process.env.ODOO_RPC_TIMEOUT_MS || 7000);
+const ODOO_READ_RETRY_ATTEMPTS = Number(process.env.ODOO_READ_RETRY_ATTEMPTS || 3);
+const ODOO_READ_RETRY_BASE_DELAY_MS = Number(process.env.ODOO_READ_RETRY_BASE_DELAY_MS || 250);
 const getConfig = () => {
     const url = process.env.ODOO_URL?.trim() || '';
     const db = process.env.ODOO_DB?.trim() || '';
@@ -9,6 +12,38 @@ const getConfig = () => {
     if (!url || !db || !username || !apiKey)
         return null;
     return { url, db, username, apiKey };
+};
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+const isTransientOdooError = (error) => {
+    const message = String(error || '');
+    if (/timed out/i.test(message))
+        return true;
+    if (/fetch failed|network|ECONNRESET|ENOTFOUND|EAI_AGAIN|ETIMEDOUT/i.test(message))
+        return true;
+    const httpMatch = message.match(/Odoo HTTP\s+(\d{3})/i);
+    if (!httpMatch)
+        return false;
+    const status = Number(httpMatch[1]);
+    return status === 429 || status >= 500;
+};
+const withReadRetry = async (label, operation) => {
+    const maxAttempts = Math.max(1, ODOO_READ_RETRY_ATTEMPTS);
+    let lastError;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        try {
+            return await operation();
+        }
+        catch (error) {
+            lastError = error;
+            const shouldRetry = attempt < maxAttempts && isTransientOdooError(error);
+            if (!shouldRetry)
+                break;
+            const backoffMs = ODOO_READ_RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+            console.warn(`Odoo read retry ${attempt}/${maxAttempts} for ${label} after error: ${String(error)}`);
+            await delay(backoffMs);
+        }
+    }
+    throw lastError;
 };
 const jsonRpc = async (config, service, method, args) => {
     const endpoint = `${config.url.replace(/\/$/, '')}/jsonrpc`;
@@ -22,11 +57,26 @@ const jsonRpc = async (config, service, method, args) => {
         },
         id: Date.now(),
     };
-    const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-    });
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(), ODOO_RPC_TIMEOUT_MS);
+    let response;
+    try {
+        response = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+            signal: controller.signal,
+        });
+    }
+    catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') {
+            throw new Error(`Odoo RPC timed out after ${ODOO_RPC_TIMEOUT_MS}ms`);
+        }
+        throw error;
+    }
+    finally {
+        clearTimeout(timeoutHandle);
+    }
     if (!response.ok) {
         throw new Error(`Odoo HTTP ${response.status}`);
     }
@@ -56,6 +106,12 @@ const executeKw = async (config, uid, model, method, positionalArgs, keywordArgs
         positionalArgs,
         keywordArgs,
     ]);
+};
+const loginRead = async (config) => {
+    return withReadRetry('login', async () => login(config));
+};
+const executeKwRead = async (config, uid, model, method, positionalArgs, keywordArgs = {}) => {
+    return withReadRetry(`${model}.${method}`, async () => executeKw(config, uid, model, method, positionalArgs, keywordArgs));
 };
 const num = (value) => {
     if (typeof value === 'number')
@@ -103,6 +159,15 @@ const parseService = (row) => ({
     list_price: num(row.list_price),
     qty_available: num(row.qty_available),
 });
+const normalizeLookupText = (value, maxLength = 80) => {
+    // Strip control chars and cap size to avoid oversized Odoo query payloads.
+    const sanitized = value.replace(/[\u0000-\u001F\u007F]/g, ' ').trim();
+    return sanitized.slice(0, maxLength);
+};
+const normalizeOrderReference = (value) => {
+    const compact = normalizeLookupText(value, 40).toUpperCase();
+    return compact.replace(/\s+/g, '');
+};
 const toOdooDateTime = (date) => {
     const pad = (value) => String(value).padStart(2, '0');
     const y = date.getUTCFullYear();
@@ -119,7 +184,7 @@ const pingOdoo = async () => {
     const config = getConfig();
     if (!config)
         return 'Odoo is not configured (missing ODOO_URL/ODOO_DB/ODOO_USERNAME/ODOO_API_KEY).';
-    const uid = await login(config);
+    const uid = await loginRead(config);
     if (!uid)
         return 'Odoo login failed. Check ODOO_USERNAME and ODOO_API_KEY.';
     return `Odoo connected successfully (uid=${uid}).`;
@@ -130,11 +195,11 @@ const verifyOdooAdminAccess = async () => {
     if (!config) {
         return { ok: false, message: 'Odoo is not configured.' };
     }
-    const uid = await login(config);
+    const uid = await loginRead(config);
     if (!uid) {
         return { ok: false, message: 'Odoo login failed.' };
     }
-    const canWritePartners = await executeKw(config, uid, 'res.partner', 'check_access_rights', ['write'], { raise_exception: false });
+    const canWritePartners = await executeKwRead(config, uid, 'res.partner', 'check_access_rights', ['write'], { raise_exception: false });
     if (!canWritePartners) {
         return { ok: false, message: 'Odoo user lacks admin-level write rights on res.partner.' };
     }
@@ -142,13 +207,16 @@ const verifyOdooAdminAccess = async () => {
 };
 exports.verifyOdooAdminAccess = verifyOdooAdminAccess;
 const findProductByQuery = async (query) => {
+    const normalizedQuery = normalizeLookupText(query);
+    if (!normalizedQuery)
+        return null;
     const config = getConfig();
     if (!config)
         return null;
-    const uid = await login(config);
+    const uid = await loginRead(config);
     if (!uid)
         return null;
-    const rows = await executeKw(config, uid, 'product.product', 'search_read', [[['name', 'ilike', query]]], {
+    const rows = await executeKwRead(config, uid, 'product.product', 'search_read', [[['name', 'ilike', normalizedQuery]]], {
         fields: ['id', 'name', 'list_price', 'qty_available', 'default_code'],
         limit: 1,
     });
@@ -158,13 +226,16 @@ const findProductByQuery = async (query) => {
 };
 exports.findProductByQuery = findProductByQuery;
 const findOrderByReference = async (reference) => {
+    const normalizedReference = normalizeOrderReference(reference);
+    if (!normalizedReference)
+        return null;
     const config = getConfig();
     if (!config)
         return null;
-    const uid = await login(config);
+    const uid = await loginRead(config);
     if (!uid)
         return null;
-    const rows = await executeKw(config, uid, 'sale.order', 'search_read', [[['name', '=', reference.toUpperCase()]]], {
+    const rows = await executeKwRead(config, uid, 'sale.order', 'search_read', [[['name', '=', normalizedReference]]], {
         fields: ['id', 'name', 'state', 'amount_total', 'partner_id'],
         limit: 1,
     });
@@ -174,13 +245,18 @@ const findOrderByReference = async (reference) => {
 };
 exports.findOrderByReference = findOrderByReference;
 const findOrCreatePartner = async (config, uid, name, phone) => {
-    const found = await executeKw(config, uid, 'res.partner', 'search_read', [[['phone', '=', phone]]], { fields: ['id'], limit: 1 });
-    if (found.length > 0) {
-        return num(found[0].id);
+    const normalizedPhone = phone.trim();
+    // Only search by phone when we actually have one — matching on an empty
+    // string can return an unrelated partner that also has no phone on file.
+    if (normalizedPhone) {
+        const found = await executeKwRead(config, uid, 'res.partner', 'search_read', [[['phone', '=', normalizedPhone]]], { fields: ['id'], limit: 1 });
+        if (found.length > 0) {
+            return num(found[0].id);
+        }
     }
-    return executeKw(config, uid, 'res.partner', 'create', [{ name, phone }]);
+    return executeKw(config, uid, 'res.partner', 'create', [{ name, ...(normalizedPhone ? { phone: normalizedPhone } : {}) }]);
 };
-const createQuotationFromLine = async (customerName, customerPhone, productQuery, qty) => {
+const createQuotationFromLine = async (customerName, customerPhone, productQuery, qty, explicitPartnerId) => {
     const config = getConfig();
     if (!config)
         return null;
@@ -190,7 +266,7 @@ const createQuotationFromLine = async (customerName, customerPhone, productQuery
     const product = await (0, exports.findProductByQuery)(productQuery);
     if (!product)
         return null;
-    const partnerId = await findOrCreatePartner(config, uid, customerName, customerPhone);
+    const partnerId = explicitPartnerId || await findOrCreatePartner(config, uid, customerName, customerPhone);
     const orderId = await executeKw(config, uid, 'sale.order', 'create', [{
             partner_id: partnerId,
             order_line: [[0, 0, { product_id: product.id, product_uom_qty: qty }]],
@@ -201,6 +277,7 @@ const createQuotationFromLine = async (customerName, customerPhone, productQuery
     return {
         orderName: str(rows[0].name),
         total: num(rows[0].amount_total),
+        orderId,
     };
 };
 exports.createQuotationFromLine = createQuotationFromLine;
@@ -208,10 +285,10 @@ const getPartnerByPhone = async (phone) => {
     const config = getConfig();
     if (!config)
         return null;
-    const uid = await login(config);
+    const uid = await loginRead(config);
     if (!uid)
         return null;
-    const rows = await executeKw(config, uid, 'res.partner', 'search_read', [[['phone', '=', phone]]], { fields: ['id', 'name', 'phone', 'email'], limit: 1 });
+    const rows = await executeKwRead(config, uid, 'res.partner', 'search_read', [[['phone', '=', phone]]], { fields: ['id', 'name', 'phone', 'email'], limit: 1 });
     if (!rows.length)
         return null;
     return parsePartner(rows[0]);
@@ -265,13 +342,13 @@ const deletePartnerFromLine = async (partnerId) => {
 };
 exports.deletePartnerFromLine = deletePartnerFromLine;
 const findServiceByIdentifierInternal = async (config, uid, identifier) => {
-    const byCode = await executeKw(config, uid, 'product.product', 'search_read', [[['default_code', '=', identifier.toUpperCase()]]], {
+    const byCode = await executeKwRead(config, uid, 'product.product', 'search_read', [[['default_code', '=', identifier.toUpperCase()]]], {
         fields: ['id', 'name', 'default_code', 'list_price', 'qty_available'],
         limit: 1,
     });
     if (byCode.length)
         return parseService(byCode[0]);
-    const byName = await executeKw(config, uid, 'product.product', 'search_read', [[['name', 'ilike', identifier]]], {
+    const byName = await executeKwRead(config, uid, 'product.product', 'search_read', [[['name', 'ilike', identifier]]], {
         fields: ['id', 'name', 'default_code', 'list_price', 'qty_available'],
         limit: 1,
     });
@@ -283,10 +360,10 @@ const listServiceCatalogItems = async (limit = 10) => {
     const config = getConfig();
     if (!config)
         return [];
-    const uid = await login(config);
+    const uid = await loginRead(config);
     if (!uid)
         return [];
-    const rows = await executeKw(config, uid, 'product.product', 'search_read', [[['type', '=', 'service']]], {
+    const rows = await executeKwRead(config, uid, 'product.product', 'search_read', [[['type', '=', 'service']]], {
         fields: ['id', 'name', 'default_code', 'list_price', 'qty_available'],
         limit,
         order: 'write_date desc',
@@ -298,7 +375,7 @@ const getServiceByIdentifier = async (identifier) => {
     const config = getConfig();
     if (!config)
         return null;
-    const uid = await login(config);
+    const uid = await loginRead(config);
     if (!uid)
         return null;
     return findServiceByIdentifierInternal(config, uid, identifier);
@@ -371,7 +448,7 @@ exports.deleteServiceCatalogItem = deleteServiceCatalogItem;
 const fetchSalesSnapshotByWindow = async (config, uid, start, end) => {
     const startStr = toOdooDateTime(start);
     const endStr = toOdooDateTime(end);
-    const orders = await executeKw(config, uid, 'sale.order', 'search_read', [[
+    const orders = await executeKwRead(config, uid, 'sale.order', 'search_read', [[
             ['state', 'in', ['draft', 'sent', 'sale', 'done']],
             ['date_order', '>=', startStr],
             ['date_order', '<', endStr],
@@ -383,7 +460,7 @@ const fetchSalesSnapshotByWindow = async (config, uid, start, end) => {
     const orderIds = orders.map(row => num(row.id)).filter(Boolean);
     if (!orderIds.length)
         return [];
-    const lines = await executeKw(config, uid, 'sale.order.line', 'search_read', [[['order_id', 'in', orderIds]]], {
+    const lines = await executeKwRead(config, uid, 'sale.order.line', 'search_read', [[['order_id', 'in', orderIds]]], {
         fields: ['product_id', 'product_uom_qty', 'price_total'],
         limit: 5000,
     });
@@ -406,7 +483,7 @@ const fetchSalesSnapshotByWindow = async (config, uid, start, end) => {
     }
     const productIds = Array.from(aggregate.keys());
     const products = productIds.length
-        ? await executeKw(config, uid, 'product.product', 'search_read', [[['id', 'in', productIds]]], { fields: ['id', 'qty_available'], limit: productIds.length })
+        ? await executeKwRead(config, uid, 'product.product', 'search_read', [[['id', 'in', productIds]]], { fields: ['id', 'qty_available'], limit: productIds.length })
         : [];
     const stockByProductId = new Map();
     for (const product of products) {
@@ -426,7 +503,7 @@ const getDailySalesSnapshot = async () => {
     const config = getConfig();
     if (!config)
         return [];
-    const uid = await login(config);
+    const uid = await loginRead(config);
     if (!uid)
         return [];
     const now = new Date();
@@ -442,7 +519,7 @@ const getDailySalesSnapshot = async () => {
     if (rollingSnapshot.length)
         return rollingSnapshot;
     // Final fallback: real Odoo product inventory snapshot (no mock data).
-    const products = await executeKw(config, uid, 'product.product', 'search_read', [[]], {
+    const products = await executeKwRead(config, uid, 'product.product', 'search_read', [[]], {
         fields: ['name', 'qty_available', 'list_price'],
         limit: 20,
         order: 'write_date desc',
@@ -456,7 +533,7 @@ const getDailySalesSnapshot = async () => {
 };
 exports.getDailySalesSnapshot = getDailySalesSnapshot;
 const findOrCreateProduct = async (config, uid, name, defaultCode, listPrice) => {
-    const found = await executeKw(config, uid, 'product.product', 'search_read', [[['default_code', '=', defaultCode]]], { fields: ['id'], limit: 1 });
+    const found = await executeKwRead(config, uid, 'product.product', 'search_read', [[['default_code', '=', defaultCode]]], { fields: ['id'], limit: 1 });
     if (found.length > 0)
         return num(found[0].id);
     return executeKw(config, uid, 'product.product', 'create', [{
@@ -498,7 +575,7 @@ const seedOdooSampleSalesData = async () => {
     ];
     let createdCount = 0;
     for (const values of orderValues) {
-        const existing = await executeKw(config, uid, 'sale.order', 'search_read', [[['client_order_ref', '=', String(values.client_order_ref)]]], { fields: ['id'], limit: 1 });
+        const existing = await executeKwRead(config, uid, 'sale.order', 'search_read', [[['client_order_ref', '=', String(values.client_order_ref)]]], { fields: ['id'], limit: 1 });
         if (existing.length > 0)
             continue;
         await executeKw(config, uid, 'sale.order', 'create', [values]);

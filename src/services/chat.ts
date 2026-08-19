@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
-import { getConversationHistory, saveConversationMessage, setEscalationState } from './firestore';
+import { getConversationHistory, getUserProfile, saveConversationMessage, setEscalationState } from './firestore';
 import { createProductCardFlexMessage, createOrderSummaryFlexMessage } from '../line/templates';
 import { messagingApi } from '@line/bot-sdk';
 import { createQuotationFromLine, findProductByQuery } from './odoo';
@@ -10,7 +10,7 @@ let chatModelUnavailable = false;
 const isAiOff = (): boolean => /^(1|true|yes|on)$/i.test(process.env.AI_OFF || '');
 
 const getLocationCandidates = (): string[] => {
-    const primary = process.env.GOOGLE_CLOUD_LOCATION || 'asia-southeast1';
+    const primary = process.env.GOOGLE_CLOUD_LOCATION || 'us-central1-a';
     return Array.from(new Set([primary, 'us-central1']));
 };
 
@@ -198,11 +198,14 @@ export const processChatMessage = async (userId: string, userText: string, langu
                         : null;
                     const qty = (args?.quantity as number) || 1;
                     if (product && product.stock >= qty) {
+                        const profile = await getUserProfile(userId);
+                        const partnerName = profile.displayName || `LINE Customer ${userId.slice(-6)}`;
                         const quotation = await createQuotationFromLine(
-                            `LINE-${userId}`,
-                            userId,
+                            partnerName,
+                            profile.phone || '',
                             product.name,
-                            qty
+                            qty,
+                            profile.odooPartnerId
                         );
                         const total = quotation?.total ?? (product.price * qty);
                         aiTextResponse += quotation
@@ -220,7 +223,15 @@ export const processChatMessage = async (userId: string, userText: string, langu
                         messages.push({ type: 'text', text: msg });
                     }
                 } else if (call.name === 'escalateToHuman') {
-                    await setEscalationState(userId, true);
+                    const escalationResult = await setEscalationState(userId, true);
+                    if (!escalationResult.ok) {
+                        const msg = isThai
+                            ? `${agentName} ยังไม่สามารถโอนเคสให้แอดมินได้ในตอนนี้ กรุณาลองใหม่อีกครั้งค่ะ`
+                            : `${agentName} could not escalate to a human agent right now. Please try again.`;
+                        aiTextResponse += msg;
+                        messages.push({ type: 'text', text: msg });
+                        continue;
+                    }
                     const msg = isThai
                         ? `${agentName} โอนเคสให้แอดมินแล้วนะคะ เดี๋ยวเจ้าหน้าที่จะดูแลต่อทันที`
                         : `${agentName} has escalated this chat to a human agent.`;
