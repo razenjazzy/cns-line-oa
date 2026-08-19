@@ -39,7 +39,7 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "googleapis": "^173.0.0",
-    "redis": "^4.7.1"
+    "redis": "^6.2.1"
   },
   "devDependencies": {
     "@line/line-bot-mcp-server": "^0.5.0",
