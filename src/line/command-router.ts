@@ -21,9 +21,9 @@ import {
 } from './command-validators';
 import { buildCommandKeywordGuidance, buildStepByStepGuide, isGuideCommand } from './command-guide';
 import { recordAuditEvent, setUserLanguage, setUserOdooPartner, setUserPendingFlow, setUserRole, UserLanguage, UserProfile } from '../services/firestore';
-import { FLOW_SPECS, getFlowByStartCommand } from '../services/guided-forms';
+import { FLOW_SPECS, FlowSpec, getFlowByStartCommand } from '../services/guided-forms';
 import { processChatMessage } from '../services/chat';
-import { createOrderSummaryFlexMessage, createProductCardFlexMessage, createServiceActionFlexMessage, createServiceHomeFlexMessage } from './templates';
+import { createBotTextFlexMessage, createFormPromptFlexMessage, createOrderSummaryFlexMessage, createProductCardFlexMessage, createServiceActionFlexMessage, createServiceHomeFlexMessage } from './templates';
 import {
   createPartnerFromLine,
   createServiceCatalogItem,
@@ -54,23 +54,46 @@ export type CommandReplyContext = {
 };
 
 const tr = (language: UserLanguage, th: string, en: string): string => (language === 'en' ? en : th);
-const text = (value: string): messagingApi.Message => ({ type: 'text', text: value });
+const inferTone = (value: string): 'info' | 'success' | 'warning' | 'error' => {
+  const lower = value.toLowerCase();
+  if (/failed|fail|error|unauthorized|invalid|not found|ไม่สำเร็จ|ไม่พบ|ล้มเหลว|ไม่ได้|ผิด/.test(lower)) return 'error';
+  if (/warning|notice|รอสักครู่|กำลัง|ตรวจสอบ/.test(lower)) return 'warning';
+  if (/success|created|updated|deleted|enabled|disabled|complete|สำเร็จ|เรียบร้อย|แล้ว/.test(lower)) return 'success';
+  return 'info';
+};
 
-const textWithQuickReply = (value: string, items: { label: string; actionText: string }[]): messagingApi.Message => ({
-  type: 'text',
-  text: value,
-  quickReply: {
-    items: items.map(item => ({ type: 'action', action: { type: 'message', label: item.label, text: item.actionText } })),
-  },
-});
+const inferLanguage = (value: string): UserLanguage => /[\u0E00-\u0E7F]/.test(value) ? 'th' : 'en';
 
-const cancelQuickReplyItems = (language: UserLanguage, includeSkip?: boolean): { label: string; actionText: string }[] => {
-  const items: { label: string; actionText: string }[] = [];
-  if (includeSkip) {
-    items.push({ label: tr(language, 'ข้าม', 'Skip'), actionText: 'SKIP' });
-  }
-  items.push({ label: tr(language, 'ยกเลิก', 'Cancel'), actionText: 'CANCEL' });
-  return items;
+const text = (value: string, language: UserLanguage = inferLanguage(value), title?: string): messagingApi.Message =>
+  createBotTextFlexMessage({
+    title: title || tr(language, 'ผู้ช่วย Cloudnex', 'Cloudnex assistant'),
+    body: value,
+    language,
+    tone: inferTone(value),
+  });
+
+const materializeMessages = (messages: messagingApi.Message[], language: UserLanguage): messagingApi.Message[] =>
+  messages.map(message => {
+    if (message.type !== 'text') return message;
+    return text(message.text, language);
+  });
+
+const buildFormPromptMessage = (
+  language: UserLanguage,
+  agentName: string,
+  flowSpec: FlowSpec,
+  stepIndex: number,
+  promptOverride?: string
+): messagingApi.Message => {
+  const field = flowSpec.fields[stepIndex];
+  return createFormPromptFlexMessage({
+    title: tr(language, `${agentName} ${flowSpec.labelTh}`, `${agentName} ${flowSpec.labelEn}`),
+    prompt: promptOverride || tr(language, field.promptTh, field.promptEn),
+    stepIndex,
+    totalSteps: flowSpec.fields.length,
+    language,
+    optional: field.optional,
+  });
 };
 
 const buildHomeMenuMessage = (language: UserLanguage, agentName: string, channel: ChannelContext | undefined, isAdmin: boolean): messagingApi.Message => {
@@ -86,14 +109,6 @@ const buildHomeMenuMessage = (language: UserLanguage, agentName: string, channel
 
 const GUIDED_FORM_TTL_MINUTES = Number(process.env.GUIDED_FORM_TTL_MINUTES || 10);
 const buildFlowExpiry = (): string => new Date(Date.now() + GUIDED_FORM_TTL_MINUTES * 60 * 1000).toISOString();
-
-const buildOptionsMessage = (language: UserLanguage, agentName: string): string => {
-  if (language === 'en') {
-    return `${agentName} options\n\nTip: send NAV HOME for a tappable menu instead of typing commands. You can also send a voice message.\n\nCore:\n- OPTIONS | FEATURES | JOURNEY\n- RUN DEMO JOURNEY\n- NAME\n\nOdoo Commerce:\n- DEMO ODOO\n- DEMO PRODUCT <name>\n- DEMO QUOTE <product>,<qty>,<customer>,<phone>\n- DEMO ORDER <reference>\n- DEMO REPORT\n\nUser CRUD (admin):\n- USER CREATE <name>,<phone>,<email?>\n- USER READ <phone>\n- USER UPDATE <phone>,<name?>,<newPhone?>,<email?>\n- USER DELETE <phone>\n\nService CRUD (admin):\n- SERVICE LIST\n- SERVICE CREATE <name>,<code>,<price>\n- SERVICE READ <code_or_name>\n- SERVICE UPDATE <code_or_name>,<name?>,<price?>,<newCode?>\n- SERVICE DELETE <code_or_name>\n\nAdmin:\n- ADMIN VERIFY\n- ADMIN ENABLE\n- ADMIN DISABLE\n- DEMO SEED ODOO\n\nLanguage:\n- LANG EN | LANG TH`;
-  }
-
-  return `${agentName} เมนูคำสั่ง\n\nเคล็ดลับ: พิมพ์ NAV HOME เพื่อดูเมนูแบบกดปุ่มแทนการพิมพ์คำสั่ง หรือส่งข้อความเสียงก็ได้\n\nหลัก:\n- OPTIONS | FEATURES | JOURNEY\n- RUN DEMO JOURNEY\n- NAME\n\nOdoo Commerce:\n- DEMO ODOO\n- DEMO PRODUCT <ชื่อสินค้า>\n- DEMO QUOTE <สินค้า>,<จำนวน>,<ชื่อลูกค้า>,<เบอร์โทร>\n- DEMO ORDER <เลขอ้างอิง>\n- DEMO REPORT\n\nCRUD ผู้ใช้ (แอดมิน):\n- USER CREATE <ชื่อ>,<เบอร์>,<อีเมล?>\n- USER READ <เบอร์>\n- USER UPDATE <เบอร์>,<ชื่อใหม่?>,<เบอร์ใหม่?>,<อีเมล?>\n- USER DELETE <เบอร์>\n\nCRUD บริการ Odoo (แอดมิน):\n- SERVICE LIST\n- SERVICE CREATE <ชื่อ>,<รหัส>,<ราคา>\n- SERVICE READ <รหัสหรือชื่อ>\n- SERVICE UPDATE <รหัสหรือชื่อ>,<ชื่อใหม่?>,<ราคาใหม่?>,<รหัสใหม่?>\n- SERVICE DELETE <รหัสหรือชื่อ>\n\nแอดมิน:\n- ADMIN VERIFY\n- ADMIN ENABLE\n- ADMIN DISABLE\n- DEMO SEED ODOO\n\nภาษา:\n- LANG EN | LANG TH`;
-};
 
 const buildFeaturesMessage = (language: UserLanguage, agentName: string): string => {
   if (language === 'en') {
@@ -144,9 +159,12 @@ export const resolveCommandReply = async (ctx: CommandReplyContext): Promise<mes
       const value = isSkip ? '' : trimmed;
 
       if (!isSkip && !field.validate(value)) {
-        return [textWithQuickReply(
-          tr(userLanguage, `ค่าที่กรอกไม่ถูกต้อง กรุณาลองใหม่\n${field.promptTh}`, `That doesn't look right, please try again.\n${field.promptEn}`),
-          cancelQuickReplyItems(userLanguage, field.optional)
+        return [buildFormPromptMessage(
+          userLanguage,
+          agentName,
+          flowSpec,
+          profile.pendingFlow.stepIndex,
+          tr(userLanguage, `ค่าที่กรอกไม่ถูกต้อง กรุณาลองใหม่\n${field.promptTh}`, `That doesn't look right, please try again.\n${field.promptEn}`)
         )];
       }
 
@@ -159,17 +177,13 @@ export const resolveCommandReply = async (ctx: CommandReplyContext): Promise<mes
         return resolveCommandReply({ ...ctx, text: finalCommandText, profile: { ...profile, pendingFlow: undefined } });
       }
 
-      const nextField = flowSpec.fields[nextIndex];
       await setUserPendingFlow(ctx.userId, {
         flow: flowSpec.key,
         stepIndex: nextIndex,
         collected,
         expiresAt: buildFlowExpiry(),
       });
-      return [textWithQuickReply(
-        tr(userLanguage, nextField.promptTh, nextField.promptEn),
-        cancelQuickReplyItems(userLanguage, nextField.optional)
-      )];
+      return [buildFormPromptMessage(userLanguage, agentName, flowSpec, nextIndex)];
     }
   }
 
@@ -227,11 +241,7 @@ export const resolveCommandReply = async (ctx: CommandReplyContext): Promise<mes
       expiresAt: buildFlowExpiry(),
     });
 
-    const firstField = flowSpec.fields[0];
-    return [textWithQuickReply(
-      tr(userLanguage, `${agentName} ${flowSpec.labelTh}\n${firstField.promptTh}`, `${agentName} ${flowSpec.labelEn}\n${firstField.promptEn}`),
-      cancelQuickReplyItems(userLanguage, firstField.optional)
-    )];
+    return [buildFormPromptMessage(userLanguage, agentName, flowSpec, 0)];
   }
 
   if (upperText.startsWith('VERIFY START')) {
@@ -301,7 +311,7 @@ export const resolveCommandReply = async (ctx: CommandReplyContext): Promise<mes
     try {
       const result = await verifyOdooAdminAccess();
       return [text(tr(userLanguage, `ผลตรวจสิทธิ์แอดมิน: ${result.message}`, `Admin verification: ${result.message}`))];
-    } catch (_err) {
+    } catch {
       return [text(tr(userLanguage, 'ตรวจสิทธิ์แอดมินล้มเหลว', 'Admin verification failed.'))];
     }
   }
@@ -343,7 +353,7 @@ export const resolveCommandReply = async (ctx: CommandReplyContext): Promise<mes
   }
 
   if (upperText === 'เริ่มต้น' || upperText === 'START' || upperText === 'HELP' || upperText === 'OPTIONS' || upperText === 'MENU') {
-    return [text(buildOptionsMessage(userLanguage, agentName))];
+    return [buildHomeMenuMessage(userLanguage, agentName, ctx.channel, profile.role === 'admin')];
   }
 
   if (upperText === 'FEATURES' || upperText === 'ฟีเจอร์') {
@@ -394,7 +404,7 @@ export const resolveCommandReply = async (ctx: CommandReplyContext): Promise<mes
 
     const phone = trimmed.replace(/^USER READ\s*/i, '').trim();
     if (!phone) {
-      return [text(tr(userLanguage, 'วิธีใช้: USER READ <เบอร์>', 'Usage: USER READ <phone>'))];
+      return resolveCommandReply({ ...ctx, text: 'FORM USER READ' });
     }
 
     const partner = await getPartnerByPhone(phone);
@@ -466,7 +476,7 @@ export const resolveCommandReply = async (ctx: CommandReplyContext): Promise<mes
   if (upperText.startsWith('SERVICE READ')) {
     const identifier = trimmed.replace(/^SERVICE READ\s*/i, '').trim();
     if (!identifier) {
-      return [text(tr(userLanguage, 'วิธีใช้: SERVICE READ <รหัสหรือชื่อ>', 'Usage: SERVICE READ <code_or_name>'))];
+      return resolveCommandReply({ ...ctx, text: 'FORM SERVICE READ' });
     }
 
     const item = await getServiceByIdentifier(identifier);
@@ -568,7 +578,7 @@ export const resolveCommandReply = async (ctx: CommandReplyContext): Promise<mes
   if (upperText === 'DEMO PRODUCT' || upperText.startsWith('DEMO PRODUCT ')) {
     const query = trimmed.replace(/^DEMO PRODUCT\s*/i, '').trim();
     if (!query) {
-      return [text(tr(userLanguage, 'วิธีใช้: DEMO PRODUCT <ชื่อสินค้า>', 'Usage: DEMO PRODUCT <product_name>'))];
+      return resolveCommandReply({ ...ctx, text: 'FORM DEMO PRODUCT' });
     }
     const product = await findProductByQuery(query);
     if (!product) {
@@ -580,7 +590,7 @@ export const resolveCommandReply = async (ctx: CommandReplyContext): Promise<mes
   if (upperText === 'DEMO ORDER' || upperText.startsWith('DEMO ORDER ')) {
     const orderRef = trimmed.replace(/^DEMO ORDER\s*/i, '').trim();
     if (!orderRef) {
-      return [text(tr(userLanguage, 'วิธีใช้: DEMO ORDER <เลขออเดอร์>', 'Usage: DEMO ORDER <order_reference>'))];
+      return resolveCommandReply({ ...ctx, text: 'FORM DEMO ORDER' });
     }
     const order = await findOrderByReference(orderRef);
     if (!order) {
@@ -593,7 +603,7 @@ export const resolveCommandReply = async (ctx: CommandReplyContext): Promise<mes
     const payload = trimmed.replace(/^DEMO QUOTE\s*/i, '').trim();
     const parsed = parseDemoQuotePayload(payload);
     if (!parsed) {
-      return [text(tr(userLanguage, 'วิธีใช้: DEMO QUOTE <สินค้า>,<จำนวน>,<ชื่อลูกค้า>,<เบอร์โทร>', 'Usage: DEMO QUOTE <product>,<qty>,<customer>,<phone>'))];
+      return resolveCommandReply({ ...ctx, text: 'FORM DEMO QUOTE' });
     }
 
     const { productName, qty, customerName, phone } = parsed;
@@ -612,7 +622,7 @@ export const resolveCommandReply = async (ctx: CommandReplyContext): Promise<mes
 
   const chatResult = await processChatMessage(ctx.userId, trimmed, userLanguage);
   if (!chatResult.handled) {
-    return [...chatResult.messages, buildHomeMenuMessage(userLanguage, agentName, ctx.channel, profile.role === 'admin')];
+    return [...materializeMessages(chatResult.messages, userLanguage), buildHomeMenuMessage(userLanguage, agentName, ctx.channel, profile.role === 'admin')];
   }
-  return chatResult.messages;
+  return materializeMessages(chatResult.messages, userLanguage);
 };

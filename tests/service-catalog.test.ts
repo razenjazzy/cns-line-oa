@@ -10,9 +10,13 @@ import {
 describe('resolveServiceForCommand', () => {
   it('maps mapped command prefixes to their service key', () => {
     expect(resolveServiceForCommand('DEMO PRODUCT App')).toBe('commerce');
+    expect(resolveServiceForCommand('FORM DEMO PRODUCT')).toBe('commerce');
     expect(resolveServiceForCommand('DEMO QUOTE App,1,Somchai,0812345678')).toBe('commerce');
+    expect(resolveServiceForCommand('FORM DEMO ORDER')).toBe('commerce');
     expect(resolveServiceForCommand('USER CREATE Somchai,0812345678')).toBe('directory');
+    expect(resolveServiceForCommand('FORM USER READ')).toBe('directory');
     expect(resolveServiceForCommand('SERVICE LIST')).toBe('catalog');
+    expect(resolveServiceForCommand('FORM SERVICE READ')).toBe('catalog');
     expect(resolveServiceForCommand('DEMO REPORT')).toBe('reporting');
     expect(resolveServiceForCommand('START GROUPBUY App,25')).toBe('groupBuy');
   });
@@ -54,6 +58,7 @@ describe('getAvailableServices', () => {
   it('drops entirely admin-gated services for a non-admin', () => {
     const available = getAvailableServices(undefined, false);
     expect(available.map(s => s.key)).not.toContain('reporting');
+    expect(available.map(s => s.key)).not.toContain('directory');
   });
 
   it('filters to only the channel-enabled services', () => {
@@ -74,7 +79,7 @@ describe('getVisibleCommands', () => {
     const directory = SERVICE_CATALOG.find(s => s.key === 'directory')!;
     const visible = getVisibleCommands(directory, false);
     expect(visible.every(c => !c.requiresAdmin)).toBe(true);
-    expect(visible.length).toBeGreaterThan(0);
+    expect(visible).toHaveLength(0);
   });
 
   it('shows every command to an admin', () => {
