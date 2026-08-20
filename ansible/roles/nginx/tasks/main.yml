@@ -1,0 +1,39 @@
+---
+- name: Install Nginx
+  apt:
+    name: nginx
+    state: present
+    update_cache: true
+  when: nginx_enabled
+
+- name: Deploy Nginx reverse proxy configuration
+  template:
+    src: cns-line-oa.conf.j2
+    dest: /etc/nginx/sites-available/cns-line-oa.conf
+    owner: root
+    group: root
+    mode: '0644'
+  when: nginx_enabled
+  notify: Reload Nginx
+
+- name: Enable site by linking to sites-enabled
+  file:
+    src: /etc/nginx/sites-available/cns-line-oa.conf
+    dest: /etc/nginx/sites-enabled/cns-line-oa.conf
+    state: link
+  when: nginx_enabled
+  notify: Reload Nginx
+
+- name: Remove default Nginx configuration
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  when: nginx_enabled
+  notify: Reload Nginx
+
+- name: Ensure Nginx is started and enabled
+  service:
+    name: nginx
+    state: started
+    enabled: true
+  when: nginx_enabled

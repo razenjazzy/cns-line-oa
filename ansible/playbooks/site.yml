@@ -1,0 +1,10 @@
+---
+# Full provisioning and deployment playbook for CNS LINE OA
+- name: Provision and Deploy CNS LINE OA Stack
+  hosts: all
+  become: true
+  roles:
+    - role: common
+    - role: docker
+    - role: cns_line_oa
+    - role: nginx

@@ -1,0 +1,29 @@
+---
+node_env: staging
+enable_webhook_test: true
+webhook_test_token: "staging-webhook-token"
+
+line_channel_id: "{{ vault_line_channel_id | default('') }}"
+line_channel_secret: "{{ vault_line_channel_secret | default('') }}"
+line_channel_access_token: "{{ vault_line_channel_access_token | default('') }}"
+admin_user_id: "{{ vault_admin_user_id | default('') }}"
+line_agent_name: "Cloudnex Assistant [Staging]"
+
+odoo_url: "{{ vault_odoo_url | default('') }}"
+odoo_db: "{{ vault_odoo_db | default('') }}"
+odoo_username: "{{ vault_odoo_username | default('') }}"
+odoo_api_key: "{{ vault_odoo_api_key | default('') }}"
+odoo_rpc_timeout_ms: 7000
+
+ops_api_token: "{{ vault_ops_api_token | default('staging-ops-token') }}"
+
+public_base_url: "https://staging.your-domain.com"
+
+google_cloud_project: "{{ vault_google_cloud_project | default('') }}"
+google_cloud_location: "us-central1"
+google_ai_studio_api_key: "{{ vault_google_ai_studio_api_key | default('') }}"
+ai_off: false
+
+groupbuy_enabled: true
+groupbuy_rollout_percent: 100
+enable_demo_control_panel: true
