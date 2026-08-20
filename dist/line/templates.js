@@ -1,6 +1,18 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createOrderSummaryFlexMessage = exports.createServiceActionFlexMessage = exports.createServiceHomeFlexMessage = exports.createProductCardFlexMessage = exports.createDailyReportFlexMessage = void 0;
+// Cloudnex brand palette — kept consistent across every Flex message.
+const BRAND = {
+    teal: '#0B6E6A',
+    tealStrong: '#063F3D',
+    tealTint: '#E3F0EE',
+    gold: '#A97A2B',
+    goldTint: '#F4E9D4',
+    ink: '#10201E',
+    inkSoft: '#5B6C69',
+    surface: '#FFFFFF',
+    paper: '#F1F4F2',
+};
 const createDailyReportFlexMessage = (reportData, insights, language = 'th') => {
     const agentName = process.env.LINE_AGENT_NAME?.trim() || 'น้องโซระ';
     const rows = (() => {
@@ -21,7 +33,7 @@ const createDailyReportFlexMessage = (reportData, insights, language = 'th') => 
                 type: 'box',
                 layout: 'vertical',
                 contents: [
-                    { type: 'text', text: language === 'en' ? `Daily report by ${agentName}` : `รายงานประจำวันโดย ${agentName}`, weight: 'bold', size: 'md', color: '#1DB446', wrap: true },
+                    { type: 'text', text: language === 'en' ? `Daily report by ${agentName}` : `รายงานประจำวันโดย ${agentName}`, weight: 'bold', size: 'md', color: BRAND.teal, wrap: true },
                 ],
             },
             body: {
@@ -51,9 +63,9 @@ const createProductCardFlexMessage = (productName, price, stock) => {
         contents: {
             type: 'bubble',
             styles: {
-                header: { backgroundColor: '#0F766E' },
-                body: { backgroundColor: '#F8FAFC' },
-                footer: { backgroundColor: '#F8FAFC' }
+                header: { backgroundColor: BRAND.teal },
+                body: { backgroundColor: BRAND.surface },
+                footer: { backgroundColor: BRAND.surface }
             },
             header: {
                 type: 'box',
@@ -66,9 +78,9 @@ const createProductCardFlexMessage = (productName, price, stock) => {
                 type: 'box',
                 layout: 'vertical',
                 contents: [
-                    { type: 'text', text: productName, weight: 'bold', size: 'xl' },
-                    { type: 'text', text: language === 'en' ? `Price: ${price} THB` : `ราคา: ${price} บาท`, size: 'md', margin: 'md' },
-                    { type: 'text', text: language === 'en' ? `Stock: ${stock}` : `คงเหลือ: ${stock}`, size: 'sm', color: '#334155', margin: 'sm' },
+                    { type: 'text', text: productName, weight: 'bold', size: 'xl', color: BRAND.ink, wrap: true },
+                    { type: 'text', text: language === 'en' ? `Price: ${price} THB` : `ราคา: ${price} บาท`, size: 'md', margin: 'md', color: BRAND.tealStrong, weight: 'bold' },
+                    { type: 'text', text: language === 'en' ? `Stock: ${stock}` : `คงเหลือ: ${stock}`, size: 'sm', color: BRAND.inkSoft, margin: 'sm' },
                 ],
             },
             footer: {
@@ -78,7 +90,7 @@ const createProductCardFlexMessage = (productName, price, stock) => {
                     {
                         type: 'button',
                         style: 'primary',
-                        color: '#0F766E',
+                        color: BRAND.teal,
                         action: { type: 'message', label: language === 'en' ? 'Create Quote' : 'สร้างใบเสนอราคา', text: `DEMO QUOTE ${productName},1,LINE Customer,0900000000` }
                     }
                 ]
@@ -87,6 +99,14 @@ const createProductCardFlexMessage = (productName, price, stock) => {
     };
 };
 exports.createProductCardFlexMessage = createProductCardFlexMessage;
+const SERVICE_ICON = {
+    VERIFY: '🔐',
+    commerce: '🛍️',
+    directory: '👥',
+    catalog: '📦',
+    reporting: '📊',
+    groupBuy: '🤝',
+};
 const createServiceHomeFlexMessage = (services, language, agentName) => {
     return {
         type: 'flex',
@@ -95,12 +115,25 @@ const createServiceHomeFlexMessage = (services, language, agentName) => {
             type: 'carousel',
             contents: services.slice(0, 10).map(service => ({
                 type: 'bubble',
-                size: 'micro',
+                size: 'kilo',
+                styles: {
+                    header: { backgroundColor: BRAND.teal },
+                    body: { backgroundColor: BRAND.surface },
+                    footer: { backgroundColor: BRAND.surface },
+                },
+                header: {
+                    type: 'box',
+                    layout: 'vertical',
+                    paddingAll: 'md',
+                    contents: [
+                        { type: 'text', text: SERVICE_ICON[service.key] || '⭐', size: 'xl' },
+                    ],
+                },
                 body: {
                     type: 'box',
                     layout: 'vertical',
                     contents: [
-                        { type: 'text', text: service.label, weight: 'bold', size: 'md', wrap: true },
+                        { type: 'text', text: service.label, weight: 'bold', size: 'md', color: BRAND.ink, wrap: true },
                     ],
                 },
                 footer: {
@@ -110,7 +143,7 @@ const createServiceHomeFlexMessage = (services, language, agentName) => {
                         {
                             type: 'button',
                             style: 'primary',
-                            color: '#0F766E',
+                            color: BRAND.gold,
                             action: { type: 'message', label: language === 'en' ? 'Open' : 'เปิด', text: `NAV ${service.key}` },
                         },
                     ],
@@ -126,11 +159,16 @@ const createServiceActionFlexMessage = (serviceLabel, actions, language) => {
         altText: serviceLabel,
         contents: {
             type: 'bubble',
+            styles: {
+                header: { backgroundColor: BRAND.teal },
+                body: { backgroundColor: BRAND.surface },
+                footer: { backgroundColor: BRAND.surface },
+            },
             header: {
                 type: 'box',
                 layout: 'vertical',
                 contents: [
-                    { type: 'text', text: serviceLabel, weight: 'bold', size: 'md', wrap: true },
+                    { type: 'text', text: serviceLabel, weight: 'bold', size: 'md', wrap: true, color: '#FFFFFF' },
                 ],
             },
             body: {
@@ -140,6 +178,7 @@ const createServiceActionFlexMessage = (serviceLabel, actions, language) => {
                 contents: actions.slice(0, 10).map(action => ({
                     type: 'button',
                     style: 'secondary',
+                    color: BRAND.tealStrong,
                     action: { type: 'message', label: action.label, text: action.text },
                 })),
             },
@@ -149,7 +188,8 @@ const createServiceActionFlexMessage = (serviceLabel, actions, language) => {
                 contents: [
                     {
                         type: 'button',
-                        style: 'link',
+                        style: 'primary',
+                        color: BRAND.gold,
                         action: { type: 'message', label: language === 'en' ? 'Home' : 'หน้าหลัก', text: 'NAV HOME' },
                     },
                 ],
@@ -166,15 +206,15 @@ const createOrderSummaryFlexMessage = (total) => {
         contents: {
             type: 'bubble',
             styles: {
-                body: { backgroundColor: '#F0FDF4' }
+                body: { backgroundColor: BRAND.tealTint }
             },
             body: {
                 type: 'box',
                 layout: 'vertical',
                 contents: [
-                    { type: 'text', text: language === 'en' ? 'Quotation Created' : 'สร้างคำสั่งซื้อแล้ว', weight: 'bold', size: 'lg', color: '#15803D' },
-                    { type: 'text', text: language === 'en' ? `Total: ${total} THB` : `ยอดรวม: ${total} บาท`, size: 'md', margin: 'md' },
-                    { type: 'text', text: language === 'en' ? 'Please follow your payment workflow.' : 'กรุณาชำระเงินตามขั้นตอนที่ร้านกำหนด', size: 'sm', wrap: true, margin: 'sm' },
+                    { type: 'text', text: language === 'en' ? 'Quotation Created' : 'สร้างคำสั่งซื้อแล้ว', weight: 'bold', size: 'lg', color: BRAND.tealStrong },
+                    { type: 'text', text: language === 'en' ? `Total: ${total} THB` : `ยอดรวม: ${total} บาท`, size: 'md', margin: 'md', color: BRAND.ink, weight: 'bold' },
+                    { type: 'text', text: language === 'en' ? 'Please follow your payment workflow.' : 'กรุณาชำระเงินตามขั้นตอนที่ร้านกำหนด', size: 'sm', wrap: true, margin: 'sm', color: BRAND.inkSoft },
                 ]
             }
         }

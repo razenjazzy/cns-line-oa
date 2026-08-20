@@ -2,6 +2,19 @@ import { messagingApi } from '@line/bot-sdk';
 
 type ReportLanguage = 'th' | 'en';
 
+// Cloudnex brand palette — kept consistent across every Flex message.
+const BRAND = {
+  teal: '#0B6E6A',
+  tealStrong: '#063F3D',
+  tealTint: '#E3F0EE',
+  gold: '#A97A2B',
+  goldTint: '#F4E9D4',
+  ink: '#10201E',
+  inkSoft: '#5B6C69',
+  surface: '#FFFFFF',
+  paper: '#F1F4F2',
+} as const;
+
 export const createDailyReportFlexMessage = (reportData: any, insights: string, language: ReportLanguage = 'th'): messagingApi.FlexMessage => {
   const agentName = process.env.LINE_AGENT_NAME?.trim() || 'น้องโซระ';
   const rows = (() => {
@@ -22,7 +35,7 @@ export const createDailyReportFlexMessage = (reportData: any, insights: string, 
         type: 'box',
         layout: 'vertical',
         contents: [
-          { type: 'text', text: language === 'en' ? `Daily report by ${agentName}` : `รายงานประจำวันโดย ${agentName}`, weight: 'bold', size: 'md', color: '#1DB446', wrap: true },
+          { type: 'text', text: language === 'en' ? `Daily report by ${agentName}` : `รายงานประจำวันโดย ${agentName}`, weight: 'bold', size: 'md', color: BRAND.teal, wrap: true },
         ],
       },
       body: {
@@ -52,9 +65,9 @@ export const createProductCardFlexMessage = (productName: string, price: number,
         contents: {
             type: 'bubble',
       styles: {
-        header: { backgroundColor: '#0F766E' },
-        body: { backgroundColor: '#F8FAFC' },
-        footer: { backgroundColor: '#F8FAFC' }
+        header: { backgroundColor: BRAND.teal },
+        body: { backgroundColor: BRAND.surface },
+        footer: { backgroundColor: BRAND.surface }
       },
       header: {
         type: 'box',
@@ -67,9 +80,9 @@ export const createProductCardFlexMessage = (productName: string, price: number,
                 type: 'box',
                 layout: 'vertical',
                 contents: [
-                    { type: 'text', text: productName, weight: 'bold', size: 'xl' },
-      { type: 'text', text: language === 'en' ? `Price: ${price} THB` : `ราคา: ${price} บาท`, size: 'md', margin: 'md' },
-      { type: 'text', text: language === 'en' ? `Stock: ${stock}` : `คงเหลือ: ${stock}`, size: 'sm', color: '#334155', margin: 'sm' },
+                    { type: 'text', text: productName, weight: 'bold', size: 'xl', color: BRAND.ink, wrap: true },
+      { type: 'text', text: language === 'en' ? `Price: ${price} THB` : `ราคา: ${price} บาท`, size: 'md', margin: 'md', color: BRAND.tealStrong, weight: 'bold' },
+      { type: 'text', text: language === 'en' ? `Stock: ${stock}` : `คงเหลือ: ${stock}`, size: 'sm', color: BRAND.inkSoft, margin: 'sm' },
                 ],
             },
             footer: {
@@ -79,13 +92,22 @@ export const createProductCardFlexMessage = (productName: string, price: number,
                     {
                         type: 'button',
                         style: 'primary',
-            color: '#0F766E',
+            color: BRAND.teal,
       action: { type: 'message', label: language === 'en' ? 'Create Quote' : 'สร้างใบเสนอราคา', text: `DEMO QUOTE ${productName},1,LINE Customer,0900000000` }
                     }
                 ]
             }
         }
     };
+};
+
+const SERVICE_ICON: Record<string, string> = {
+  VERIFY: '🔐',
+  commerce: '🛍️',
+  directory: '👥',
+  catalog: '📦',
+  reporting: '📊',
+  groupBuy: '🤝',
 };
 
 export const createServiceHomeFlexMessage = (
@@ -100,12 +122,25 @@ export const createServiceHomeFlexMessage = (
       type: 'carousel',
       contents: services.slice(0, 10).map(service => ({
         type: 'bubble',
-        size: 'micro',
+        size: 'kilo',
+        styles: {
+          header: { backgroundColor: BRAND.teal },
+          body: { backgroundColor: BRAND.surface },
+          footer: { backgroundColor: BRAND.surface },
+        },
+        header: {
+          type: 'box',
+          layout: 'vertical',
+          paddingAll: 'md',
+          contents: [
+            { type: 'text', text: SERVICE_ICON[service.key] || '⭐', size: 'xl' },
+          ],
+        },
         body: {
           type: 'box',
           layout: 'vertical',
           contents: [
-            { type: 'text', text: service.label, weight: 'bold', size: 'md', wrap: true },
+            { type: 'text', text: service.label, weight: 'bold', size: 'md', color: BRAND.ink, wrap: true },
           ],
         },
         footer: {
@@ -115,7 +150,7 @@ export const createServiceHomeFlexMessage = (
             {
               type: 'button',
               style: 'primary',
-              color: '#0F766E',
+              color: BRAND.gold,
               action: { type: 'message', label: language === 'en' ? 'Open' : 'เปิด', text: `NAV ${service.key}` },
             },
           ],
@@ -135,11 +170,16 @@ export const createServiceActionFlexMessage = (
     altText: serviceLabel,
     contents: {
       type: 'bubble',
+      styles: {
+        header: { backgroundColor: BRAND.teal },
+        body: { backgroundColor: BRAND.surface },
+        footer: { backgroundColor: BRAND.surface },
+      },
       header: {
         type: 'box',
         layout: 'vertical',
         contents: [
-          { type: 'text', text: serviceLabel, weight: 'bold', size: 'md', wrap: true },
+          { type: 'text', text: serviceLabel, weight: 'bold', size: 'md', wrap: true, color: '#FFFFFF' },
         ],
       },
       body: {
@@ -149,6 +189,7 @@ export const createServiceActionFlexMessage = (
         contents: actions.slice(0, 10).map(action => ({
           type: 'button',
           style: 'secondary',
+          color: BRAND.tealStrong,
           action: { type: 'message', label: action.label, text: action.text },
         })),
       },
@@ -158,7 +199,8 @@ export const createServiceActionFlexMessage = (
         contents: [
           {
             type: 'button',
-            style: 'link',
+            style: 'primary',
+            color: BRAND.gold,
             action: { type: 'message', label: language === 'en' ? 'Home' : 'หน้าหลัก', text: 'NAV HOME' },
           },
         ],
@@ -175,15 +217,15 @@ export const createOrderSummaryFlexMessage = (total: number): messagingApi.FlexM
         contents: {
             type: 'bubble',
       styles: {
-        body: { backgroundColor: '#F0FDF4' }
+        body: { backgroundColor: BRAND.tealTint }
       },
             body: {
                 type: 'box',
                 layout: 'vertical',
                 contents: [
-      { type: 'text', text: language === 'en' ? 'Quotation Created' : 'สร้างคำสั่งซื้อแล้ว', weight: 'bold', size: 'lg', color: '#15803D' },
-      { type: 'text', text: language === 'en' ? `Total: ${total} THB` : `ยอดรวม: ${total} บาท`, size: 'md', margin: 'md' },
-      { type: 'text', text: language === 'en' ? 'Please follow your payment workflow.' : 'กรุณาชำระเงินตามขั้นตอนที่ร้านกำหนด', size: 'sm', wrap: true, margin: 'sm' },
+      { type: 'text', text: language === 'en' ? 'Quotation Created' : 'สร้างคำสั่งซื้อแล้ว', weight: 'bold', size: 'lg', color: BRAND.tealStrong },
+      { type: 'text', text: language === 'en' ? `Total: ${total} THB` : `ยอดรวม: ${total} บาท`, size: 'md', margin: 'md', color: BRAND.ink, weight: 'bold' },
+      { type: 'text', text: language === 'en' ? 'Please follow your payment workflow.' : 'กรุณาชำระเงินตามขั้นตอนที่ร้านกำหนด', size: 'sm', wrap: true, margin: 'sm', color: BRAND.inkSoft },
                 ]
             }
         }

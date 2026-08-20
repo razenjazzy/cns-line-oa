@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   getAvailableServices,
+  getVisibleCommands,
   isServiceEnabledForChannel,
   resolveServiceForCommand,
   SERVICE_CATALOG,
@@ -46,13 +47,38 @@ describe('isServiceEnabledForChannel', () => {
 });
 
 describe('getAvailableServices', () => {
-  it('returns the full catalog when unrestricted', () => {
-    expect(getAvailableServices(undefined)).toHaveLength(SERVICE_CATALOG.length);
+  it('returns the full catalog for an admin when unrestricted', () => {
+    expect(getAvailableServices(undefined, true)).toHaveLength(SERVICE_CATALOG.length);
+  });
+
+  it('drops entirely admin-gated services for a non-admin', () => {
+    const available = getAvailableServices(undefined, false);
+    expect(available.map(s => s.key)).not.toContain('reporting');
   });
 
   it('filters to only the channel-enabled services', () => {
     const channel = { channelId: 'sales', enabledServices: ['commerce', 'reporting'] };
-    const available = getAvailableServices(channel);
+    const available = getAvailableServices(channel, true);
     expect(available.map(s => s.key).sort()).toEqual(['commerce', 'reporting']);
+  });
+
+  it('combines channel gating and role gating', () => {
+    const channel = { channelId: 'sales', enabledServices: ['commerce', 'reporting'] };
+    const available = getAvailableServices(channel, false);
+    expect(available.map(s => s.key)).toEqual(['commerce']);
+  });
+});
+
+describe('getVisibleCommands', () => {
+  it('hides admin-only commands from non-admins', () => {
+    const directory = SERVICE_CATALOG.find(s => s.key === 'directory')!;
+    const visible = getVisibleCommands(directory, false);
+    expect(visible.every(c => !c.requiresAdmin)).toBe(true);
+    expect(visible.length).toBeGreaterThan(0);
+  });
+
+  it('shows every command to an admin', () => {
+    const directory = SERVICE_CATALOG.find(s => s.key === 'directory')!;
+    expect(getVisibleCommands(directory, true)).toEqual(directory.commands);
   });
 });

@@ -7,6 +7,7 @@ import { isAuthorizedForAdminRole } from '../services/admin-authorization';
 import {
   getAvailableServices,
   getServiceDefinition,
+  getVisibleCommands,
   isServiceEnabledForChannel,
   resolveServiceForCommand,
 } from '../services/service-catalog';
@@ -72,8 +73,8 @@ const cancelQuickReplyItems = (language: UserLanguage, includeSkip?: boolean): {
   return items;
 };
 
-const buildHomeMenuMessage = (language: UserLanguage, agentName: string, channel: ChannelContext | undefined): messagingApi.Message => {
-  const availableServices = getAvailableServices(channel);
+const buildHomeMenuMessage = (language: UserLanguage, agentName: string, channel: ChannelContext | undefined, isAdmin: boolean): messagingApi.Message => {
+  const availableServices = getAvailableServices(channel, isAdmin);
   // Verification is core identity infrastructure, not a gated service —
   // always shown, regardless of what a channel has enabled.
   const menuItems = [
@@ -135,7 +136,7 @@ export const resolveCommandReply = async (ctx: CommandReplyContext): Promise<mes
       await setUserPendingFlow(ctx.userId, null);
       return [
         text(tr(userLanguage, `${agentName} ยกเลิกแบบฟอร์มแล้ว`, `${agentName} form cancelled.`)),
-        buildHomeMenuMessage(userLanguage, agentName, ctx.channel),
+        buildHomeMenuMessage(userLanguage, agentName, ctx.channel, profile.role === 'admin'),
       ];
     } else {
       const field = flowSpec.fields[profile.pendingFlow.stepIndex];
@@ -178,7 +179,7 @@ export const resolveCommandReply = async (ctx: CommandReplyContext): Promise<mes
   }
 
   if (upperText === 'NAV HOME' || upperText === 'NAV' || upperText === 'BACK') {
-    return [buildHomeMenuMessage(userLanguage, agentName, ctx.channel)];
+    return [buildHomeMenuMessage(userLanguage, agentName, ctx.channel, profile.role === 'admin')];
   }
 
   if (upperText.startsWith('NAV ')) {
@@ -187,12 +188,14 @@ export const resolveCommandReply = async (ctx: CommandReplyContext): Promise<mes
       return resolveCommandReply({ ...ctx, text: 'FORM VERIFY' });
     }
     const serviceDef = getServiceDefinition(key);
-    if (!serviceDef || !isServiceEnabledForChannel(serviceDef.key, ctx.channel)) {
+    const isAdmin = profile.role === 'admin';
+    const visibleCommands = serviceDef ? getVisibleCommands(serviceDef, isAdmin) : [];
+    if (!serviceDef || !isServiceEnabledForChannel(serviceDef.key, ctx.channel) || !visibleCommands.length) {
       return [text(tr(userLanguage, `${agentName} ไม่พบบริการนี้`, `${agentName} service not found.`))];
     }
     return [createServiceActionFlexMessage(
       userLanguage === 'en' ? serviceDef.labelEn : serviceDef.labelTh,
-      serviceDef.commands.map(c => ({ text: c.text, label: userLanguage === 'en' ? c.labelEn : c.labelTh })),
+      visibleCommands.map(c => ({ text: c.text, label: userLanguage === 'en' ? c.labelEn : c.labelTh })),
       userLanguage
     )];
   }
@@ -604,12 +607,12 @@ export const resolveCommandReply = async (ctx: CommandReplyContext): Promise<mes
 
   const guidance = buildCommandKeywordGuidance(trimmed, userLanguage, agentName);
   if (guidance) {
-    return [text(guidance), buildHomeMenuMessage(userLanguage, agentName, ctx.channel)];
+    return [text(guidance), buildHomeMenuMessage(userLanguage, agentName, ctx.channel, profile.role === 'admin')];
   }
 
   const chatResult = await processChatMessage(ctx.userId, trimmed, userLanguage);
   if (!chatResult.handled) {
-    return [...chatResult.messages, buildHomeMenuMessage(userLanguage, agentName, ctx.channel)];
+    return [...chatResult.messages, buildHomeMenuMessage(userLanguage, agentName, ctx.channel, profile.role === 'admin')];
   }
   return chatResult.messages;
 };

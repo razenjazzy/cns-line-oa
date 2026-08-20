@@ -6,6 +6,7 @@ export type ServiceCommand = {
   text: string;
   labelTh: string;
   labelEn: string;
+  requiresAdmin?: boolean;
 };
 
 export type ServiceDefinition = {
@@ -36,28 +37,28 @@ export const SERVICE_CATALOG: ServiceDefinition[] = [
   },
   {
     key: 'directory',
-    labelTh: 'จัดการผู้ใช้ (แอดมิน)',
-    labelEn: 'User Directory (admin)',
+    labelTh: 'ผู้ใช้',
+    labelEn: 'Customers',
     commands: [
-      { text: 'FORM USER CREATE', labelTh: 'เพิ่มผู้ใช้', labelEn: 'Create user' },
-      { text: 'USER READ', labelTh: 'ดูข้อมูลผู้ใช้', labelEn: 'Read user' },
+      { text: 'USER READ', labelTh: 'ดูข้อมูลผู้ใช้', labelEn: 'Look up a customer' },
+      { text: 'FORM USER CREATE', labelTh: 'เพิ่มผู้ใช้ (แอดมิน)', labelEn: 'Add a customer (admin)', requiresAdmin: true },
     ],
   },
   {
     key: 'catalog',
-    labelTh: 'จัดการบริการ (แอดมิน)',
-    labelEn: 'Service Catalog (admin)',
+    labelTh: 'บริการ',
+    labelEn: 'Catalog',
     commands: [
-      { text: 'SERVICE LIST', labelTh: 'รายการบริการ', labelEn: 'List services' },
-      { text: 'FORM SERVICE CREATE', labelTh: 'เพิ่มบริการ', labelEn: 'Create service' },
+      { text: 'SERVICE LIST', labelTh: 'รายการบริการ', labelEn: 'Browse catalog' },
+      { text: 'FORM SERVICE CREATE', labelTh: 'เพิ่มบริการ (แอดมิน)', labelEn: 'Add an item (admin)', requiresAdmin: true },
     ],
   },
   {
     key: 'reporting',
-    labelTh: 'รายงาน',
-    labelEn: 'Reporting',
+    labelTh: 'รายงาน (แอดมิน)',
+    labelEn: 'Reporting (admin)',
     commands: [
-      { text: 'DEMO REPORT', labelTh: 'รายงานประจำวัน', labelEn: 'Daily report' },
+      { text: 'DEMO REPORT', labelTh: 'รายงานประจำวัน', labelEn: 'Daily report', requiresAdmin: true },
     ],
   },
   {
@@ -115,6 +116,17 @@ export const isServiceEnabledForChannel = (service: ServiceKey, channel?: Channe
   return channel.enabledServices.includes(service);
 };
 
-export const getAvailableServices = (channel?: ChannelContext): ServiceDefinition[] => {
-  return SERVICE_CATALOG.filter(svc => isServiceEnabledForChannel(svc.key, channel));
+export const getVisibleCommands = (service: ServiceDefinition, isAdmin: boolean): ServiceCommand[] => {
+  return service.commands.filter(c => !c.requiresAdmin || isAdmin);
+};
+
+/**
+ * Channel-enabled AND has at least one command this role can actually use —
+ * a service that's entirely admin-gated (e.g. reporting) simply doesn't
+ * appear for a non-admin, rather than showing an empty action menu.
+ */
+export const getAvailableServices = (channel: ChannelContext | undefined, isAdmin: boolean): ServiceDefinition[] => {
+  return SERVICE_CATALOG.filter(svc =>
+    isServiceEnabledForChannel(svc.key, channel) && getVisibleCommands(svc, isAdmin).length > 0
+  );
 };
