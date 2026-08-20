@@ -1,4 +1,4 @@
-export type FlowKey = 'USER_CREATE' | 'SERVICE_CREATE' | 'DEMO_QUOTE';
+export type FlowKey = 'USER_CREATE' | 'SERVICE_CREATE' | 'DEMO_QUOTE' | 'VERIFY';
 
 export type FlowFieldSpec = {
   key: string;
@@ -30,6 +30,17 @@ const isEmailLike = (value: string): boolean => value.trim() === '' || /^[^\s@]+
  * Odoo/Firestore logic.
  */
 export const FLOW_SPECS: Record<FlowKey, FlowSpec> = {
+  VERIFY: {
+    key: 'VERIFY',
+    startCommand: 'FORM VERIFY',
+    requiresAdmin: false,
+    labelTh: 'ยืนยันตัวตน',
+    labelEn: 'Verify your account',
+    fields: [
+      { key: 'phone', promptTh: 'เบอร์โทรที่ผูกกับ Odoo?', promptEn: 'Phone number on file in Odoo?', validate: isPhoneLike },
+    ],
+    buildFinalCommand: (c) => `VERIFY START ${c.phone}`,
+  },
   USER_CREATE: {
     key: 'USER_CREATE',
     startCommand: 'FORM USER CREATE',

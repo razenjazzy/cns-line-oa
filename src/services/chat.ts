@@ -51,40 +51,62 @@ const getErrorCode = (error: unknown): number | undefined => {
     return undefined;
 };
 
-export const processChatMessage = async (userId: string, userText: string, language: ChatLanguage = 'th'): Promise<messagingApi.Message[]> => {
+export type ChatResult = {
+    messages: messagingApi.Message[];
+    // false when this was a generic "couldn't help" fallback rather than a
+    // real answer — callers should offer the button menu as a next step.
+    handled: boolean;
+};
+
+export const processChatMessage = async (userId: string, userText: string, language: ChatLanguage = 'th'): Promise<ChatResult> => {
     const agentName = getAgentName();
     const isThai = language === 'th';
 
     if (isAiOff()) {
         const heuristicProduct = await findProductByQuery(userText.trim());
         if (heuristicProduct) {
-            return [
-                { type: 'text', text: isThai ? `${agentName} พบสินค้าจาก Odoo แล้วค่ะ` : `${agentName} found this product in Odoo.` },
-                createProductCardFlexMessage(heuristicProduct.name, heuristicProduct.list_price, heuristicProduct.qty_available),
-            ];
+            return {
+                handled: true,
+                messages: [
+                    { type: 'text', text: isThai ? `${agentName} พบสินค้าจาก Odoo แล้วค่ะ` : `${agentName} found this product in Odoo.` },
+                    createProductCardFlexMessage(heuristicProduct.name, heuristicProduct.list_price, heuristicProduct.qty_available),
+                ],
+            };
         }
-        return [{
-            type: 'text',
-            text: isThai
-                ? `${agentName} ตอนนี้เปิดโหมดประหยัดค่าใช้จ่าย AI อยู่ค่ะ ใช้คำสั่ง Odoo ได้ทันที เช่น DEMO PRODUCT, DEMO QUOTE, DEMO ORDER, DEMO REPORT`
-                : `${agentName} is running in AI cost-control mode. Please use Odoo commands like DEMO PRODUCT, DEMO QUOTE, DEMO ORDER, and DEMO REPORT.`
-        }];
+        return {
+            handled: false,
+            messages: [{
+                type: 'text',
+                text: isThai
+                    ? `${agentName} ไม่เข้าใจข้อความนี้ค่ะ ลองดูเมนูด้านล่างได้เลย`
+                    : `${agentName} didn't understand that — here's the menu instead.`
+            }],
+        };
     }
 
     if (chatModelUnavailable) {
         const heuristicProduct = await findProductByQuery(userText.trim());
         if (heuristicProduct) {
-            return [
-                { type: 'text', text: isThai ? `${agentName} หาเจอจาก Odoo แล้วค่ะ` : `${agentName} found this in Odoo.` },
-                createProductCardFlexMessage(heuristicProduct.name, heuristicProduct.list_price, heuristicProduct.qty_available),
-            ];
+            return {
+                handled: true,
+                messages: [
+                    { type: 'text', text: isThai ? `${agentName} หาเจอจาก Odoo แล้วค่ะ` : `${agentName} found this in Odoo.` },
+                    createProductCardFlexMessage(heuristicProduct.name, heuristicProduct.list_price, heuristicProduct.qty_available),
+                ],
+            };
         }
-        return [{ type: 'text', text: isThai ? `${agentName} ตอนนี้โหมด AI ไม่พร้อมใช้งาน แต่ยังช่วยค้นหาสินค้าและทำรายการ Odoo ได้ค่ะ` : `${agentName} AI mode is temporarily unavailable, but Odoo product and order features are still available.` }];
+        return {
+            handled: false,
+            messages: [{ type: 'text', text: isThai ? `${agentName} ไม่เข้าใจข้อความนี้ค่ะ ลองดูเมนูด้านล่างได้เลย` : `${agentName} didn't understand that — here's the menu instead.` }],
+        };
     }
 
     const genAIClients = getGenAIClients();
     if (!genAIClients.length) {
-        return [{ type: 'text', text: isThai ? `${agentName} ยังไม่พร้อมใช้งาน AI ชั่วคราว กรุณาตั้งค่า GOOGLE_AI_STUDIO_API_KEY หรือ Vertex ก่อนใช้งาน` : `${agentName} AI is temporarily unavailable. Please configure GOOGLE_AI_STUDIO_API_KEY or Vertex first.` }];
+        return {
+            handled: false,
+            messages: [{ type: 'text', text: isThai ? `${agentName} ไม่เข้าใจข้อความนี้ค่ะ ลองดูเมนูด้านล่างได้เลย` : `${agentName} didn't understand that — here's the menu instead.` }],
+        };
     }
 
     // 1. Get history
@@ -241,13 +263,15 @@ export const processChatMessage = async (userId: string, userText: string, langu
             }
         }
 
+        let handled = true;
         if (messages.length === 0) {
-            messages.push({ type: 'text', text: isThai ? `${agentName} ขออภัยค่ะ ยังไม่เข้าใจข้อความนี้ ลองพิมพ์ชื่อสินค้า หรือพิมพ์ "เริ่มต้น" ได้เลย` : `${agentName} did not understand that. Try a product name or type "START".` });
+            messages.push({ type: 'text', text: isThai ? `${agentName} ไม่เข้าใจข้อความนี้ค่ะ ลองดูเมนูด้านล่างได้เลย` : `${agentName} didn't understand that — here's the menu instead.` });
             aiTextResponse = 'Fallback response triggered.';
+            handled = false;
         }
 
         await saveConversationMessage(userId, 'model', aiTextResponse);
-        return messages;
+        return { messages, handled };
 
     } catch (error) {
         if (getErrorCode(error) === 404) {
@@ -255,14 +279,23 @@ export const processChatMessage = async (userId: string, userText: string, langu
             console.warn('Chat model unavailable for this project/region. Switching chat to Odoo fallback mode.');
             const heuristicProduct = await findProductByQuery(userText.trim());
             if (heuristicProduct) {
-                return [
-                    { type: 'text', text: isThai ? `${agentName} หาเจอจาก Odoo แล้วค่ะ` : `${agentName} found this in Odoo.` },
-                    createProductCardFlexMessage(heuristicProduct.name, heuristicProduct.list_price, heuristicProduct.qty_available),
-                ];
+                return {
+                    handled: true,
+                    messages: [
+                        { type: 'text', text: isThai ? `${agentName} หาเจอจาก Odoo แล้วค่ะ` : `${agentName} found this in Odoo.` },
+                        createProductCardFlexMessage(heuristicProduct.name, heuristicProduct.list_price, heuristicProduct.qty_available),
+                    ],
+                };
             }
-            return [{ type: 'text', text: isThai ? `${agentName} ตอนนี้โหมด AI ไม่พร้อมใช้งาน แต่ยังช่วยค้นหาสินค้าและทำรายการ Odoo ได้ค่ะ` : `${agentName} AI mode is temporarily unavailable, but Odoo product and order features are still available.` }];
+            return {
+                handled: false,
+                messages: [{ type: 'text', text: isThai ? `${agentName} ไม่เข้าใจข้อความนี้ค่ะ ลองดูเมนูด้านล่างได้เลย` : `${agentName} didn't understand that — here's the menu instead.` }],
+            };
         }
         console.error('Chat Engine Error:', error);
-        return [{ type: 'text', text: isThai ? `${agentName} ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้งค่ะ` : `${agentName} is experiencing technical issues. Please try again.` }];
+        return {
+            handled: false,
+            messages: [{ type: 'text', text: isThai ? `${agentName} ระบบขัดข้องชั่วคราว ลองดูเมนูด้านล่างได้เลย` : `${agentName} is having technical trouble — here's the menu instead.` }],
+        };
     }
 };

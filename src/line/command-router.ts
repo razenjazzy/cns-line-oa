@@ -74,14 +74,13 @@ const cancelQuickReplyItems = (language: UserLanguage, includeSkip?: boolean): {
 
 const buildHomeMenuMessage = (language: UserLanguage, agentName: string, channel: ChannelContext | undefined): messagingApi.Message => {
   const availableServices = getAvailableServices(channel);
-  if (!availableServices.length) {
-    return text(tr(language, `${agentName} ยังไม่มีบริการเปิดใช้งานสำหรับช่องทางนี้`, `${agentName} no services are enabled for this channel yet.`));
-  }
-  return createServiceHomeFlexMessage(
-    availableServices.map(svc => ({ key: svc.key, label: language === 'en' ? svc.labelEn : svc.labelTh })),
-    language,
-    agentName
-  );
+  // Verification is core identity infrastructure, not a gated service —
+  // always shown, regardless of what a channel has enabled.
+  const menuItems = [
+    { key: 'VERIFY', label: tr(language, 'ยืนยันตัวตน', 'Verify account') },
+    ...availableServices.map(svc => ({ key: svc.key, label: language === 'en' ? svc.labelEn : svc.labelTh })),
+  ];
+  return createServiceHomeFlexMessage(menuItems, language, agentName);
 };
 
 const GUIDED_FORM_TTL_MINUTES = Number(process.env.GUIDED_FORM_TTL_MINUTES || 10);
@@ -184,6 +183,9 @@ export const resolveCommandReply = async (ctx: CommandReplyContext): Promise<mes
 
   if (upperText.startsWith('NAV ')) {
     const key = trimmed.replace(/^NAV\s*/i, '').trim();
+    if (key.toUpperCase() === 'VERIFY') {
+      return resolveCommandReply({ ...ctx, text: 'FORM VERIFY' });
+    }
     const serviceDef = getServiceDefinition(key);
     if (!serviceDef || !isServiceEnabledForChannel(serviceDef.key, ctx.channel)) {
       return [text(tr(userLanguage, `${agentName} ไม่พบบริการนี้`, `${agentName} service not found.`))];
@@ -602,8 +604,12 @@ export const resolveCommandReply = async (ctx: CommandReplyContext): Promise<mes
 
   const guidance = buildCommandKeywordGuidance(trimmed, userLanguage, agentName);
   if (guidance) {
-    return [text(guidance)];
+    return [text(guidance), buildHomeMenuMessage(userLanguage, agentName, ctx.channel)];
   }
 
-  return processChatMessage(ctx.userId, trimmed, userLanguage);
+  const chatResult = await processChatMessage(ctx.userId, trimmed, userLanguage);
+  if (!chatResult.handled) {
+    return [...chatResult.messages, buildHomeMenuMessage(userLanguage, agentName, ctx.channel)];
+  }
+  return chatResult.messages;
 };
