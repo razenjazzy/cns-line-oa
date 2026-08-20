@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.listRecentAuditEvents = exports.recordAuditEvent = exports.cancelGroupBuy = exports.confirmGroupBuy = exports.joinGroupBuy = exports.attachGroupBuyOdooOrder = exports.listGroupBuysByCreator = exports.getGroupBuyById = exports.createGroupBuy = exports.consumeOdooVerificationByToken = exports.consumeOdooVerificationByOtp = exports.createOdooVerificationChallenge = exports.setPlatformConfig = exports.getPlatformConfig = exports.setUserOdooVerificationStatus = exports.setUserOdooPartner = exports.setUserRole = exports.setUserPendingFlow = exports.getUserProfile = exports.setUserLanguage = exports.getUserLanguage = exports.setEscalationState = exports.getEscalationState = exports.saveConversationMessage = exports.getConversationHistory = exports.updateUserScore = exports.saveReportLog = exports.checkFirestoreReady = void 0;
+exports.listRecentAuditEvents = exports.recordAuditEvent = exports.cancelGroupBuy = exports.confirmGroupBuy = exports.joinGroupBuy = exports.attachGroupBuyOdooOrder = exports.listGroupBuysByCreator = exports.getGroupBuyById = exports.createGroupBuy = exports.consumeOdooVerificationByToken = exports.consumeOdooVerificationByOtp = exports.createOdooVerificationChallenge = exports.setPlatformConfig = exports.getPlatformConfig = exports.setUserOdooVerificationStatus = exports.setUserOdooPartner = exports.setUserRole = exports.setUserPendingFlow = exports.getUserProfile = exports.setUserLanguage = exports.getUserLanguage = exports.markUserFirstContact = exports.setEscalationState = exports.getEscalationState = exports.saveConversationMessage = exports.getConversationHistory = exports.updateUserScore = exports.saveReportLog = exports.checkFirestoreReady = void 0;
 const firestore_1 = require("@google-cloud/firestore");
 let db = null;
 const isPendingFlowActive = (pendingFlow) => {
@@ -238,6 +238,30 @@ const setEscalationState = async (userId, escalated) => {
     return result;
 };
 exports.setEscalationState = setEscalationState;
+/**
+ * Records the timestamp of a user's first-ever message so the bot can open
+ * the nav-button menu immediately on first contact instead of requiring a
+ * command. Returns true when persisted (the write succeeded, regardless of
+ * whether it was actually the first message).
+ */
+const markUserFirstContact = async (userId) => {
+    const previous = userStateCache.get(userId);
+    const now = new Date().toISOString();
+    mergeCachedUserState(userId, { firstMessageAt: now });
+    const result = await withFirestoreWrite('markUserFirstContact', async (database) => {
+        await database.collection('users').doc(userId).set({ firstMessageAt: now }, { merge: true });
+    });
+    if (!result.ok) {
+        if (previous) {
+            userStateCache.set(userId, previous);
+        }
+        else {
+            userStateCache.delete(userId);
+        }
+    }
+    return result.ok;
+};
+exports.markUserFirstContact = markUserFirstContact;
 const ODOO_VERIFY_OTP_MAX_ATTEMPTS = Number(process.env.ODOO_VERIFY_OTP_MAX_ATTEMPTS || 5);
 const odooVerificationCollection = 'odooVerifications';
 const odooVerificationTokenIndexCollection = 'odooVerificationTokens';
@@ -300,6 +324,7 @@ const getUserProfile = async (userId) => {
         displayName: cached.displayName,
         phone: cached.phone,
         pendingFlow: isPendingFlowActive(cached.pendingFlow) ? cached.pendingFlow : undefined,
+        firstMessageAt: cached.firstMessageAt,
     };
     return withFirestoreRead('getUserProfile', fallbackProfile, async (database) => {
         const doc = await database.collection('users').doc(userId).get();
@@ -314,6 +339,7 @@ const getUserProfile = async (userId) => {
             displayName: typeof data.displayName === 'string' ? data.displayName : undefined,
             phone: typeof data.phone === 'string' ? data.phone : undefined,
             pendingFlow: isPendingFlowActive(rawPendingFlow) ? rawPendingFlow : undefined,
+            firstMessageAt: typeof data.firstMessageAt === 'string' ? data.firstMessageAt : undefined,
         };
         mergeCachedUserState(userId, profile);
         return profile;

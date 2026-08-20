@@ -1,0 +1,27 @@
+---
+- name: Verify Health and Readiness of CNS LINE OA
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Query /healthz probe
+      uri:
+        url: "http://127.0.0.1:{{ app_port | default(8080) }}/healthz"
+        status_code: 200
+        return_content: true
+      register: healthz
+
+    - name: Display /healthz probe response
+      debug:
+        msg: "Healthz status: {{ healthz.status }} -> {{ healthz.content }}"
+
+    - name: Query /readyz probe
+      uri:
+        url: "http://127.0.0.1:{{ app_port | default(8080) }}/readyz"
+        status_code: 200
+        return_content: true
+      register: readyz
+      ignore_errors: true
+
+    - name: Display /readyz probe response
+      debug:
+        msg: "Readyz status: {{ readyz.status | default('failed') }} -> {{ readyz.content | default('unreachable') }}"

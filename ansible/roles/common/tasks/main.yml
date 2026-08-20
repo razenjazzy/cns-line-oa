@@ -1,0 +1,44 @@
+---
+- name: Update apt cache
+  apt:
+    update_cache: true
+    cache_valid_time: 3600
+  when: ansible_os_family == 'Debian'
+
+- name: Install essential baseline packages
+  package:
+    name:
+      - curl
+      - git
+      - ufw
+      - htop
+      - rsync
+      - ca-certificates
+      - gnupg
+    state: present
+
+- name: Create application group
+  group:
+    name: "{{ app_group }}"
+    state: present
+
+- name: Create application system user
+  user:
+    name: "{{ app_user }}"
+    group: "{{ app_group }}"
+    system: true
+    shell: /bin/bash
+    home: "{{ app_dir }}"
+    create_home: true
+
+- name: Ensure app directory exists with proper permissions
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: '0750'
+  loop:
+    - "{{ app_dir }}"
+    - "{{ app_dir }}/logs"
+    - "{{ app_dir }}/config"

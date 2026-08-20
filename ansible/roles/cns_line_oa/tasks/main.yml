@@ -1,0 +1,51 @@
+---
+- name: Synchronize project source files to remote host
+  synchronize:
+    src: "{{ playbook_dir }}/../../"
+    dest: "{{ app_dir }}/"
+    delete: false
+    recursive: true
+    rsync_opts:
+      - "--exclude=.git"
+      - "--exclude=node_modules"
+      - "--exclude=.venv"
+      - "--exclude=artifacts"
+      - "--exclude=dist"
+  become_user: "{{ app_user }}"
+
+- name: Deploy .env configuration from template
+  template:
+    src: .env.j2
+    dest: "{{ app_dir }}/.env"
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: '0600'
+
+- name: Deploy docker-compose.yml configuration
+  template:
+    src: docker-compose.yml.j2
+    dest: "{{ app_dir }}/docker-compose.yml"
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: '0644'
+
+- name: Build and start the cns-line-oa Docker container
+  community.docker.docker_compose_v2:
+    project_src: "{{ app_dir }}"
+    state: present
+    build: always
+  become_user: "{{ app_user }}"
+
+- name: Wait for service /healthz endpoint to become healthy
+  uri:
+    url: "http://127.0.0.1:{{ app_port }}/healthz"
+    status_code: 200
+    return_content: true
+  register: healthz_result
+  until: healthz_result.status == 200
+  retries: 10
+  delay: 3
+
+- name: Log health status
+  debug:
+    msg: "CNS LINE OA app is successfully running and responding to /healthz: {{ healthz_result.json | default(healthz_result.content) }}"

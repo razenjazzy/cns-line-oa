@@ -19,6 +19,7 @@ type CachedUserState = {
     phone?: string;
     escalatedToHuman?: boolean;
     pendingFlow?: PendingFlowState;
+    firstMessageAt?: string;
 };
 
 const isPendingFlowActive = (pendingFlow: PendingFlowState | undefined | null): pendingFlow is PendingFlowState => {
@@ -314,6 +315,29 @@ export const setEscalationState = async (userId: string, escalated: boolean) => 
     return result;
 };
 
+/**
+ * Records the timestamp of a user's first-ever message so the bot can open
+ * the nav-button menu immediately on first contact instead of requiring a
+ * command. Returns true when persisted (the write succeeded, regardless of
+ * whether it was actually the first message).
+ */
+export const markUserFirstContact = async (userId: string): Promise<boolean> => {
+    const previous = userStateCache.get(userId);
+    const now = new Date().toISOString();
+    mergeCachedUserState(userId, { firstMessageAt: now });
+    const result = await withFirestoreWrite('markUserFirstContact', async (database) => {
+        await database.collection('users').doc(userId).set({ firstMessageAt: now }, { merge: true });
+    });
+    if (!result.ok) {
+        if (previous) {
+            userStateCache.set(userId, previous);
+        } else {
+            userStateCache.delete(userId);
+        }
+    }
+    return result.ok;
+};
+
 export type UserLanguage = 'th' | 'en';
 export type UserRole = 'admin' | 'user';
 
@@ -326,6 +350,7 @@ export type UserProfile = {
     displayName?: string;
     phone?: string;
     pendingFlow?: PendingFlowState;
+    firstMessageAt?: string;
 };
 
 export type OdooVerificationChallenge = {
@@ -413,6 +438,7 @@ export const getUserProfile = async (userId: string): Promise<UserProfile> => {
         displayName: cached.displayName,
         phone: cached.phone,
         pendingFlow: isPendingFlowActive(cached.pendingFlow) ? cached.pendingFlow : undefined,
+        firstMessageAt: cached.firstMessageAt,
     };
 
     return withFirestoreRead('getUserProfile', fallbackProfile, async (database) => {
@@ -429,6 +455,7 @@ export const getUserProfile = async (userId: string): Promise<UserProfile> => {
             displayName: typeof data.displayName === 'string' ? data.displayName : undefined,
             phone: typeof data.phone === 'string' ? data.phone : undefined,
             pendingFlow: isPendingFlowActive(rawPendingFlow) ? rawPendingFlow : undefined,
+            firstMessageAt: typeof data.firstMessageAt === 'string' ? data.firstMessageAt : undefined,
         };
 
         mergeCachedUserState(userId, profile);

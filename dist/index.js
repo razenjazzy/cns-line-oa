@@ -52,6 +52,8 @@ const demo_session_1 = require("./services/demo-session");
 const pricing_control_1 = require("./services/pricing-control");
 const rate_limit_store_1 = require("./services/rate-limit-store");
 const user_verification_1 = require("./services/user-verification");
+const html_1 = require("./utils/html");
+const runtime_probes_1 = require("./services/runtime-probes");
 const adminAuth_1 = require("./services/adminAuth");
 const opsAuth_1 = require("./services/opsAuth");
 dotenv_1.default.config();
@@ -60,7 +62,7 @@ const port = process.env.PORT || 8080;
 const isProduction = process.env.NODE_ENV === 'production';
 const isWebhookTestEnabled = !isProduction || /^(1|true|yes|on)$/i.test(process.env.ENABLE_WEBHOOK_TEST || '');
 const isDemoControlEnabled = !isProduction || /^(1|true|yes|on)$/i.test(process.env.ENABLE_DEMO_CONTROL_PANEL || '');
-const allowDemoHeaderTokenFallbackInProd = /^(1|true|yes|on)$/i.test(process.env.ALLOW_DEMO_HEADER_TOKEN_FALLBACK || '');
+const allowDemoHeaderTokenFallbackInProd = !isProduction && /^(1|true|yes|on)$/i.test(process.env.ALLOW_DEMO_HEADER_TOKEN_FALLBACK || '');
 const webhookTestToken = process.env.WEBHOOK_TEST_TOKEN?.trim() || '';
 const opsApiToken = process.env.OPS_API_TOKEN?.trim() || '';
 const demoControlToken = process.env.DEMO_CONTROL_TOKEN?.trim() || opsApiToken;
@@ -75,6 +77,10 @@ let demoSessionStateLoaded = false;
 let demoSessionStateLoadPromise = null;
 const jsonParser = express_1.default.json({ limit: process.env.MAX_JSON_BODY || '64kb' });
 const readyzTimeoutMs = Number(process.env.READYZ_TIMEOUT_MS || 2500);
+app.use((_req, res, next) => {
+    res.setHeader('Content-Security-Policy', (0, html_1.buildCspHeader)());
+    next();
+});
 const getBearerToken = (authHeader) => {
     if (!authHeader?.startsWith('Bearer '))
         return '';
@@ -372,42 +378,7 @@ app.post('/ops/demo-session/rotate', opsAuth_1.requireOpsToken, jsonParser, asyn
 });
 app.get('/ops/workflow-audit', opsAuth_1.requireOpsToken, async (_req, res) => {
     await ensureDemoSessionStateLoaded();
-    const runtimeChecks = {
-        firestoreReady: { ok: false, message: 'not_executed' },
-        odooReady: { ok: false, message: 'not_executed' },
-        rateLimiter: { ok: false, message: 'not_executed' },
-    };
-    try {
-        const firestoreStatus = await withTimeout((0, firestore_1.checkFirestoreReady)(), readyzTimeoutMs, `Firestore check timed out after ${readyzTimeoutMs}ms`);
-        runtimeChecks.firestoreReady = { ok: firestoreStatus.ok, message: firestoreStatus.message };
-    }
-    catch (error) {
-        runtimeChecks.firestoreReady = { ok: false, message: String(error) };
-    }
-    try {
-        const odooStatus = await withTimeout((0, odoo_1.pingOdoo)(), readyzTimeoutMs, `Odoo check timed out after ${readyzTimeoutMs}ms`);
-        runtimeChecks.odooReady = {
-            ok: /connected successfully/i.test(odooStatus),
-            message: odooStatus,
-        };
-    }
-    catch (error) {
-        runtimeChecks.odooReady = { ok: false, message: String(error) };
-    }
-    try {
-        const limiterHealth = await withTimeout(rateStore.healthCheck(), readyzTimeoutMs, `Rate limit store check timed out after ${readyzTimeoutMs}ms`);
-        const limiterRuntime = (0, rate_limit_store_1.getRateLimitRuntimeStatus)();
-        const limiterDegraded = limiterRuntime.configuredMode === 'redis' && limiterRuntime.activeBackend !== 'redis';
-        runtimeChecks.rateLimiter = {
-            ok: limiterHealth.ok && !limiterDegraded,
-            message: limiterDegraded
-                ? `Configured redis but active backend is ${limiterRuntime.activeBackend}${limiterRuntime.fallbackReason ? ` (${limiterRuntime.fallbackReason})` : ''}`
-                : limiterHealth.message,
-        };
-    }
-    catch (error) {
-        runtimeChecks.rateLimiter = { ok: false, message: String(error) };
-    }
+    const runtimeChecks = await (0, runtime_probes_1.runRuntimeProbes)(rateStore, readyzTimeoutMs);
     const audit = {
         generatedAt: new Date().toISOString(),
         checks: {
@@ -451,12 +422,7 @@ app.get('/ops/workflow-audit', opsAuth_1.requireOpsToken, async (_req, res) => {
         failures.push('Demo control panel (ENABLE_DEMO_CONTROL_PANEL) is enabled in production — confirm this is intentional and time-boxed, then disable it again.');
     if (!audit.checks.security.webhookTestProductionSafe)
         failures.push('ENABLE_WEBHOOK_TEST is active in production without WEBHOOK_TEST_TOKEN');
-    if (!runtimeChecks.firestoreReady.ok)
-        failures.push(`Firestore runtime probe failed: ${runtimeChecks.firestoreReady.message}`);
-    if (!runtimeChecks.odooReady.ok)
-        failures.push(`Odoo runtime probe failed: ${runtimeChecks.odooReady.message}`);
-    if (!runtimeChecks.rateLimiter.ok)
-        failures.push(`Rate limiter runtime probe failed: ${runtimeChecks.rateLimiter.message}`);
+    failures.push(...(0, runtime_probes_1.collectProbeFailures)(runtimeChecks));
     const score = Math.max(0, 100 - failures.length * 20);
     return res.status(failures.length ? 200 : 200).json({
         ...audit,
@@ -469,7 +435,7 @@ app.get('/verify/odoo', verifyLinkLimiter, async (req, res) => {
     const token = String(req.query.token || '');
     const result = await (0, user_verification_1.verifyOdooUserByToken)(token);
     const title = result.ok ? 'Verification Completed' : 'Verification Failed';
-    const html = `<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>${title}</title><style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;background:#f8fafc;color:#0f172a;margin:0;padding:32px}main{max-width:640px;margin:0 auto;background:#fff;padding:24px;border-radius:12px;box-shadow:0 8px 24px rgba(2,6,23,.08)}h1{margin:0 0 12px;font-size:24px}p{line-height:1.6}</style></head><body><main><h1>${title}</h1><p>${result.message}</p></main></body></html>`;
+    const html = `<!doctype html><html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>${(0, html_1.escapeHtml)(title)}</title><style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;background:#f8fafc;color:#0f172a;margin:0;padding:32px}main{max-width:640px;margin:0 auto;background:#fff;padding:24px;border-radius:12px;box-shadow:0 8px 24px rgba(2,6,23,.08)}h1{margin:0 0 12px;font-size:24px}p{line-height:1.6}</style></head><body><main><h1>${(0, html_1.escapeHtml)(title)}</h1><p>${(0, html_1.escapeHtml)(result.message)}</p></main></body></html>`;
     res.status(result.ok ? 200 : 400).type('html').send(html);
 });
 app.post('/demo/session/login', jsonParser, async (req, res) => {
@@ -573,6 +539,45 @@ app.post('/demo/journey', requireDemoControlAccess, jsonParser, async (req, res)
         res.status(500).json({ error: String(error) });
     }
 });
+// Interactive web chat widget: drives the exact same routing engine as the
+// LINE bot (resolveCommandReply), so the /demo panel previews real bot
+// behavior — including the auto-opened nav-button menu on first contact.
+app.post('/demo/chat', requireDemoControlAccess, jsonParser, async (req, res) => {
+    try {
+        const rawText = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+        if (!rawText) {
+            return res.status(400).json({ error: 'Missing chat text.' });
+        }
+        const rawUserId = typeof req.body?.userId === 'string' ? req.body.userId.trim() : '';
+        const userId = rawUserId && rawUserId.length <= 120 ? rawUserId : 'web_demo_user';
+        const userLanguage = await (0, firestore_1.getUserLanguage)(userId);
+        const profile = await (0, firestore_1.getUserProfile)(userId);
+        const agentName = process.env.LINE_AGENT_NAME?.trim() || 'น้องโซระ';
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const botMessages = await (0, command_router_1.resolveCommandReply)({
+            text: rawText,
+            userId,
+            userLanguage,
+            profile,
+            agentName,
+            baseUrl,
+        });
+        // Flatten the LINE messages into a minimal chat transcript the widget
+        // can render: text messages keep their text, Flex messages surface a
+        // friendly label (their altText) plus the raw shape for later styling.
+        const transcript = botMessages.map(message => {
+            if (message.type === 'text') {
+                return { kind: 'text', text: message.text };
+            }
+            return { kind: 'card', text: (message.type === 'flex' ? message.altText : 'Card') || 'Card' };
+        });
+        return res.json({ agentName, transcript });
+    }
+    catch (error) {
+        console.error('Error in /demo/chat:', error);
+        res.status(500).json({ error: String(error) });
+    }
+});
 app.get('/demo/pricing-model', requireDemoControlAccess, (_req, res) => {
     return (0, pricing_control_1.getPricingModel)()
         .then(model => {
@@ -617,48 +622,8 @@ app.get('/demo/workflow-audit', requireDemoControlAccess, async (req, res) => {
         failures.push('DEMO_CONTROL_TOKEN is not configured for production');
     if (isProduction && isWebhookTestEnabled && !webhookTestToken)
         failures.push('WEBHOOK_TEST_TOKEN should be configured when ENABLE_WEBHOOK_TEST is enabled in production');
-    const runtimeChecks = {
-        firestoreReady: { ok: false, message: 'not_executed' },
-        odooReady: { ok: false, message: 'not_executed' },
-        rateLimiter: { ok: false, message: 'not_executed' },
-    };
-    try {
-        const firestoreStatus = await withTimeout((0, firestore_1.checkFirestoreReady)(), readyzTimeoutMs, `Firestore check timed out after ${readyzTimeoutMs}ms`);
-        runtimeChecks.firestoreReady = { ok: firestoreStatus.ok, message: firestoreStatus.message };
-    }
-    catch (error) {
-        runtimeChecks.firestoreReady = { ok: false, message: String(error) };
-    }
-    try {
-        const odooStatus = await withTimeout((0, odoo_1.pingOdoo)(), readyzTimeoutMs, `Odoo check timed out after ${readyzTimeoutMs}ms`);
-        runtimeChecks.odooReady = {
-            ok: /connected successfully/i.test(odooStatus),
-            message: odooStatus,
-        };
-    }
-    catch (error) {
-        runtimeChecks.odooReady = { ok: false, message: String(error) };
-    }
-    try {
-        const limiterHealth = await withTimeout(rateStore.healthCheck(), readyzTimeoutMs, `Rate limit store check timed out after ${readyzTimeoutMs}ms`);
-        const limiterRuntime = (0, rate_limit_store_1.getRateLimitRuntimeStatus)();
-        const limiterDegraded = limiterRuntime.configuredMode === 'redis' && limiterRuntime.activeBackend !== 'redis';
-        runtimeChecks.rateLimiter = {
-            ok: limiterHealth.ok && !limiterDegraded,
-            message: limiterDegraded
-                ? `Configured redis but active backend is ${limiterRuntime.activeBackend}${limiterRuntime.fallbackReason ? ` (${limiterRuntime.fallbackReason})` : ''}`
-                : limiterHealth.message,
-        };
-    }
-    catch (error) {
-        runtimeChecks.rateLimiter = { ok: false, message: String(error) };
-    }
-    if (!runtimeChecks.firestoreReady.ok)
-        failures.push(`Firestore runtime probe failed: ${runtimeChecks.firestoreReady.message}`);
-    if (!runtimeChecks.odooReady.ok)
-        failures.push(`Odoo runtime probe failed: ${runtimeChecks.odooReady.message}`);
-    if (!runtimeChecks.rateLimiter.ok)
-        failures.push(`Rate limiter runtime probe failed: ${runtimeChecks.rateLimiter.message}`);
+    const runtimeChecks = await (0, runtime_probes_1.runRuntimeProbes)(rateStore, readyzTimeoutMs);
+    failures.push(...(0, runtime_probes_1.collectProbeFailures)(runtimeChecks));
     const audit = {
         generatedAt: new Date().toISOString(),
         score: Math.max(0, 100 - failures.length * 20),

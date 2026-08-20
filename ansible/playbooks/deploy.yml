@@ -1,0 +1,7 @@
+---
+# Application-only fast redeployment playbook
+- name: Deploy CNS LINE OA Application
+  hosts: all
+  become: true
+  roles:
+    - role: cns_line_oa

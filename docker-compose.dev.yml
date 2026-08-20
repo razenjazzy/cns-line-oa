@@ -1,0 +1,70 @@
+# dev tier: local webhook + clawframework (mock/hosted) + redis
+#   docker compose -f docker-compose.dev.yml up --build
+#
+# Flask of value:
+#   - backend: the LINE OA service (uses /webhook-test which bypasses LINE signature)
+#   - clawframework: HTTP service (server.py) reachable at http://clawframework:8600
+#   - redis: dev rate-limit store
+#
+# Set CLAWFRAMEWORK_MOCK=true (default) so no API key is needed for local dev.
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  clawframework:
+    build:
+      context: ./clawframework
+      dockerfile: Dockerfile
+    environment:
+      PORT: "8600"
+      CLAWFRAMEWORK_MOCK: "${CLAWFRAMEWORK_MOCK:-true}"
+      GROQ_API_KEY: "${GROQ_API_KEY:-}"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+    ports:
+      - "8600:8600"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8600/healthz').status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    depends_on:
+      redis:
+        condition: service_healthy
+      clawframework:
+        condition: service_healthy
+    environment:
+      PORT: "8080"
+      NODE_ENV: "development"
+      RATE_LIMIT_STORE: "redis"
+      REDIS_URL: "redis://redis:6379"
+      CLAWFRAMEWORK_ENABLED: "true"
+      CLAWFRAMEWORK_PROVIDER: "${CLAWFRAMEWORK_PROVIDER:-groq}"
+      CLAWFRAMEWORK_MOCK: "${CLAWFRAMEWORK_MOCK:-true}"
+      # Point the service at the hosted clawframework instead of spawning python.
+      CLAWFRAMEWORK_HTTP_URL: "http://clawframework:8600/chat"
+      # Dev: leave GCP unconfigured so Firestore/BigQuery gracefully no-op
+      # (no ADC, no credentials needed). Enable GCP features by setting
+      # GOOGLE_CLOUD_PROJECT + GOOGLE_APPLICATION_CREDENTIALS_JSON and
+      # restarting the stack.
+      GOOGLE_CLOUD_PROJECT: ""
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"
+    # Hot-reload the TypeScript source in dev.
+    volumes:
+      - ./src:/usr/src/app/src
+      - ./dist:/usr/src/app/dist
+    command: ["npm", "run", "dev"]

@@ -1,0 +1,27 @@
+---
+app_name: cns-line-oa
+app_user: appuser
+app_group: appuser
+app_dir: /opt/cns-line-oa
+app_port: 8080
+docker_image_name: cns-line-oa
+docker_image_tag: latest
+
+# Node/Container runtime settings
+max_json_body: "64kb"
+user_state_cache_max: 10000
+user_state_cache_ttl_ms: 3600000
+readyz_timeout_ms: 2500
+shutdown_timeout_ms: 10000
+
+# Rate Limiting
+rate_limit_store: "memory" # or "redis"
+rate_limit_redis_prefix: "rl:"
+redis_url: ""
+
+# Nginx reverse proxy
+nginx_enabled: true
+nginx_server_name: "_"
+nginx_ssl_enabled: false
+nginx_ssl_cert: ""
+nginx_ssl_key: ""
