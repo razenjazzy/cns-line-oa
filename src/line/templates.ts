@@ -140,25 +140,29 @@ export const createDailyReportFlexMessage = (reportData: any, insights: string, 
     altText: language === 'en' ? 'Daily sales and inventory report' : 'สรุปรายงานยอดขายและสต็อกประจำวัน',
     contents: {
       type: 'bubble',
+      styles: {
+        header: { backgroundColor: BRAND.tealStrong },
+        body: { backgroundColor: BRAND.surface },
+      },
       header: {
         type: 'box',
         layout: 'vertical',
         contents: [
-          { type: 'text', text: language === 'en' ? `Daily report by ${agentName}` : `รายงานประจำวันโดย ${agentName}`, weight: 'bold', size: 'md', color: BRAND.teal, wrap: true },
+          { type: 'text', text: language === 'en' ? `Daily report by ${agentName}` : `รายงานประจำวันโดย ${agentName}`, weight: 'bold', size: 'md', color: '#FFFFFF', wrap: true },
         ],
       },
       body: {
         type: 'box',
         layout: 'vertical',
         contents: [
-          { type: 'text', text: insights, wrap: true, size: 'sm' },
+          { type: 'text', text: insights, wrap: true, size: 'sm', color: BRAND.ink },
           ...(rows.length ? [{ type: 'separator', margin: 'md' } as const] : []),
           ...rows.flatMap(row => ([
-            { type: 'text', text: row.product || '-', weight: 'bold', size: 'sm', margin: 'md', wrap: true } as const,
+            { type: 'text', text: row.product || '-', weight: 'bold', size: 'sm', margin: 'md', wrap: true, color: BRAND.tealStrong } as const,
             { type: 'text', text: language === 'en'
               ? `Sales ${Number(row.salesYesterday || 0).toFixed(0)} | Revenue ${Number(row.revenueYesterday || 0).toFixed(2)} THB | Stock ${Number(row.stock || 0).toFixed(0)}`
               : `ขาย ${Number(row.salesYesterday || 0).toFixed(0)} | รายได้ ${Number(row.revenueYesterday || 0).toFixed(2)} บาท | คงเหลือ ${Number(row.stock || 0).toFixed(0)}`,
-              size: 'xs', color: '#666666', wrap: true } as const,
+              size: 'xs', color: BRAND.inkSoft, wrap: true } as const,
           ])),
         ],
       },

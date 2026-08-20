@@ -1,46 +1,50 @@
+/**
+ * Command router — single source of truth for LINE command dispatch.
+ *
+ * Shared by:
+ *   - src/line/webhook.ts  (real LINE traffic, per-channel signature validated)
+ *   - src/index.ts         (/webhook-test, signature-free dev harness)
+ *
+ * Architecture (refactored):
+ *   The original 637-line if/else chain is replaced by a modular
+ *   CommandHandler registry (src/line/handlers/index.ts). Each domain
+ *   is a self-contained file. Adding a new command = add one file.
+ *
+ * Dispatch order:
+ *   1. Guided-form intercept  (unchanged)
+ *   2. First-contact menu     (unchanged)
+ *   3. Service channel gate   (unchanged)
+ *   4. Guided FORM * handler  (unchanged)
+ *   5. Handler registry       (NEW — replaces the if/else chain)
+ *   6. Keyword guidance       (near-miss suggestions)
+ *   7. AI chat fallback       (Gemini → ClawBridge → heuristic)
+ */
+
 import { messagingApi } from '@line/bot-sdk';
-import { isGroupBuyCommand, isGroupBuyEnabledForUser } from '../services/feature-flags';
-import { handleGroupBuyCommand } from '../services/group-buy';
-import { recordGroupBuyGate } from '../services/kpi';
-import { startOdooUserVerification, verifyOdooUserByOtp } from '../services/user-verification';
-import { isAuthorizedForAdminRole } from '../services/admin-authorization';
 import {
-  getAvailableServices,
-  getServiceDefinition,
-  getVisibleCommands,
-  isServiceEnabledForChannel,
-  resolveServiceForCommand,
-} from '../services/service-catalog';
+  markUserFirstContact,
+  recordAuditEvent,
+  setUserOdooPartner,
+  setUserPendingFlow,
+  setUserRole,
+  UserLanguage,
+  UserProfile,
+} from '../services/firestore';
+import { isServiceEnabledForChannel } from '../services/service-catalog';
+import { resolveServiceForCommand } from '../services/service-catalog';
+import { FLOW_SPECS, getFlowByStartCommand } from '../services/guided-forms';
+import { createBotTextFlexMessage, createFormPromptFlexMessage, createServiceActionFlexMessage, createServiceHomeFlexMessage } from './templates';
+import { getAvailableServices, getServiceDefinition, getVisibleCommands } from '../services/service-catalog';
+import { buildCommandKeywordGuidance } from './command-guide';
 import { ChannelContext } from './channels';
-import {
-  parseDemoQuotePayload,
-  parseServiceCreatePayload,
-  parseServiceUpdatePayload,
-  parseUserCreatePayload,
-  parseUserUpdatePayload,
-} from './command-validators';
-import { buildCommandKeywordGuidance, buildStepByStepGuide, isGuideCommand } from './command-guide';
-import { recordAuditEvent, setUserLanguage, setUserOdooPartner, setUserPendingFlow, setUserRole, UserLanguage, UserProfile } from '../services/firestore';
-import { FLOW_SPECS, FlowSpec, getFlowByStartCommand } from '../services/guided-forms';
-import { processChatMessage } from '../services/chat';
-import { createBotTextFlexMessage, createFormPromptFlexMessage, createOrderSummaryFlexMessage, createProductCardFlexMessage, createServiceActionFlexMessage, createServiceHomeFlexMessage } from './templates';
-import {
-  createPartnerFromLine,
-  createServiceCatalogItem,
-  createQuotationFromLine,
-  deletePartnerFromLine,
-  deleteServiceCatalogItem,
-  findOrderByReference,
-  findProductByQuery,
-  getPartnerByPhone,
-  getServiceByIdentifier,
-  listServiceCatalogItems,
-  pingOdoo,
-  seedOdooSampleSalesData,
-  updatePartnerFromLine,
-  updateServiceCatalogItem,
-  verifyOdooAdminAccess,
-} from '../services/odoo';
+import type { FlowSpec } from '../services/guided-forms';
+import { COMMAND_HANDLERS } from './handlers/index';
+import { buildKeywordGuidanceMessages } from './handlers/help';
+import { handleChatFallback } from './handlers/chat-fallback';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 export type CommandReplyContext = {
   text: string;
@@ -53,7 +57,12 @@ export type CommandReplyContext = {
   isGroupContext?: boolean;
 };
 
+// ---------------------------------------------------------------------------
+// Shared helpers (used by handler modules via import)
+// ---------------------------------------------------------------------------
+
 const tr = (language: UserLanguage, th: string, en: string): string => (language === 'en' ? en : th);
+
 const inferTone = (value: string): 'info' | 'success' | 'warning' | 'error' => {
   const lower = value.toLowerCase();
   if (/failed|fail|error|unauthorized|invalid|not found|ไม่สำเร็จ|ไม่พบ|ล้มเหลว|ไม่ได้|ผิด/.test(lower)) return 'error';
@@ -64,7 +73,7 @@ const inferTone = (value: string): 'info' | 'success' | 'warning' | 'error' => {
 
 const inferLanguage = (value: string): UserLanguage => /[\u0E00-\u0E7F]/.test(value) ? 'th' : 'en';
 
-const text = (value: string, language: UserLanguage = inferLanguage(value), title?: string): messagingApi.Message =>
+export const text = (value: string, language: UserLanguage = inferLanguage(value), title?: string): messagingApi.Message =>
   createBotTextFlexMessage({
     title: title || tr(language, 'ผู้ช่วย Cloudnex', 'Cloudnex assistant'),
     body: value,
@@ -72,18 +81,33 @@ const text = (value: string, language: UserLanguage = inferLanguage(value), titl
     tone: inferTone(value),
   });
 
-const materializeMessages = (messages: messagingApi.Message[], language: UserLanguage): messagingApi.Message[] =>
-  messages.map(message => {
-    if (message.type !== 'text') return message;
-    return text(message.text, language);
-  });
+export const buildHomeMenuMessage = (
+  language: UserLanguage,
+  agentName: string,
+  channel: ChannelContext | undefined,
+  isAdmin: boolean,
+): messagingApi.Message => {
+  const availableServices = getAvailableServices(channel, isAdmin);
+  const menuItems = [
+    { key: 'VERIFY', label: tr(language, 'ยืนยันตัวตน', 'Verify account') },
+    ...availableServices.map(svc => ({ key: svc.key, label: language === 'en' ? svc.labelEn : svc.labelTh })),
+  ];
+  return createServiceHomeFlexMessage(menuItems, language, agentName);
+};
+
+// ---------------------------------------------------------------------------
+// Guided form helpers
+// ---------------------------------------------------------------------------
+
+const GUIDED_FORM_TTL_MINUTES = Number(process.env.GUIDED_FORM_TTL_MINUTES || 10);
+const buildFlowExpiry = (): string => new Date(Date.now() + GUIDED_FORM_TTL_MINUTES * 60 * 1000).toISOString();
 
 const buildFormPromptMessage = (
   language: UserLanguage,
   agentName: string,
   flowSpec: FlowSpec,
   stepIndex: number,
-  promptOverride?: string
+  promptOverride?: string,
 ): messagingApi.Message => {
   const field = flowSpec.fields[stepIndex];
   return createFormPromptFlexMessage({
@@ -96,533 +120,149 @@ const buildFormPromptMessage = (
   });
 };
 
-const buildHomeMenuMessage = (language: UserLanguage, agentName: string, channel: ChannelContext | undefined, isAdmin: boolean): messagingApi.Message => {
-  const availableServices = getAvailableServices(channel, isAdmin);
-  // Verification is core identity infrastructure, not a gated service —
-  // always shown, regardless of what a channel has enabled.
-  const menuItems = [
-    { key: 'VERIFY', label: tr(language, 'ยืนยันตัวตน', 'Verify account') },
-    ...availableServices.map(svc => ({ key: svc.key, label: language === 'en' ? svc.labelEn : svc.labelTh })),
-  ];
-  return createServiceHomeFlexMessage(menuItems, language, agentName);
-};
+// ---------------------------------------------------------------------------
+// Guided form step handler
+// ---------------------------------------------------------------------------
 
-const GUIDED_FORM_TTL_MINUTES = Number(process.env.GUIDED_FORM_TTL_MINUTES || 10);
-const buildFlowExpiry = (): string => new Date(Date.now() + GUIDED_FORM_TTL_MINUTES * 60 * 1000).toISOString();
-
-const buildFeaturesMessage = (language: UserLanguage, agentName: string): string => {
-  if (language === 'en') {
-    return `${agentName} features\n1) Real-time Odoo product lookup\n2) Quotation creation from LINE chat\n3) Order status tracking from Odoo\n4) Daily report from real Odoo sales/inventory\n5) Thai/English language switching\n6) Named assistant identity for presentation demos`;
-  }
-
-  return `${agentName} ความสามารถหลัก\n1) ค้นหาสินค้าจาก Odoo แบบเรียลไทม์\n2) สร้างใบเสนอราคาจาก LINE chat\n3) เช็กสถานะออเดอร์จาก Odoo\n4) รายงานประจำวันจากยอดขาย/สต็อกจริงใน Odoo\n5) สลับภาษา ไทย/อังกฤษ\n6) กำหนดชื่อผู้ช่วยสำหรับงานเดโมได้`;
-};
-
-const buildJourneyMessage = (language: UserLanguage, agentName: string): string => {
-  if (language === 'en') {
-    return `${agentName} end-to-end demo journey\nStep 1: ADMIN VERIFY\nStep 2: ADMIN ENABLE\nStep 3: DEMO SEED ODOO\nStep 4: USER CREATE Somchai,0812345678,somchai@example.com\nStep 5: DEMO PRODUCT App\nStep 6: DEMO QUOTE App Premium Plan,1,Somchai,0812345678\nStep 7: DEMO ORDER <reference>\nStep 8: DEMO REPORT\nStep 9: USER UPDATE 0812345678,Somchai CEO,0812345678,somchai.ceo@example.com\nStep 10: USER DELETE 0812345678`;
-  }
-
-  return `${agentName} เส้นทางเดโมครบวงจร\nขั้นที่ 1: ADMIN VERIFY\nขั้นที่ 2: ADMIN ENABLE\nขั้นที่ 3: DEMO SEED ODOO\nขั้นที่ 4: USER CREATE สมชาย,0812345678,somchai@example.com\nขั้นที่ 5: DEMO PRODUCT App\nขั้นที่ 6: DEMO QUOTE App Premium Plan,1,สมชาย,0812345678\nขั้นที่ 7: DEMO ORDER <เลขอ้างอิง>\nขั้นที่ 8: DEMO REPORT\nขั้นที่ 9: USER UPDATE 0812345678,สมชาย ซีอีโอ,0812345678,somchai.ceo@example.com\nขั้นที่ 10: USER DELETE 0812345678`;
-};
-
-const adminOnlyReply = (language: UserLanguage): messagingApi.Message =>
-  text(tr(language, 'คำสั่งนี้สำหรับแอดมินเท่านั้น', 'This command is admin-only.'));
-
-/**
- * Single source of truth for LINE command routing. Shared by the real LINE
- * webhook (src/line/webhook.ts) and the signature-free /webhook-test harness
- * (src/index.ts) so the two surfaces cannot drift out of sync with each other.
- */
-export const resolveCommandReply = async (ctx: CommandReplyContext): Promise<messagingApi.Message[]> => {
-  const { profile, agentName } = ctx;
-  const userLanguage = ctx.userLanguage;
+const handleGuidedFormStep = async (ctx: CommandReplyContext): Promise<messagingApi.Message[]> => {
+  const { profile, userId, userLanguage, agentName } = ctx;
   const trimmed = ctx.text.trim();
   const upperText = trimmed.toUpperCase();
 
-  // A guided form in progress intercepts everything except an explicit
-  // cancel, so free-text field answers never fall into normal dispatch.
-  if (profile.pendingFlow) {
-    const flowSpec = FLOW_SPECS[profile.pendingFlow.flow as keyof typeof FLOW_SPECS];
+  const flowSpec = FLOW_SPECS[profile.pendingFlow!.flow as keyof typeof FLOW_SPECS];
 
-    if (!flowSpec) {
-      await setUserPendingFlow(ctx.userId, null);
-    } else if (upperText === 'CANCEL' || upperText === 'BACK' || upperText === 'NAV HOME' || upperText === 'NAV') {
-      await setUserPendingFlow(ctx.userId, null);
-      return [
-        text(tr(userLanguage, `${agentName} ยกเลิกแบบฟอร์มแล้ว`, `${agentName} form cancelled.`)),
-        buildHomeMenuMessage(userLanguage, agentName, ctx.channel, profile.role === 'admin'),
-      ];
-    } else {
-      const field = flowSpec.fields[profile.pendingFlow.stepIndex];
-      const isSkip = Boolean(field.optional) && upperText === 'SKIP';
-      const value = isSkip ? '' : trimmed;
-
-      if (!isSkip && !field.validate(value)) {
-        return [buildFormPromptMessage(
-          userLanguage,
-          agentName,
-          flowSpec,
-          profile.pendingFlow.stepIndex,
-          tr(userLanguage, `ค่าที่กรอกไม่ถูกต้อง กรุณาลองใหม่\n${field.promptTh}`, `That doesn't look right, please try again.\n${field.promptEn}`)
-        )];
-      }
-
-      const collected = { ...profile.pendingFlow.collected, [field.key]: value };
-      const nextIndex = profile.pendingFlow.stepIndex + 1;
-
-      if (nextIndex >= flowSpec.fields.length) {
-        await setUserPendingFlow(ctx.userId, null);
-        const finalCommandText = flowSpec.buildFinalCommand(collected);
-        return resolveCommandReply({ ...ctx, text: finalCommandText, profile: { ...profile, pendingFlow: undefined } });
-      }
-
-      await setUserPendingFlow(ctx.userId, {
-        flow: flowSpec.key,
-        stepIndex: nextIndex,
-        collected,
-        expiresAt: buildFlowExpiry(),
-      });
-      return [buildFormPromptMessage(userLanguage, agentName, flowSpec, nextIndex)];
-    }
+  if (!flowSpec) {
+    await setUserPendingFlow(userId, null);
+    return [];
   }
 
-  const gatedService = resolveServiceForCommand(upperText);
-  if (gatedService && !isServiceEnabledForChannel(gatedService, ctx.channel)) {
-    return [text(tr(userLanguage, `${agentName} บริการนี้ไม่เปิดใช้งานสำหรับช่องทางนี้`, `${agentName} this service is not available on this channel.`))];
+  if (upperText === 'CANCEL' || upperText === 'BACK' || upperText === 'NAV HOME' || upperText === 'NAV') {
+    await setUserPendingFlow(userId, null);
+    return [
+      text(tr(userLanguage, `${agentName} ยกเลิกแบบฟอร์มแล้ว`, `${agentName} form cancelled.`)),
+      buildHomeMenuMessage(userLanguage, agentName, ctx.channel, profile.role === 'admin'),
+    ];
   }
 
-  if (upperText === 'NAV HOME' || upperText === 'NAV' || upperText === 'BACK') {
-    return [buildHomeMenuMessage(userLanguage, agentName, ctx.channel, profile.role === 'admin')];
-  }
+  const field = flowSpec.fields[profile.pendingFlow!.stepIndex];
+  const isSkip = Boolean(field.optional) && upperText === 'SKIP';
+  const value = isSkip ? '' : trimmed;
 
-  if (upperText.startsWith('NAV ')) {
-    const key = trimmed.replace(/^NAV\s*/i, '').trim();
-    if (key.toUpperCase() === 'VERIFY') {
-      return resolveCommandReply({ ...ctx, text: 'FORM VERIFY' });
-    }
-    const serviceDef = getServiceDefinition(key);
-    const isAdmin = profile.role === 'admin';
-    const visibleCommands = serviceDef ? getVisibleCommands(serviceDef, isAdmin) : [];
-    if (!serviceDef || !isServiceEnabledForChannel(serviceDef.key, ctx.channel) || !visibleCommands.length) {
-      return [text(tr(userLanguage, `${agentName} ไม่พบบริการนี้`, `${agentName} service not found.`))];
-    }
-    return [createServiceActionFlexMessage(
-      userLanguage === 'en' ? serviceDef.labelEn : serviceDef.labelTh,
-      visibleCommands.map(c => ({ text: c.text, label: userLanguage === 'en' ? c.labelEn : c.labelTh })),
-      userLanguage
+  if (!isSkip && !field.validate(value)) {
+    return [buildFormPromptMessage(
+      userLanguage, agentName, flowSpec, profile.pendingFlow!.stepIndex,
+      tr(userLanguage,
+        `ค่าที่กรอกไม่ถูกต้อง กรุณาลองใหม่\n${field.promptTh}`,
+        `That doesn't look right, please try again.\n${field.promptEn}`,
+      ),
     )];
   }
 
-  if (upperText.startsWith('FORM ')) {
-    const flowSpec = getFlowByStartCommand(upperText);
-    if (!flowSpec) {
-      return [text(tr(userLanguage, `${agentName} ไม่พบแบบฟอร์มนี้`, `${agentName} form not found.`))];
-    }
-    if (flowSpec.requiresAdmin && profile.role !== 'admin') {
-      return [adminOnlyReply(userLanguage)];
-    }
-    if (ctx.isGroupContext) {
-      // Guided-form state lives on the shared conversation profile, so in a
-      // group/room it would be visible to (and answerable by) everyone in the
-      // chat. Fall back to the single-line command instead of risking two
-      // people's answers interleaving into one submission.
-      return [text(tr(
-        userLanguage,
-        `${agentName} แบบฟอร์มทีละขั้นใช้ไม่ได้ในแชทกลุ่ม กรุณาใช้คำสั่งบรรทัดเดียวแทน เช่น: ${flowSpec.startCommand.replace('FORM ', '')} ...`,
-        `${agentName} step-by-step forms aren't available in group chats. Please use the single-line command instead, e.g.: ${flowSpec.startCommand.replace('FORM ', '')} ...`
-      ))];
-    }
+  const collected = { ...profile.pendingFlow!.collected, [field.key]: value };
+  const nextIndex = profile.pendingFlow!.stepIndex + 1;
 
-    await setUserPendingFlow(ctx.userId, {
-      flow: flowSpec.key,
-      stepIndex: 0,
-      collected: {},
-      expiresAt: buildFlowExpiry(),
-    });
-
-    return [buildFormPromptMessage(userLanguage, agentName, flowSpec, 0)];
+  if (nextIndex >= flowSpec.fields.length) {
+    await setUserPendingFlow(userId, null);
+    const finalCommandText = flowSpec.buildFinalCommand(collected);
+    return resolveCommandReply({ ...ctx, text: finalCommandText, profile: { ...profile, pendingFlow: undefined } });
   }
 
-  if (upperText.startsWith('VERIFY START')) {
-    const phone = trimmed.replace(/^VERIFY START\s*/i, '').trim();
-    const message = await startOdooUserVerification({
-      userId: ctx.userId,
-      rawPhone: phone,
-      language: userLanguage,
-      agentName,
-      fallbackBaseUrl: ctx.baseUrl,
-    });
-    return [text(message)];
+  await setUserPendingFlow(userId, {
+    flow: flowSpec.key,
+    stepIndex: nextIndex,
+    collected,
+    expiresAt: buildFlowExpiry(),
+  });
+  return [buildFormPromptMessage(userLanguage, agentName, flowSpec, nextIndex)];
+};
+
+// ---------------------------------------------------------------------------
+// FORM * handler
+// ---------------------------------------------------------------------------
+
+const handleFormCommand = async (ctx: CommandReplyContext): Promise<messagingApi.Message[] | null> => {
+  const { profile, userId, userLanguage, agentName } = ctx;
+  const upperText = ctx.text.trim().toUpperCase();
+
+  if (!upperText.startsWith('FORM ')) return null;
+
+  const flowSpec = getFlowByStartCommand(upperText);
+  if (!flowSpec) {
+    return [text(tr(userLanguage, `${agentName} ไม่พบแบบฟอร์มนี้`, `${agentName} form not found.`))];
   }
 
-  if (upperText.startsWith('VERIFY OTP')) {
-    const otpCode = trimmed.replace(/^VERIFY OTP\s*/i, '').trim();
-    const message = await verifyOdooUserByOtp({ userId: ctx.userId, otpCode, language: userLanguage, agentName });
-    return [text(message)];
+  if (flowSpec.requiresAdmin && profile.role !== 'admin') {
+    return [text(tr(userLanguage, 'คำสั่งนี้สำหรับแอดมินเท่านั้น', 'This command is admin-only.'))];
   }
 
-  if (upperText === 'VERIFY STATUS') {
-    return [text(tr(
-      userLanguage,
-      profile.odooVerified
-        ? `${agentName} บัญชี Odoo ของคุณยืนยันแล้ว${profile.odooVerifiedAt ? ` เมื่อ ${profile.odooVerifiedAt}` : ''}`
-        : `${agentName} บัญชี Odoo ของคุณยังไม่ยืนยัน\nเริ่มด้วย: VERIFY START <เบอร์โทร>`,
-      profile.odooVerified
-        ? `${agentName} your Odoo account is verified${profile.odooVerifiedAt ? ` at ${profile.odooVerifiedAt}` : ''}`
-        : `${agentName} your Odoo account is not verified yet\nStart with: VERIFY START <phone>`
+  if (ctx.isGroupContext) {
+    return [text(tr(userLanguage,
+      `${agentName} แบบฟอร์มทีละขั้นใช้ไม่ได้ในแชทกลุ่ม กรุณาใช้คำสั่งบรรทัดเดียวแทน เช่น: ${flowSpec.startCommand.replace('FORM ', '')} ...`,
+      `${agentName} step-by-step forms aren't available in group chats. Please use the single-line command instead, e.g.: ${flowSpec.startCommand.replace('FORM ', '')} ...`,
     ))];
   }
 
-  if (isGroupBuyCommand(trimmed)) {
-    const gate = isGroupBuyEnabledForUser(ctx.userId);
-    recordGroupBuyGate(gate.enabled, gate.reason);
-    if (!gate.enabled) {
-      return [text(tr(userLanguage, `${agentName} ฟีเจอร์ Group-Buy ยังไม่เปิดใช้งานสำหรับบัญชีนี้`, `${agentName} Group-Buy is not enabled for this account yet.`))];
-    }
+  await setUserPendingFlow(userId, {
+    flow: flowSpec.key,
+    stepIndex: 0,
+    collected: {},
+    expiresAt: buildFlowExpiry(),
+  });
+  return [buildFormPromptMessage(userLanguage, agentName, flowSpec, 0)];
+};
 
-    const message = await handleGroupBuyCommand({
-      text: trimmed,
-      userId: ctx.userId,
-      userLanguage,
-      isAdmin: profile.role === 'admin',
-      agentName,
-    });
-    return [text(message)];
+// ---------------------------------------------------------------------------
+// Main dispatch — resolveCommandReply
+// ---------------------------------------------------------------------------
+
+export const resolveCommandReply = async (ctx: CommandReplyContext): Promise<messagingApi.Message[]> => {
+  const { profile, userId, userLanguage, agentName } = ctx;
+  const trimmed = ctx.text.trim();
+  const upperText = trimmed.toUpperCase();
+
+  // Step 1: Guided form intercept
+  if (profile.pendingFlow) {
+    const result = await handleGuidedFormStep(ctx);
+    if (result.length > 0) return result;
+    // flowSpec was null — fall through to normal dispatch
   }
 
-  if (upperText === 'LANG TH' || upperText === 'THAI' || upperText === 'ภาษาไทย') {
-    const result = await setUserLanguage(ctx.userId, 'th');
-    if (!result.ok) {
-      return [text(tr(userLanguage, 'บันทึกภาษาไม่สำเร็จ กรุณาลองใหม่อีกครั้ง', 'Unable to save language preference right now. Please try again.'))];
-    }
-    return [text(`${agentName} เปลี่ยนภาษาเป็นไทยแล้วค่ะ`)];
-  }
-
-  if (upperText === 'LANG EN' || upperText === 'ENGLISH') {
-    const result = await setUserLanguage(ctx.userId, 'en');
-    if (!result.ok) {
-      return [text(tr(userLanguage, 'บันทึกภาษาไม่สำเร็จ กรุณาลองใหม่อีกครั้ง', 'Unable to save language preference right now. Please try again.'))];
-    }
-    return [text(`${agentName} switched language to English.`)];
-  }
-
-  if (upperText === 'ADMIN VERIFY') {
-    try {
-      const result = await verifyOdooAdminAccess();
-      return [text(tr(userLanguage, `ผลตรวจสิทธิ์แอดมิน: ${result.message}`, `Admin verification: ${result.message}`))];
-    } catch {
-      return [text(tr(userLanguage, 'ตรวจสิทธิ์แอดมินล้มเหลว', 'Admin verification failed.'))];
-    }
-  }
-
-  if (upperText === 'ADMIN ENABLE') {
-    const authorization = isAuthorizedForAdminRole(ctx.userId, profile);
-    if (!authorization.ok) {
-      return [adminOnlyReply(userLanguage)];
-    }
-
-    const result = await verifyOdooAdminAccess();
-    if (!result.ok) {
-      return [text(tr(userLanguage, `เปิดสิทธิ์แอดมินไม่ได้: ${result.message}`, `Cannot enable admin: ${result.message}`))];
-    }
-
-    const roleResult = await setUserRole(ctx.userId, 'admin');
-    if (!roleResult.ok) {
-      return [text(tr(userLanguage, 'เปิดสิทธิ์แอดมินไม่สำเร็จจากระบบข้อมูล กรุณาลองอีกครั้ง', 'Admin enable failed due to data-store issue. Please try again.'))];
-    }
-    recordAuditEvent({ action: 'role_grant', outcome: 'success', actorUserId: ctx.userId, channelId: ctx.channel?.channelId, targetId: ctx.userId });
-    return [text(tr(userLanguage, 'เปิดสิทธิ์แอดมินแล้ว สามารถใช้คำสั่งแอดมินได้', 'Admin role enabled. You can now run admin commands.'))];
-  }
-
-  if (upperText === 'ADMIN DISABLE' || upperText === 'ADMIN REVOKE') {
-    if (profile.role !== 'admin') {
-      return [adminOnlyReply(userLanguage)];
-    }
-
-    const roleResult = await setUserRole(ctx.userId, 'user');
-    if (!roleResult.ok) {
-      return [text(tr(userLanguage, 'ปิดสิทธิ์แอดมินไม่สำเร็จจากระบบข้อมูล กรุณาลองอีกครั้ง', 'Admin disable failed due to a data-store issue. Please try again.'))];
-    }
-    recordAuditEvent({ action: 'role_revoke', outcome: 'success', actorUserId: ctx.userId, channelId: ctx.channel?.channelId, targetId: ctx.userId });
-    return [text(tr(userLanguage, 'ปิดสิทธิ์แอดมินสำหรับบัญชีนี้แล้ว', 'Admin role disabled for this account.'))];
-  }
-
-  if (upperText === 'NAME' || upperText === 'BOT NAME' || upperText === 'WHAT IS YOUR NAME' || upperText === 'ชื่ออะไร') {
-    return [text(tr(userLanguage, `ฉันชื่อ ${agentName} ค่ะ`, `My name is ${agentName}.`))];
-  }
-
-  if (upperText === 'เริ่มต้น' || upperText === 'START' || upperText === 'HELP' || upperText === 'OPTIONS' || upperText === 'MENU') {
+  // Step 2: First-contact → show home menu immediately
+  if (!profile.firstMessageAt && !ctx.isGroupContext) {
+    await markUserFirstContact(userId);
     return [buildHomeMenuMessage(userLanguage, agentName, ctx.channel, profile.role === 'admin')];
   }
 
-  if (upperText === 'FEATURES' || upperText === 'ฟีเจอร์') {
-    return [text(buildFeaturesMessage(userLanguage, agentName))];
-  }
-
-  if (upperText === 'JOURNEY' || upperText === 'DEMO JOURNEY') {
-    return [text(buildJourneyMessage(userLanguage, agentName))];
-  }
-
-  if (isGuideCommand(trimmed)) {
-    return [text(buildStepByStepGuide(userLanguage, agentName))];
-  }
-
-  if (upperText === 'RUN DEMO JOURNEY') {
-    const odooStatus = await pingOdoo();
-    const seedStatus = await seedOdooSampleSalesData();
-    const intro = tr(userLanguage, `${agentName} เตรียมสภาพแวดล้อมเดโมให้แล้วค่ะ`, `${agentName} prepared your demo environment.`);
-    return [text(`${intro}\n\n${tr(userLanguage, 'สถานะ Odoo:', 'Odoo:')} ${odooStatus}\n${tr(userLanguage, 'ผลการสร้างข้อมูลตัวอย่าง:', 'Seed:')} ${seedStatus}\n\n${buildJourneyMessage(userLanguage, agentName)}`)];
-  }
-
-  if (upperText.startsWith('USER CREATE')) {
-    if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
-
-    const payload = trimmed.replace(/^USER CREATE\s*/i, '').trim();
-    const parsed = parseUserCreatePayload(payload);
-    if (!parsed) {
-      return [text(tr(userLanguage, 'วิธีใช้: USER CREATE <ชื่อ>,<เบอร์>,<อีเมล?>', 'Usage: USER CREATE <name>,<phone>,<email?>'))];
-    }
-
-    const { name, phone, email } = parsed;
-    const partner = await createPartnerFromLine(name, phone, email);
-    if (!partner) {
-      recordAuditEvent({ action: 'user_create', outcome: 'failure', actorUserId: ctx.userId, channelId: ctx.channel?.channelId, detail: `phone=${phone}` });
-      return [text(tr(userLanguage, 'สร้างผู้ใช้ใน Odoo ไม่สำเร็จ', 'Failed to create user in Odoo.'))];
-    }
-
-    const partnerResult = await setUserOdooPartner(ctx.userId, partner.id, partner.name, partner.phone);
-    recordAuditEvent({ action: 'user_create', outcome: 'success', actorUserId: ctx.userId, channelId: ctx.channel?.channelId, targetId: String(partner.id) });
-    if (!partnerResult.ok) {
-      return [text(tr(userLanguage, 'สร้างผู้ใช้ใน Odoo สำเร็จ แต่บันทึกสถานะผู้ใช้ในระบบไม่สำเร็จ กรุณาลองใหม่', 'Created Odoo user, but failed to persist user state. Please try again.'))];
-    }
-    return [text(tr(userLanguage, `สร้างผู้ใช้ Odoo สำเร็จ\n- ID: ${partner.id}\n- ชื่อ: ${partner.name}\n- เบอร์: ${partner.phone || '-'}`, `Odoo user created\n- ID: ${partner.id}\n- Name: ${partner.name}\n- Phone: ${partner.phone || '-'}`))];
-  }
-
-  if (upperText.startsWith('USER READ')) {
-    if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
-
-    const phone = trimmed.replace(/^USER READ\s*/i, '').trim();
-    if (!phone) {
-      return resolveCommandReply({ ...ctx, text: 'FORM USER READ' });
-    }
-
-    const partner = await getPartnerByPhone(phone);
-    if (!partner) {
-      return [text(tr(userLanguage, `ไม่พบผู้ใช้ Odoo ที่เบอร์ ${phone}`, `No Odoo user found with phone ${phone}`))];
-    }
-
-    return [text(tr(userLanguage, `ข้อมูลผู้ใช้ Odoo\n- ID: ${partner.id}\n- ชื่อ: ${partner.name}\n- เบอร์: ${partner.phone || '-'}\n- อีเมล: ${partner.email || '-'}`, `Odoo user profile\n- ID: ${partner.id}\n- Name: ${partner.name}\n- Phone: ${partner.phone || '-'}\n- Email: ${partner.email || '-'}`))];
-  }
-
-  if (upperText.startsWith('USER UPDATE')) {
-    if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
-
-    const payload = trimmed.replace(/^USER UPDATE\s*/i, '').trim();
-    const parsed = parseUserUpdatePayload(payload);
-    if (!parsed) {
-      return [text(tr(userLanguage, 'วิธีใช้: USER UPDATE <เบอร์>,<ชื่อใหม่?>,<เบอร์ใหม่?>,<อีเมล?>', 'Usage: USER UPDATE <phone>,<name?>,<newPhone?>,<email?>'))];
-    }
-
-    const { phone, name, newPhone, email } = parsed;
-    const existing = await getPartnerByPhone(phone);
-    if (!existing) {
-      return [text(tr(userLanguage, `ไม่พบผู้ใช้ Odoo ที่เบอร์ ${phone}`, `No Odoo user found with phone ${phone}`))];
-    }
-
-    const updated = await updatePartnerFromLine(existing.id, name, newPhone, email);
-    if (!updated) {
-      recordAuditEvent({ action: 'user_update', outcome: 'failure', actorUserId: ctx.userId, channelId: ctx.channel?.channelId, targetId: String(existing.id) });
-      return [text(tr(userLanguage, 'อัปเดตผู้ใช้ Odoo ไม่สำเร็จ', 'Failed to update Odoo user.'))];
-    }
-    recordAuditEvent({ action: 'user_update', outcome: 'success', actorUserId: ctx.userId, channelId: ctx.channel?.channelId, targetId: String(existing.id) });
-
-    return [text(tr(userLanguage, `อัปเดตผู้ใช้ Odoo สำเร็จ\n- ID: ${updated.id}\n- ชื่อ: ${updated.name}\n- เบอร์: ${updated.phone || '-'}\n- อีเมล: ${updated.email || '-'}`, `Odoo user updated\n- ID: ${updated.id}\n- Name: ${updated.name}\n- Phone: ${updated.phone || '-'}\n- Email: ${updated.email || '-'}`))];
-  }
-
-  if (upperText.startsWith('USER DELETE')) {
-    if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
-
-    const phone = trimmed.replace(/^USER DELETE\s*/i, '').trim();
-    if (!phone) {
-      return [text(tr(userLanguage, 'วิธีใช้: USER DELETE <เบอร์>', 'Usage: USER DELETE <phone>'))];
-    }
-
-    const existing = await getPartnerByPhone(phone);
-    if (!existing) {
-      return [text(tr(userLanguage, `ไม่พบผู้ใช้ Odoo ที่เบอร์ ${phone}`, `No Odoo user found with phone ${phone}`))];
-    }
-
-    const ok = await deletePartnerFromLine(existing.id);
-    recordAuditEvent({ action: 'user_delete', outcome: ok ? 'success' : 'failure', actorUserId: ctx.userId, channelId: ctx.channel?.channelId, targetId: String(existing.id) });
-    return [text(ok
-      ? tr(userLanguage, `ลบผู้ใช้ Odoo สำเร็จ (ID ${existing.id})`, `Odoo user deleted (ID ${existing.id})`)
-      : tr(userLanguage, 'ลบผู้ใช้ Odoo ไม่สำเร็จ', 'Failed to delete Odoo user.'))];
-  }
-
-  if (upperText === 'SERVICE LIST') {
-    const services = await listServiceCatalogItems(10);
-    if (!services.length) {
-      return [text(tr(userLanguage, 'ยังไม่มีบริการใน Odoo', 'No service catalog items found in Odoo.'))];
-    }
-
-    return [text(tr(
-      userLanguage,
-      `รายการบริการ Odoo\n${services.map(s => `- ${s.default_code || '-'} | ${s.name} | ${s.list_price} บาท`).join('\n')}`,
-      `Odoo service catalog\n${services.map(s => `- ${s.default_code || '-'} | ${s.name} | ${s.list_price} THB`).join('\n')}`
+  // Step 3: Service channel gate
+  const gatedService = resolveServiceForCommand(upperText);
+  if (gatedService && !isServiceEnabledForChannel(gatedService, ctx.channel)) {
+    return [text(tr(userLanguage,
+      `${agentName} บริการนี้ไม่เปิดใช้งานสำหรับช่องทางนี้`,
+      `${agentName} this service is not available on this channel.`,
     ))];
   }
 
-  if (upperText.startsWith('SERVICE READ')) {
-    const identifier = trimmed.replace(/^SERVICE READ\s*/i, '').trim();
-    if (!identifier) {
-      return resolveCommandReply({ ...ctx, text: 'FORM SERVICE READ' });
-    }
+  // Step 4: FORM * guided form start
+  const formResult = await handleFormCommand(ctx);
+  if (formResult !== null) return formResult;
 
-    const item = await getServiceByIdentifier(identifier);
-    if (!item) {
-      return [text(tr(userLanguage, `ไม่พบบริการ ${identifier}`, `Service ${identifier} not found.`))];
-    }
-
-    return [text(tr(userLanguage, `บริการ Odoo\n- ID: ${item.id}\n- รหัส: ${item.default_code || '-'}\n- ชื่อ: ${item.name}\n- ราคา: ${item.list_price} บาท`, `Odoo service\n- ID: ${item.id}\n- Code: ${item.default_code || '-'}\n- Name: ${item.name}\n- Price: ${item.list_price} THB`))];
-  }
-
-  if (upperText.startsWith('SERVICE CREATE')) {
-    if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
-
-    const payload = trimmed.replace(/^SERVICE CREATE\s*/i, '').trim();
-    const parsed = parseServiceCreatePayload(payload);
-    if (!parsed) {
-      return [text(tr(userLanguage, 'วิธีใช้: SERVICE CREATE <ชื่อ>,<รหัส>,<ราคา>', 'Usage: SERVICE CREATE <name>,<code>,<price>'))];
-    }
-
-    const { name, code, price } = parsed;
-    const created = await createServiceCatalogItem(name, code, price);
-    if (!created) {
-      recordAuditEvent({ action: 'service_create', outcome: 'failure', actorUserId: ctx.userId, channelId: ctx.channel?.channelId, detail: `code=${code}` });
-      return [text(tr(userLanguage, 'สร้างบริการ Odoo ไม่สำเร็จ', 'Failed to create Odoo service item.'))];
-    }
-    recordAuditEvent({ action: 'service_create', outcome: 'success', actorUserId: ctx.userId, channelId: ctx.channel?.channelId, targetId: String(created.id) });
-
-    return [text(tr(userLanguage, `สร้างบริการสำเร็จ\n- รหัส: ${created.default_code || '-'}\n- ชื่อ: ${created.name}\n- ราคา: ${created.list_price} บาท`, `Service created\n- Code: ${created.default_code || '-'}\n- Name: ${created.name}\n- Price: ${created.list_price} THB`))];
-  }
-
-  if (upperText.startsWith('SERVICE UPDATE')) {
-    if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
-
-    const payload = trimmed.replace(/^SERVICE UPDATE\s*/i, '').trim();
-    const parsed = parseServiceUpdatePayload(payload);
-    if (!parsed) {
-      return [text(tr(userLanguage, 'วิธีใช้: SERVICE UPDATE <รหัสหรือชื่อ>,<ชื่อใหม่?>,<ราคาใหม่?>,<รหัสใหม่?>', 'Usage: SERVICE UPDATE <code_or_name>,<name?>,<price?>,<newCode?>'))];
-    }
-
-    const { identifier, name, price, newCode } = parsed;
-    const updated = await updateServiceCatalogItem(identifier, { name, price, code: newCode });
-    if (!updated) {
-      recordAuditEvent({ action: 'service_update', outcome: 'failure', actorUserId: ctx.userId, channelId: ctx.channel?.channelId, targetId: identifier });
-      return [text(tr(userLanguage, 'อัปเดตบริการ Odoo ไม่สำเร็จ', 'Failed to update Odoo service item.'))];
-    }
-    recordAuditEvent({ action: 'service_update', outcome: 'success', actorUserId: ctx.userId, channelId: ctx.channel?.channelId, targetId: String(updated.id) });
-
-    return [text(tr(userLanguage, `อัปเดตบริการสำเร็จ\n- รหัส: ${updated.default_code || '-'}\n- ชื่อ: ${updated.name}\n- ราคา: ${updated.list_price} บาท`, `Service updated\n- Code: ${updated.default_code || '-'}\n- Name: ${updated.name}\n- Price: ${updated.list_price} THB`))];
-  }
-
-  if (upperText.startsWith('SERVICE DELETE')) {
-    if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
-
-    const identifier = trimmed.replace(/^SERVICE DELETE\s*/i, '').trim();
-    if (!identifier) {
-      return [text(tr(userLanguage, 'วิธีใช้: SERVICE DELETE <รหัสหรือชื่อ>', 'Usage: SERVICE DELETE <code_or_name>'))];
-    }
-
-    const ok = await deleteServiceCatalogItem(identifier);
-    recordAuditEvent({ action: 'service_delete', outcome: ok ? 'success' : 'failure', actorUserId: ctx.userId, channelId: ctx.channel?.channelId, targetId: identifier });
-    return [text(ok
-      ? tr(userLanguage, `ลบบริการ ${identifier} สำเร็จ`, `Deleted service ${identifier}`)
-      : tr(userLanguage, `ลบบริการ ${identifier} ไม่สำเร็จ`, `Failed to delete service ${identifier}`))];
-  }
-
-  if (upperText === 'DEMO SEED ODOO') {
-    if (profile.role !== 'admin') {
-      return [text(tr(userLanguage, 'คำสั่งนี้สำหรับแอดมินเท่านั้น กรุณาใช้ ADMIN VERIFY และ ADMIN ENABLE ก่อน', 'This command is admin-only. Run ADMIN VERIFY and ADMIN ENABLE first.'))];
-    }
-
-    const status = await seedOdooSampleSalesData();
-    return [text(status)];
-  }
-
-  if (upperText === 'DEMO REPORT') {
-    import('../jobs/daily-report')
-      .then(({ runDailyReport }) => runDailyReport(userLanguage))
-      .catch(err => console.error('Demo report error:', err));
-
-    return [text(tr(userLanguage, 'กำลังสร้างรายงานจากข้อมูล Odoo และจะส่งไปยังแอดมินทันทีค่ะ', 'Generating report from Odoo data and sending it to admin now.'))];
-  }
-
-  if (upperText === 'DEMO SEGMENT') {
-    const { runSegmentationJob } = await import('../jobs/segmentation');
-    await runSegmentationJob();
-    return [text(tr(userLanguage, 'จัดกลุ่มลูกค้าเสร็จแล้ว พร้อมส่งข้อความตามเซกเมนต์เรียบร้อยค่ะ', 'Segmentation complete. Targeted segment messages have been dispatched.'))];
-  }
-
-  if (upperText === 'DEMO ODOO') {
-    try {
-      const status = await pingOdoo();
-      return [text(tr(userLanguage, `สถานะ Odoo: ${status}`, `Odoo status: ${status}`))];
-    } catch (err) {
-      console.error('Odoo ping error:', err);
-      return [text(tr(userLanguage, 'ตรวจสอบ Odoo ไม่สำเร็จ กรุณาตรวจค่า ODOO_* และ API key', 'Odoo check failed. Please verify ODOO_* values and API key.'))];
+  // Step 5: Handler registry (skill-based dispatch)
+  for (const handler of COMMAND_HANDLERS) {
+    if (handler.match(upperText, ctx)) {
+      return handler.handle(ctx);
     }
   }
 
-  if (upperText === 'DEMO PRODUCT' || upperText.startsWith('DEMO PRODUCT ')) {
-    const query = trimmed.replace(/^DEMO PRODUCT\s*/i, '').trim();
-    if (!query) {
-      return resolveCommandReply({ ...ctx, text: 'FORM DEMO PRODUCT' });
-    }
-    const product = await findProductByQuery(query);
-    if (!product) {
-      return [text(tr(userLanguage, `ไม่พบสินค้าใน Odoo สำหรับ "${query}"`, `No product found in Odoo for "${query}"`))];
-    }
-    return [createProductCardFlexMessage(product.name, product.list_price, product.qty_available)];
-  }
+  // Step 6: Keyword proximity guidance (near-miss suggestions)
+  const guidanceMessages = buildKeywordGuidanceMessages({
+    text: trimmed,
+    userLanguage,
+    agentName,
+    channel: ctx.channel,
+    profile,
+  });
+  if (guidanceMessages) return guidanceMessages;
 
-  if (upperText === 'DEMO ORDER' || upperText.startsWith('DEMO ORDER ')) {
-    const orderRef = trimmed.replace(/^DEMO ORDER\s*/i, '').trim();
-    if (!orderRef) {
-      return resolveCommandReply({ ...ctx, text: 'FORM DEMO ORDER' });
-    }
-    const order = await findOrderByReference(orderRef);
-    if (!order) {
-      return [text(tr(userLanguage, `ไม่พบออเดอร์ Odoo เลขที่ ${orderRef}`, `No Odoo order found for ${orderRef}`))];
-    }
-    return [text(tr(userLanguage, `สถานะออเดอร์ Odoo\n- เลขที่: ${order.name}\n- สถานะ: ${order.state}\n- ยอดรวม: ${order.amount_total} บาท`, `Odoo Order Status\n- Reference: ${order.name}\n- State: ${order.state}\n- Total: ${order.amount_total} THB`))];
-  }
-
-  if (upperText === 'DEMO QUOTE' || upperText.startsWith('DEMO QUOTE ')) {
-    const payload = trimmed.replace(/^DEMO QUOTE\s*/i, '').trim();
-    const parsed = parseDemoQuotePayload(payload);
-    if (!parsed) {
-      return resolveCommandReply({ ...ctx, text: 'FORM DEMO QUOTE' });
-    }
-
-    const { productName, qty, customerName, phone } = parsed;
-    const quotation = await createQuotationFromLine(customerName, phone, productName, qty);
-    if (!quotation) {
-      return [text(tr(userLanguage, 'สร้างใบเสนอราคา Odoo ไม่สำเร็จ กรุณาตรวจชื่อสินค้าและการตั้งค่า Odoo', 'Failed to create Odoo quotation. Please check product name and Odoo configuration.'))];
-    }
-
-    return [createOrderSummaryFlexMessage(quotation.total)];
-  }
-
-  const guidance = buildCommandKeywordGuidance(trimmed, userLanguage, agentName);
-  if (guidance) {
-    return [text(guidance), buildHomeMenuMessage(userLanguage, agentName, ctx.channel, profile.role === 'admin')];
-  }
-
-  const chatResult = await processChatMessage(ctx.userId, trimmed, userLanguage);
-  if (!chatResult.handled) {
-    return [...materializeMessages(chatResult.messages, userLanguage), buildHomeMenuMessage(userLanguage, agentName, ctx.channel, profile.role === 'admin')];
-  }
-  return materializeMessages(chatResult.messages, userLanguage);
+  // Step 7: AI chat fallback (Gemini → ClawBridge → Odoo heuristic)
+  return handleChatFallback(ctx);
 };

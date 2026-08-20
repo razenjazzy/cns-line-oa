@@ -1,0 +1,179 @@
+import type { CommandHandler } from './index';
+import {
+  createProductCardFlexMessage,
+  createOrderSummaryFlexMessage,
+  createBotTextFlexMessage,
+} from '../templates';
+import { parseDemoQuotePayload } from '../command-validators';
+import {
+  createQuotationFromLine,
+  findOrderByReference,
+  findProductByQuery,
+  pingOdoo,
+  seedOdooSampleSalesData,
+} from '../../services/odoo';
+import type { UserLanguage } from '../../services/firestore';
+
+const tr = (language: UserLanguage, th: string, en: string): string => (language === 'en' ? en : th);
+
+const inferTone = (value: string): 'info' | 'success' | 'warning' | 'error' => {
+  const lower = value.toLowerCase();
+  if (/failed|ไม่สำเร็จ|ไม่พบ/.test(lower)) return 'error';
+  if (/success|สำเร็จ/.test(lower)) return 'success';
+  return 'info';
+};
+
+const botText = (value: string, language: UserLanguage) =>
+  createBotTextFlexMessage({
+    title: tr(language, 'ผู้ช่วย Cloudnex', 'Cloudnex assistant'),
+    body: value,
+    language,
+    tone: inferTone(value),
+  });
+
+const adminOnlyReply = (language: UserLanguage) =>
+  botText(tr(language, 'คำสั่งนี้สำหรับแอดมินเท่านั้น', 'This command is admin-only.'), language);
+
+// DEMO PRODUCT [query] — lookup product in Odoo; no query → guided form
+const demoProductHandler: CommandHandler = {
+  name: 'commerce-demo-product',
+  match: (u) => u === 'DEMO PRODUCT' || u.startsWith('DEMO PRODUCT '),
+  handle: async (ctx) => {
+    const { userLanguage, text } = ctx;
+    const query = text.trim().replace(/^DEMO PRODUCT\s*/i, '').trim();
+    if (!query) {
+      const { resolveCommandReply } = await import('../command-router');
+      return resolveCommandReply({ ...ctx, text: 'FORM DEMO PRODUCT' });
+    }
+    const product = await findProductByQuery(query);
+    if (!product) {
+      return [botText(tr(userLanguage, `ไม่พบสินค้าใน Odoo สำหรับ "${query}"`, `No product found in Odoo for "${query}"`), userLanguage)];
+    }
+    return [createProductCardFlexMessage(product.name, product.list_price, product.qty_available)];
+  },
+};
+
+// DEMO ORDER [ref] — check order status; no ref → guided form
+const demoOrderHandler: CommandHandler = {
+  name: 'commerce-demo-order',
+  match: (u) => u === 'DEMO ORDER' || u.startsWith('DEMO ORDER '),
+  handle: async (ctx) => {
+    const { userLanguage, text } = ctx;
+    const orderRef = text.trim().replace(/^DEMO ORDER\s*/i, '').trim();
+    if (!orderRef) {
+      const { resolveCommandReply } = await import('../command-router');
+      return resolveCommandReply({ ...ctx, text: 'FORM DEMO ORDER' });
+    }
+    const order = await findOrderByReference(orderRef);
+    if (!order) {
+      return [botText(tr(userLanguage, `ไม่พบออเดอร์ Odoo เลขที่ ${orderRef}`, `No Odoo order found for ${orderRef}`), userLanguage)];
+    }
+    return [botText(tr(
+      userLanguage,
+      `สถานะออเดอร์ Odoo\n- เลขที่: ${order.name}\n- สถานะ: ${order.state}\n- ยอดรวม: ${order.amount_total} บาท`,
+      `Odoo Order Status\n- Reference: ${order.name}\n- State: ${order.state}\n- Total: ${order.amount_total} THB`,
+    ), userLanguage)];
+  },
+};
+
+// DEMO QUOTE [product,qty,customer,phone] — create Odoo quotation; no payload → guided form
+const demoQuoteHandler: CommandHandler = {
+  name: 'commerce-demo-quote',
+  match: (u) => u === 'DEMO QUOTE' || u.startsWith('DEMO QUOTE '),
+  handle: async (ctx) => {
+    const { userLanguage, text } = ctx;
+    const payload = text.trim().replace(/^DEMO QUOTE\s*/i, '').trim();
+    const parsed = parseDemoQuotePayload(payload);
+    if (!parsed) {
+      const { resolveCommandReply } = await import('../command-router');
+      return resolveCommandReply({ ...ctx, text: 'FORM DEMO QUOTE' });
+    }
+
+    const { productName, qty, customerName, phone } = parsed;
+    const quotation = await createQuotationFromLine(customerName, phone, productName, qty);
+    if (!quotation) {
+      return [botText(tr(userLanguage,
+        'สร้างใบเสนอราคา Odoo ไม่สำเร็จ กรุณาตรวจชื่อสินค้าและการตั้งค่า Odoo',
+        'Failed to create Odoo quotation. Please check product name and Odoo configuration.',
+      ), userLanguage)];
+    }
+    return [createOrderSummaryFlexMessage(quotation.total)];
+  },
+};
+
+// DEMO ODOO — ping Odoo connectivity
+const demoOdooHandler: CommandHandler = {
+  name: 'commerce-demo-odoo',
+  match: (u) => u === 'DEMO ODOO',
+  handle: async (ctx) => {
+    const { userLanguage } = ctx;
+    try {
+      const status = await pingOdoo();
+      return [botText(tr(userLanguage, `สถานะ Odoo: ${status}`, `Odoo status: ${status}`), userLanguage)];
+    } catch (err) {
+      console.error('Odoo ping error:', err);
+      return [botText(tr(userLanguage,
+        'ตรวจสอบ Odoo ไม่สำเร็จ กรุณาตรวจค่า ODOO_* และ API key',
+        'Odoo check failed. Please verify ODOO_* values and API key.',
+      ), userLanguage)];
+    }
+  },
+};
+
+// DEMO SEED ODOO — seed sample data (admin only)
+const demoSeedHandler: CommandHandler = {
+  name: 'commerce-demo-seed',
+  match: (u) => u === 'DEMO SEED ODOO',
+  handle: async (ctx) => {
+    const { userLanguage, profile } = ctx;
+    if (profile.role !== 'admin') {
+      return [botText(tr(userLanguage,
+        'คำสั่งนี้สำหรับแอดมินเท่านั้น กรุณาใช้ ADMIN VERIFY และ ADMIN ENABLE ก่อน',
+        'This command is admin-only. Run ADMIN VERIFY and ADMIN ENABLE first.',
+      ), userLanguage)];
+    }
+    const status = await seedOdooSampleSalesData();
+    return [botText(status, userLanguage)];
+  },
+};
+
+// DEMO REPORT — trigger daily report (async, non-blocking)
+const demoReportHandler: CommandHandler = {
+  name: 'commerce-demo-report',
+  match: (u) => u === 'DEMO REPORT',
+  handle: async (ctx) => {
+    const { userLanguage } = ctx;
+    import('../../jobs/daily-report')
+      .then(({ runDailyReport }) => runDailyReport(userLanguage))
+      .catch(err => console.error('Demo report error:', err));
+    return [botText(tr(userLanguage,
+      'กำลังสร้างรายงานจากข้อมูล Odoo และจะส่งไปยังแอดมินทันทีค่ะ',
+      'Generating report from Odoo data and sending it to admin now.',
+    ), userLanguage)];
+  },
+};
+
+// DEMO SEGMENT — trigger segmentation job
+const demoSegmentHandler: CommandHandler = {
+  name: 'commerce-demo-segment',
+  match: (u) => u === 'DEMO SEGMENT',
+  handle: async (ctx) => {
+    const { userLanguage } = ctx;
+    const { runSegmentationJob } = await import('../../jobs/segmentation');
+    await runSegmentationJob();
+    return [botText(tr(userLanguage,
+      'จัดกลุ่มลูกค้าเสร็จแล้ว พร้อมส่งข้อความตามเซกเมนต์เรียบร้อยค่ะ',
+      'Segmentation complete. Targeted segment messages have been dispatched.',
+    ), userLanguage)];
+  },
+};
+
+export const commerceHandlers: CommandHandler[] = [
+  demoProductHandler,
+  demoOrderHandler,
+  demoQuoteHandler,
+  demoOdooHandler,
+  demoSeedHandler,
+  demoReportHandler,
+  demoSegmentHandler,
+];

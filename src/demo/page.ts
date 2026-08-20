@@ -193,6 +193,113 @@ export const buildDemoPage = (): string => `<!DOCTYPE html>
 
     .warn { color: var(--alert); font-weight: 700; }
 
+    .chat-card {
+      padding: 18px;
+    }
+
+    .chat-display {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 360px;
+      overflow: auto;
+      padding: 12px;
+      border-radius: 14px;
+      background: #eef4f1;
+    }
+
+    .msg-row { display: flex; flex-direction: column; }
+
+    .msg-user,
+    .msg-bot {
+      padding: 10px 13px;
+      border-radius: 14px;
+      font-size: 14px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .msg-user {
+      align-self: flex-end;
+      background: var(--accent-strong);
+      color: #ffffff;
+      border-bottom-right-radius: 4px;
+    }
+
+    .msg-bot {
+      align-self: flex-start;
+      background: #ffffff;
+      color: var(--ink);
+      border: 1px solid rgba(217, 226, 236, 0.9);
+      border-bottom-left-radius: 4px;
+    }
+
+    .msg-bot.card {
+      align-self: flex-start;
+      background: #ffffff;
+      color: var(--ink);
+      border: 1px solid var(--line);
+      box-shadow: 0 6px 14px rgba(15, 23, 42, 0.12);
+    }
+
+    .chat-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+    .chat-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .nav-chip {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 8px 12px;
+      background: #ffffff;
+      color: var(--accent-strong);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .chat-input-row {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: 1fr auto;
+      align-items: end;
+      margin-top: 12px;
+    }
+
+    .chat-input-row textarea {
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.96);
+      color: var(--ink);
+      padding: 11px 12px;
+      font-size: 14px;
+      font-family: inherit;
+      resize: vertical;
+      min-height: 52px;
+    }
+
+    .chat-input-row textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.14);
+    }
+
+    button.chat-send { padding: 11px 18px; }
+
+    .chat-menu-panel {
+      display: none;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .chat-menu-panel .nav-chip { background: var(--accent); color: #fff; border: 0; }
+
     @media (max-width: 1080px) {
       .hero { grid-template-columns: 1fr; }
       .span-6, .span-12 { grid-column: span 12; }
@@ -256,6 +363,23 @@ export const buildDemoPage = (): string => `<!DOCTYPE html>
         <h2>Implementation Audit Report</h2>
         <p>Review implementation coverage of security, workflows, and production controls in one machine-readable report.</p>
         <pre id="audit-output">No audit executed yet.</pre>
+      </article>
+
+      <article class="panel card span-12 chat-card">
+        <h2>Interactive Bot — Web Chat</h2>
+        <p>Preview the assistant exactly as LINE users see it: the nav-button menu opens on the first click, and the chat box collects whatever info the guided commands need.</p>
+        <div class="chat-display" id="chat-display"></div>
+        <div class="chat-meta" id="chat-meta">The bot will open the menu on your first message.</div>
+        <div class="chat-actions">
+          <button id="chat-menu-toggle" type="button" class="ghost">Open Menu</button>
+          <button id="chat-example" type="button" class="secondary">Try “create a quote”</button>
+          <button id="chat-clear" type="button" class="ghost">Clear chat</button>
+        </div>
+        <div class="chat-menu-panel" id="chat-menu-panel"></div>
+        <form id="chat-form" class="chat-input-row">
+          <textarea id="chat-input" placeholder="Type a message or command, e.g. FORM DEMO QUOTE" rows="1"></textarea>
+          <button class="chat-send" type="submit">Send</button>
+        </form>
       </article>
 
       <article class="panel card span-12">
@@ -653,7 +777,30 @@ export const buildDemoPage = (): string => `<!DOCTYPE html>
       });
     });
 
-    document.getElementById('login-token').addEventListener('click', () => {
+    document.getElementById('chat-form').addEventListener('submit', (event) => {
+      event.preventDefault();
+      const input = document.getElementById('chat-input');
+      const value = input.value;
+      input.value = '';
+      sendChat(value).catch((error) => {
+        input.placeholder = 'Try again — ' + String(error);
+      });
+    });
+
+    document.getElementById('chat-menu-toggle').addEventListener('click', () => {
+      const panel = document.getElementById('chat-menu-panel');
+      renderChatMenu(panel.style.display !== 'flex');
+    });
+
+    document.getElementById('chat-example').addEventListener('click', () => {
+      sendChat('FORM DEMO QUOTE').catch(() => {});
+    });
+
+    document.getElementById('chat-clear').addEventListener('click', () => {
+      document.getElementById('chat-display').textContent = '';
+      document.getElementById('chat-meta').textContent = 'Chat cleared.';
+      renderChatMenu(false);
+    });
       loginDemoSession()
         .then(() => runWorkflowAudit())
         .catch((error) => {
@@ -666,6 +813,80 @@ export const buildDemoPage = (): string => `<!DOCTYPE html>
         document.getElementById('runbook-output').textContent = String(error);
       });
     });
+
+    async function sendChat(text) {
+      const display = document.getElementById('chat-display');
+      const meta = document.getElementById('chat-meta');
+      const value = text.trim();
+      if (!value) return;
+
+      const userRow = document.createElement('div');
+      userRow.className = 'msg-row';
+      const userBubble = document.createElement('div');
+      userBubble.className = 'msg-user';
+      userBubble.textContent = value;
+      userRow.appendChild(userBubble);
+      display.appendChild(userRow);
+
+      meta.textContent = 'Assistant is thinking...';
+      scrollChat();
+
+      try {
+        const data = await postJson('/demo/chat', 'POST', { text: value, userId: 'web_demo_user' });
+        meta.textContent = (data.agentName || 'Bot') + ' · powered by the LINE routing engine';
+        for (const line of data.transcript || []) {
+          const botRow = document.createElement('div');
+          botRow.className = 'msg-row';
+          const botBubble = document.createElement('div');
+          botBubble.className = line.kind === 'card' ? 'msg-bot card' : 'msg-bot';
+          botBubble.textContent = line.text;
+          botRow.appendChild(botBubble);
+          display.appendChild(botRow);
+        }
+      } catch (error) {
+        const botRow = document.createElement('div');
+        botRow.className = 'msg-row';
+        const botBubble = document.createElement('div');
+        botBubble.className = 'msg-bot';
+        botBubble.textContent = String(error);
+        botRow.appendChild(botBubble);
+        display.appendChild(botRow);
+        meta.textContent = 'Something went wrong — check that the demo session is logged in.';
+      }
+      scrollChat();
+    }
+
+    function scrollChat() {
+      const display = document.getElementById('chat-display');
+      display.scrollTop = display.scrollHeight;
+    }
+
+    const CHAT_MENU_ITEMS = [
+      ['Products & Quotes: Find a product', 'FORM DEMO PRODUCT'],
+      ['Create a quote', 'FORM DEMO QUOTE'],
+      ['Check an order', 'FORM DEMO ORDER'],
+      ['Browse catalog', 'SERVICE LIST'],
+      ['Group-Buy status', 'STATUS GROUPBUY'],
+    ];
+
+    function renderChatMenu(open) {
+      const panel = document.getElementById('chat-menu-panel');
+      panel.style.display = open ? 'flex' : 'none';
+      if (!open) return;
+      panel.innerHTML = '';
+      CHAT_MENU_ITEMS.forEach(([label, command]) => {
+        const chip = document.createElement('button');
+        chip.className = 'nav-chip';
+        chip.type = 'button';
+        chip.textContent = label;
+        chip.addEventListener('click', () => {
+          document.getElementById('chat-input').value = command;
+          sendChat(command);
+          renderChatMenu(false);
+        });
+        panel.appendChild(chip);
+      });
+    }
 
     async function bootstrapDemoPanel() {
       try {
