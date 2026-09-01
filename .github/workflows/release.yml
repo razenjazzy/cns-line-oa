@@ -37,10 +37,10 @@ jobs:
         run: npm ci
 
       - name: Materialize staging env file
-        run: |
-          cat > deploy.env.staging.yaml <<'EOF'
-          ${{ secrets.DEPLOY_ENV_STAGING_YAML }}
-          EOF
+        env:
+          DEPLOY_ENV_YAML: ${{ secrets.DEPLOY_ENV_STAGING_YAML }}
+          PUBLIC_BASE_URL: ${{ secrets.STAGING_BASE_URL }}
+        run: bash ./scripts/materialize-deploy-env.sh staging deploy.env.staging.yaml
 
       - name: Run staging preflight
         env:
@@ -106,10 +106,10 @@ jobs:
         run: npm ci
 
       - name: Materialize production env file
-        run: |
-          cat > deploy.env.production.yaml <<'EOF'
-          ${{ secrets.DEPLOY_ENV_PRODUCTION_YAML }}
-          EOF
+        env:
+          DEPLOY_ENV_YAML: ${{ secrets.DEPLOY_ENV_PRODUCTION_YAML }}
+          PUBLIC_BASE_URL: ${{ secrets.PRODUCTION_BASE_URL }}
+        run: bash ./scripts/materialize-deploy-env.sh production deploy.env.production.yaml
 
       - name: Run production preflight
         env:
