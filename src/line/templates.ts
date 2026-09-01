@@ -16,6 +16,16 @@ const BRAND = {
   paper: '#F1F4F2',
 } as const;
 
+/**
+ * Fallback only for callers that genuinely have no per-user language to pass
+ * (there are none left in this codebase as of this fix — every call site
+ * now threads the actual UserLanguage through). Two Flex builders used to
+ * read this env var directly instead of taking a `language` parameter at
+ * all, so a user's LANG EN/LANG TH choice was silently ignored for product
+ * cards and order summaries no matter what they'd set.
+ */
+const defaultUiLanguage = (): ReportLanguage => (process.env.DEFAULT_UI_LANGUAGE || 'th').toLowerCase() === 'en' ? 'en' : 'th';
+
 const buttonLabel = (label: string): string => {
   const cleaned = label.trim();
   const chars = Array.from(cleaned);
@@ -225,8 +235,7 @@ export const createDailyReportFlexMessage = (reportData: any, insights: string, 
   };
 };
 
-export const createProductCardFlexMessage = (productName: string, price: number, stock: number): messagingApi.FlexMessage => {
-  const language = (process.env.DEFAULT_UI_LANGUAGE || 'th').toLowerCase() === 'en' ? 'en' : 'th';
+export const createProductCardFlexMessage = (productName: string, price: number, stock: number, language: ReportLanguage = defaultUiLanguage()): messagingApi.FlexMessage => {
   return {
     type: 'flex',
     altText: truncate(language === 'en' ? `Product: ${productName}` : `สินค้า: ${productName}`, 390),
@@ -414,8 +423,7 @@ export const createServiceActionFlexMessage = (
   };
 };
 
-export const createOrderSummaryFlexMessage = (total: number): messagingApi.FlexMessage => {
-  const language = (process.env.DEFAULT_UI_LANGUAGE || 'th').toLowerCase() === 'en' ? 'en' : 'th';
+export const createOrderSummaryFlexMessage = (total: number, language: ReportLanguage = defaultUiLanguage()): messagingApi.FlexMessage => {
   return {
     type: 'flex',
     altText: language === 'en' ? 'Order summary' : 'สรุปคำสั่งซื้อ',

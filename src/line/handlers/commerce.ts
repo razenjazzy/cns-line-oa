@@ -47,7 +47,7 @@ const demoProductHandler: CommandHandler = {
     if (!product) {
       return [botText(tr(userLanguage, `ไม่พบสินค้าที่ตรงกับ "${query}" ลองใช้ชื่อสินค้าอื่นดูนะคะ`, `No product matched "${query}". Try a different product name?`), userLanguage)];
     }
-    return [createProductCardFlexMessage(product.name, product.list_price, product.qty_available)];
+    return [createProductCardFlexMessage(product.name, product.list_price, product.qty_available, userLanguage)];
   },
 };
 
@@ -113,7 +113,7 @@ const demoQuoteHandler: CommandHandler = {
         "Found the product, but couldn't create the quote due to a system error. Please try again, or contact an admin if it keeps happening.",
       ), userLanguage)];
     }
-    return [createOrderSummaryFlexMessage(quotation.total)];
+    return [createOrderSummaryFlexMessage(quotation.total, userLanguage)];
   },
 };
 
