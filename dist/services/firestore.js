@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteAuditEventsByIds = exports.listAuditEventsOlderThan = exports.listRecentAuditEvents = exports.recordAuditEvent = exports.cancelGroupBuy = exports.confirmGroupBuy = exports.joinGroupBuy = exports.attachGroupBuyOdooOrder = exports.listGroupBuysByCreator = exports.getGroupBuyById = exports.createGroupBuy = exports.consumeOdooVerificationByToken = exports.consumeOdooVerificationByOtp = exports.createOdooVerificationChallenge = exports.setPlatformConfig = exports.getPlatformConfig = exports.setUserOdooVerificationStatus = exports.setUserOdooPartner = exports.setUserRole = exports.setUserPendingFlow = exports.recordChatFeedback = exports.filterMarketingOptedInUserIds = exports.deleteUserProfile = exports.setMarketingOptIn = exports.markConsentNoticeShown = exports.getUserProfile = exports.setUserLanguage = exports.getUserLanguage = exports.markUserFirstContact = exports.setEscalationState = exports.getEscalationState = exports.saveConversationMessage = exports.getConversationHistory = exports.updateUserScore = exports.saveReportLog = exports.checkFirestoreReady = void 0;
+exports.deleteAuditEventsByIds = exports.listAuditEventsOlderThan = exports.listRecentAuditEvents = exports.recordAuditEvent = exports.cancelGroupBuy = exports.confirmGroupBuy = exports.joinGroupBuy = exports.attachGroupBuyOdooOrder = exports.listGroupBuysByCreator = exports.getGroupBuyById = exports.createGroupBuy = exports.consumeOdooVerificationByToken = exports.consumeOdooVerificationByOtp = exports.createOdooVerificationChallenge = exports.setPlatformConfig = exports.getPlatformConfig = exports.findVerifiedUserIdByPhone = exports.setUserOdooVerificationStatus = exports.setUserOdooPartner = exports.setUserRole = exports.setUserPendingFlow = exports.recordChatFeedback = exports.filterMarketingOptedInUserIds = exports.deleteUserProfile = exports.setMarketingOptIn = exports.markConsentNoticeShown = exports.getUserProfile = exports.setUserLanguage = exports.getUserLanguage = exports.markUserFirstContact = exports.setEscalationState = exports.getEscalationState = exports.saveConversationMessage = exports.getConversationHistory = exports.updateUserScore = exports.saveReportLog = exports.checkFirestoreReady = void 0;
 const firestore_1 = require("@google-cloud/firestore");
 let db = null;
 const isPendingFlowActive = (pendingFlow) => {
@@ -611,6 +611,72 @@ const setUserOdooVerificationStatus = async (userId, verified, verifiedAt) => {
     return result;
 };
 exports.setUserOdooVerificationStatus = setUserOdooVerificationStatus;
+const normalizePhoneForMatch = (value) => value.replace(/[^0-9+]/g, '').trim();
+/** Mirrors buildPhoneMatchVariants in odoo.ts (kept as a small local copy rather than a cross-file import, same as normalizePhone in user-verification.ts). */
+const buildPhoneVariants = (phone) => {
+    const cleaned = normalizePhoneForMatch(phone);
+    if (!cleaned)
+        return [];
+    const variants = new Set([cleaned]);
+    if (cleaned.startsWith('0') && cleaned.length >= 9) {
+        variants.add(`+66${cleaned.slice(1)}`);
+        variants.add(`66${cleaned.slice(1)}`);
+    }
+    else if (cleaned.startsWith('+66')) {
+        variants.add(`0${cleaned.slice(3)}`);
+        variants.add(cleaned.slice(1));
+    }
+    else if (cleaned.startsWith('66') && cleaned.length >= 10) {
+        variants.add(`0${cleaned.slice(2)}`);
+        variants.add(`+${cleaned}`);
+    }
+    return Array.from(variants);
+};
+/**
+ * The missing link for "admin creates a quote, LINE sends it to the
+ * customer's phone": LINE can only push to a userId that has already
+ * messaged the OA, so this only ever finds someone who has completed
+ * VERIFY themselves at least once (odooVerified === true). Returns null
+ * — not an error — when nobody has verified with that phone yet; callers
+ * must treat that as "customer not linked", not retry.
+ */
+const findVerifiedUserIdByPhone = async (phone) => {
+    const variants = buildPhoneVariants(phone);
+    if (!variants.length)
+        return null;
+    const database = getDb();
+    if (database) {
+        try {
+            // Firestore 'in' supports up to 10 values; buildPhoneVariants never
+            // produces more than 3, so a single composite query suffices.
+            // Needs a composite index on (phone, odooVerified) — Firestore
+            // surfaces the exact index-creation link in the error if missing.
+            const snap = await database.collection('users')
+                .where('phone', 'in', variants)
+                .where('odooVerified', '==', true)
+                .limit(1)
+                .get();
+            if (!snap.empty)
+                return snap.docs[0].id;
+        }
+        catch (error) {
+            logFirestoreError('findVerifiedUserIdByPhone', error);
+            // Fall through to the cache below rather than failing outright —
+            // e.g. this same process just verified the user and the write
+            // hasn't propagated to a query-consistent read yet.
+        }
+    }
+    // In-memory-cache fallback — also the only path when Firestore isn't
+    // configured at all (Railway test deploys, see FirestoreWriteResult).
+    for (const [userId, entry] of userStateCache.entries()) {
+        if (!entry.state.odooVerified || !entry.state.phone)
+            continue;
+        if (variants.includes(normalizePhoneForMatch(entry.state.phone)))
+            return userId;
+    }
+    return null;
+};
+exports.findVerifiedUserIdByPhone = findVerifiedUserIdByPhone;
 const getPlatformConfig = async (key) => {
     const normalizedKey = key.trim();
     if (!normalizedKey)

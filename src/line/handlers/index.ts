@@ -39,6 +39,7 @@ import { verificationHandlers } from './verification';
 import { languageHandlers }   from './language';
 import { helpHandlers }       from './help';
 import { commerceHandlers }   from './commerce';
+import { quotationHandlers }  from './quotation';
 import { userDirectoryHandlers } from './user-directory';
 import { serviceCatalogHandlers } from './service-catalog-handler';
 import { groupBuyHandler }    from './group-buy';
@@ -55,6 +56,7 @@ export const COMMAND_HANDLERS: CommandHandler[] = [
   ...privacyHandlers,
   ...feedbackHandlers,
   ...commerceHandlers,
+  ...quotationHandlers,
   ...userDirectoryHandlers,
   ...serviceCatalogHandlers,
   groupBuyHandler,

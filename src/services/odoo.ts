@@ -28,6 +28,13 @@ export type OdooProduct = {
   default_code?: string;
 };
 
+export type OdooSaleOrderLine = {
+  productName: string;
+  qty: number;
+  priceUnit: number;
+  subtotal: number;
+};
+
 export type OdooSaleOrder = {
   id: number;
   name: string;
@@ -35,6 +42,10 @@ export type OdooSaleOrder = {
   amount_total: number;
   partner_id?: [number, string];
   date_order?: string;
+  /** Odoo's own portal share-token — present once get_portal_url has been called at least once. */
+  access_token?: string;
+  /** Only populated by getSaleOrderById, which does the extra sale.order.line read; findOrderByReference leaves this undefined. */
+  lines?: OdooSaleOrderLine[];
 };
 
 export type OdooDailySalesItem = {
@@ -255,6 +266,17 @@ const parseOrder = (row: Record<string, unknown>): OdooSaleOrder => {
     amount_total: num(row.amount_total),
     partner_id: partnerTuple,
     date_order: str(row.date_order),
+    access_token: typeof row.access_token === 'string' ? row.access_token : undefined,
+  };
+};
+
+const parseOrderLine = (row: Record<string, unknown>): OdooSaleOrderLine => {
+  const product = Array.isArray(row.product_id) ? row.product_id : undefined;
+  return {
+    productName: product && product.length >= 2 ? str(product[1]) : '',
+    qty: num(row.product_uom_qty),
+    priceUnit: num(row.price_unit),
+    subtotal: num(row.price_subtotal),
   };
 };
 
@@ -376,13 +398,122 @@ export const findOrderByReference = async (reference: string): Promise<OdooSaleO
     'search_read',
     [[['name', '=', normalizedReference]]],
     {
-      fields: ['id', 'name', 'state', 'amount_total', 'partner_id'],
+      fields: ['id', 'name', 'state', 'amount_total', 'partner_id', 'access_token'],
       limit: 1,
     }
   );
 
   if (!rows.length) return null;
   return parseOrder(rows[0]);
+};
+
+/**
+ * Like findOrderByReference but by numeric id and with order lines attached
+ * — used to (re)render the quotation journey card at any state. Two reads
+ * (order + lines) since sale.order.line is a separate model; kept as two
+ * plain search_reads rather than an Odoo-side read_group to stay consistent
+ * with every other read in this file.
+ */
+export const getSaleOrderById = async (orderId: number): Promise<OdooSaleOrder | null> => {
+  const config = getConfig();
+  if (!config) return null;
+
+  const uid = await loginRead(config);
+  if (!uid) return null;
+
+  const rows = await executeKwRead<Record<string, unknown>[]>(
+    config,
+    uid,
+    'sale.order',
+    'search_read',
+    [[['id', '=', orderId]]],
+    { fields: ['id', 'name', 'state', 'amount_total', 'partner_id', 'access_token'], limit: 1 }
+  );
+  if (!rows.length) return null;
+  const order = parseOrder(rows[0]);
+
+  const lineRows = await executeKwRead<Record<string, unknown>[]>(
+    config,
+    uid,
+    'sale.order.line',
+    'search_read',
+    [[['order_id', '=', orderId], ['display_type', '=', false]]],
+    { fields: ['product_id', 'product_uom_qty', 'price_unit', 'price_subtotal'] }
+  );
+  order.lines = lineRows.map(parseOrderLine);
+
+  return order;
+};
+
+/**
+ * Odoo's own customer-portal share link (verified live: get_portal_url
+ * lazily generates access_token if missing and returns the relative path).
+ * This is a bare shareable token — anyone with the URL can view the order —
+ * so it's offered only as a "view/print" convenience, never as the
+ * approval mechanism (see QUOTE APPROVE in quotation.ts, which is gated
+ * behind the requester's own verified identity instead).
+ */
+export const getSaleOrderPortalLink = async (orderId: number): Promise<string | null> => {
+  const config = getConfig();
+  if (!config) return null;
+
+  try {
+    const uid = await login(config);
+    if (!uid) return null;
+
+    const relativePath = await executeKw<string>(config, uid, 'sale.order', 'get_portal_url', [[orderId]]);
+    if (!relativePath) return null;
+    return `${config.url.replace(/\/$/, '')}${relativePath}`;
+  } catch (error) {
+    console.error('getSaleOrderPortalLink failed:', error);
+    return null;
+  }
+};
+
+/** Quotation -> Sales Order. */
+export const confirmSaleOrder = async (orderId: number): Promise<boolean> => {
+  const config = getConfig();
+  if (!config) return false;
+
+  try {
+    const uid = await login(config);
+    if (!uid) return false;
+    await executeKw<boolean>(config, uid, 'sale.order', 'action_confirm', [[orderId]]);
+    return true;
+  } catch (error) {
+    console.error('confirmSaleOrder failed:', error);
+    return false;
+  }
+};
+
+/**
+ * Marks the order as sent and drops a chatter note for auditability in
+ * Odoo itself. The chatter note is best-effort — a failure there shouldn't
+ * fail the whole "send to customer" action, since the LINE push is what
+ * actually matters to the caller.
+ */
+export const markSaleOrderSent = async (orderId: number): Promise<boolean> => {
+  const config = getConfig();
+  if (!config) return false;
+
+  try {
+    const uid = await login(config);
+    if (!uid) return false;
+    await executeKw<boolean>(config, uid, 'sale.order', 'write', [[orderId], { state: 'sent' }]);
+
+    try {
+      await executeKw<number>(config, uid, 'sale.order', 'message_post', [[orderId]], {
+        body: 'Sent to customer via LINE OA.',
+      });
+    } catch (chatterError) {
+      console.warn('markSaleOrderSent: message_post chatter note failed (non-fatal):', chatterError);
+    }
+
+    return true;
+  } catch (error) {
+    console.error('markSaleOrderSent failed:', error);
+    return false;
+  }
 };
 
 const findOrCreatePartner = async (config: OdooConfig, uid: number, name: string, phone: string): Promise<number> => {
@@ -545,6 +676,27 @@ export const getPartnerByPhone = async (phone: string): Promise<OdooPartner | nu
     'res.partner',
     'search_read',
     [domain],
+    { fields: ['id', 'name', 'phone', 'email'], limit: 1 }
+  );
+
+  if (!rows.length) return null;
+  return parsePartner(rows[0]);
+};
+
+/** By id rather than phone — used by QUOTE SEND to find the phone to look up against findVerifiedUserIdByPhone, since sale.order's partner_id only carries [id, displayName]. */
+export const getPartnerById = async (partnerId: number): Promise<OdooPartner | null> => {
+  const config = getConfig();
+  if (!config) return null;
+
+  const uid = await loginRead(config);
+  if (!uid) return null;
+
+  const rows = await executeKwRead<Record<string, unknown>[]>(
+    config,
+    uid,
+    'res.partner',
+    'search_read',
+    [[['id', '=', partnerId]]],
     { fields: ['id', 'name', 'phone', 'email'], limit: 1 }
   );
 

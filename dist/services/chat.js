@@ -196,7 +196,7 @@ const heuristicFallback = async (userText, isThai, agentName) => {
             handled: true,
             messages: [
                 { type: 'text', text: isThai ? `${agentName} พบสินค้าจาก Odoo แล้วค่ะ` : `${agentName} found this product in Odoo.` },
-                (0, templates_1.createProductCardFlexMessage)(product.name, product.list_price, product.qty_available),
+                (0, templates_1.createProductCardFlexMessage)(product.name, product.list_price, product.qty_available, isThai ? 'th' : 'en'),
             ],
         };
     }
@@ -227,7 +227,7 @@ const processGeminiResponse = async (response, userId, isThai, agentName) => {
                 const odooProduct = await (0, odoo_1.findProductByQuery)(query);
                 if (odooProduct) {
                     aiTextResponse += `[Product card: ${odooProduct.name}]`;
-                    messages.push((0, templates_1.createProductCardFlexMessage)(odooProduct.name, odooProduct.list_price, odooProduct.qty_available));
+                    messages.push((0, templates_1.createProductCardFlexMessage)(odooProduct.name, odooProduct.list_price, odooProduct.qty_available, isThai ? 'th' : 'en'));
                 }
                 else {
                     const msg = isThai
@@ -248,7 +248,7 @@ const processGeminiResponse = async (response, userId, isThai, agentName) => {
                     aiTextResponse += quotation
                         ? `[Quotation ${quotation.orderName} for ${qty}x ${odooProduct.name}]`
                         : `[Order summary for ${qty}x ${odooProduct.name}]`;
-                    messages.push((0, templates_1.createOrderSummaryFlexMessage)(total));
+                    messages.push((0, templates_1.createOrderSummaryFlexMessage)(total, isThai ? 'th' : 'en'));
                     if (quotation) {
                         messages.push({ type: 'text', text: isThai
                                 ? `${agentName} สร้างใบเสนอราคาใน Odoo แล้ว เลขที่ ${quotation.orderName}`

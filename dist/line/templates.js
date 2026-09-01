@@ -1,7 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.createFormPromptFlexMessage = exports.createOrderSummaryFlexMessage = exports.createServiceActionFlexMessage = exports.createServiceHomeFlexMessage = exports.createProductCardFlexMessage = exports.createDailyReportFlexMessage = exports.createBotTextFlexMessage = exports.formatMoney = void 0;
+exports.createQuotationJourneyFlexMessage = exports.createFormPromptFlexMessage = exports.createOrderSummaryFlexMessage = exports.createServiceActionFlexMessage = exports.createServiceHomeFlexMessage = exports.createProductCardFlexMessage = exports.createDailyReportFlexMessage = exports.createBotTextFlexMessage = exports.formatMoney = void 0;
 const channels_1 = require("./channels");
+const i18n_1 = require("../services/i18n");
 // Cloudnex brand palette — kept consistent across every Flex message.
 const BRAND = {
     teal: '#0B6E6A',
@@ -14,6 +15,15 @@ const BRAND = {
     surface: '#FFFFFF',
     paper: '#F1F4F2',
 };
+/**
+ * Fallback only for callers that genuinely have no per-user language to pass
+ * (there are none left in this codebase as of this fix — every call site
+ * now threads the actual UserLanguage through). Two Flex builders used to
+ * read this env var directly instead of taking a `language` parameter at
+ * all, so a user's LANG EN/LANG TH choice was silently ignored for product
+ * cards and order summaries no matter what they'd set.
+ */
+const defaultUiLanguage = () => (process.env.DEFAULT_UI_LANGUAGE || 'th').toLowerCase() === 'en' ? 'en' : 'th';
 const buttonLabel = (label) => {
     const cleaned = label.trim();
     const chars = Array.from(cleaned);
@@ -187,8 +197,7 @@ const createDailyReportFlexMessage = (reportData, insights, language = 'th') => 
     };
 };
 exports.createDailyReportFlexMessage = createDailyReportFlexMessage;
-const createProductCardFlexMessage = (productName, price, stock) => {
-    const language = (process.env.DEFAULT_UI_LANGUAGE || 'th').toLowerCase() === 'en' ? 'en' : 'th';
+const createProductCardFlexMessage = (productName, price, stock, language = defaultUiLanguage()) => {
     return {
         type: 'flex',
         altText: truncate(language === 'en' ? `Product: ${productName}` : `สินค้า: ${productName}`, 390),
@@ -367,8 +376,7 @@ const createServiceActionFlexMessage = (serviceLabel, actions, language) => {
     };
 };
 exports.createServiceActionFlexMessage = createServiceActionFlexMessage;
-const createOrderSummaryFlexMessage = (total) => {
-    const language = (process.env.DEFAULT_UI_LANGUAGE || 'th').toLowerCase() === 'en' ? 'en' : 'th';
+const createOrderSummaryFlexMessage = (total, language = defaultUiLanguage()) => {
     return {
         type: 'flex',
         altText: language === 'en' ? 'Order summary' : 'สรุปคำสั่งซื้อ',
@@ -476,3 +484,138 @@ const createFormPromptFlexMessage = (params) => {
     };
 };
 exports.createFormPromptFlexMessage = createFormPromptFlexMessage;
+const QUOTATION_STATE_SEQUENCE = ['draft', 'sent', 'sale'];
+/**
+ * Mirrors the real Odoo Sales record's status bar (Quotation -> Quotation
+ * Sent -> Sales Order) plus the actions relevant to who's looking at it.
+ * `role` controls the action set — an admin can drive the order forward
+ * (Confirm/Send); a customer can only Approve their own order or view it.
+ * See quotation.ts for the authorization check that keeps that split real
+ * (a customer's Approve tap is rejected server-side if the order isn't
+ * theirs, regardless of what buttons this card happens to render).
+ */
+const createQuotationJourneyFlexMessage = (order, options, language) => {
+    const customerName = order.partner_id?.[1] || '-';
+    const isCancelled = order.state === 'cancel';
+    const currentIndex = isCancelled ? -1 : QUOTATION_STATE_SEQUENCE.indexOf(order.state);
+    const lines = order.lines || [];
+    const visibleLines = lines.slice(0, 4);
+    const extraCount = lines.length - visibleLines.length;
+    const statusRow = isCancelled
+        ? {
+            type: 'box',
+            layout: 'vertical',
+            backgroundColor: '#F8D7DA',
+            cornerRadius: 'md',
+            paddingAll: 'sm',
+            contents: [
+                { type: 'text', text: (0, i18n_1.stateLabel)('cancel', language), align: 'center', weight: 'bold', size: 'sm', color: '#7A271A' },
+            ],
+        }
+        : {
+            type: 'box',
+            layout: 'horizontal',
+            spacing: 'xs',
+            contents: QUOTATION_STATE_SEQUENCE.map((state, index) => ({
+                type: 'box',
+                layout: 'vertical',
+                flex: 1,
+                cornerRadius: 'md',
+                paddingAll: 'xs',
+                backgroundColor: index === currentIndex ? BRAND.teal : BRAND.tealTint,
+                contents: [
+                    {
+                        type: 'text',
+                        text: (0, i18n_1.stateLabel)(state, language),
+                        size: 'xxs',
+                        align: 'center',
+                        wrap: true,
+                        color: index === currentIndex ? '#FFFFFF' : BRAND.tealStrong,
+                        weight: index === currentIndex ? 'bold' : 'regular',
+                    },
+                ],
+            })),
+        };
+    const footerButtons = [];
+    const canStillAct = !isCancelled && order.state !== 'sale';
+    if (options.role === 'admin') {
+        if (canStillAct) {
+            footerButtons.push(createMessageActionButton((0, i18n_1.t)('confirm', language), `QUOTE CONFIRM ${order.id}`, 'primary', BRAND.teal));
+            footerButtons.push(createMessageActionButton((0, i18n_1.t)('sendToCustomer', language), `QUOTE SEND ${order.id}`, 'secondary', BRAND.tealTint));
+        }
+        if (options.portalLink) {
+            footerButtons.push(createUriActionButton((0, i18n_1.t)('preview', language), options.portalLink, 'secondary', BRAND.goldTint));
+        }
+    }
+    else {
+        if (canStillAct) {
+            footerButtons.push(createMessageActionButton((0, i18n_1.t)('approve', language), `QUOTE APPROVE ${order.id}`, 'primary', BRAND.teal));
+        }
+        if (options.portalLink) {
+            footerButtons.push(createUriActionButton((0, i18n_1.t)('viewFullQuotation', language), options.portalLink, 'secondary', BRAND.tealTint));
+        }
+    }
+    footerButtons.push(createMessageActionButton(language === 'en' ? 'Home' : 'หน้าหลัก', 'NAV HOME', 'secondary', BRAND.goldTint));
+    return {
+        type: 'flex',
+        altText: truncate(`${(0, i18n_1.t)('quotation', language)} ${order.name} — ${customerName} — ${(0, exports.formatMoney)(order.amount_total, language)}`, 390),
+        contents: {
+            type: 'bubble',
+            styles: {
+                header: { backgroundColor: BRAND.teal },
+                body: { backgroundColor: BRAND.surface },
+                footer: { backgroundColor: BRAND.surface },
+            },
+            header: {
+                type: 'box',
+                layout: 'vertical',
+                paddingAll: 'md',
+                contents: [
+                    { type: 'text', text: order.name, weight: 'bold', size: 'lg', color: '#FFFFFF', wrap: true },
+                    { type: 'text', text: `${(0, i18n_1.t)('customer', language)}: ${customerName}`, size: 'xs', color: '#DDEBE9', margin: 'xs', wrap: true },
+                ],
+            },
+            body: {
+                type: 'box',
+                layout: 'vertical',
+                spacing: 'md',
+                contents: [
+                    statusRow,
+                    ...(visibleLines.length ? [{
+                            type: 'box',
+                            layout: 'vertical',
+                            spacing: 'xs',
+                            contents: [
+                                { type: 'text', text: (0, i18n_1.t)('items', language), size: 'xs', color: BRAND.inkSoft },
+                                ...visibleLines.map(line => ({
+                                    type: 'text',
+                                    text: `${line.productName} × ${line.qty}`,
+                                    size: 'sm',
+                                    color: BRAND.ink,
+                                    wrap: true,
+                                })),
+                                ...(extraCount > 0 ? [{ type: 'text', text: `+${extraCount} ${(0, i18n_1.t)('moreItems', language)}`, size: 'xs', color: BRAND.inkSoft }] : []),
+                            ],
+                        }] : []),
+                    {
+                        type: 'box',
+                        layout: 'vertical',
+                        backgroundColor: BRAND.tealTint,
+                        paddingAll: 'md',
+                        contents: [
+                            { type: 'text', text: (0, i18n_1.t)('total', language), size: 'xs', color: BRAND.inkSoft },
+                            { type: 'text', text: (0, exports.formatMoney)(order.amount_total, language), size: 'xl', color: BRAND.tealStrong, weight: 'bold', wrap: true },
+                        ],
+                    },
+                ],
+            },
+            footer: {
+                type: 'box',
+                layout: 'vertical',
+                spacing: 'sm',
+                contents: footerButtons,
+            },
+        },
+    };
+};
+exports.createQuotationJourneyFlexMessage = createQuotationJourneyFlexMessage;

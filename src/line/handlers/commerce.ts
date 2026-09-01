@@ -1,7 +1,7 @@
 import type { CommandHandler } from './index';
 import {
   createProductCardFlexMessage,
-  createOrderSummaryFlexMessage,
+  createQuotationJourneyFlexMessage,
   createBotTextFlexMessage,
   formatMoney,
 } from '../templates';
@@ -10,6 +10,9 @@ import {
   createQuotationFromLine,
   findOrderByReference,
   findProductByQuery,
+  getPartnerByPhone,
+  getSaleOrderById,
+  getSaleOrderPortalLink,
   pingOdoo,
   seedOdooSampleSalesData,
 } from '../../services/odoo';
@@ -79,7 +82,7 @@ const demoQuoteHandler: CommandHandler = {
   name: 'commerce-demo-quote',
   match: (u) => u === 'DEMO QUOTE' || u.startsWith('DEMO QUOTE '),
   handle: async (ctx) => {
-    const { userLanguage, text } = ctx;
+    const { userLanguage, profile, text } = ctx;
     const payload = text.trim().replace(/^DEMO QUOTE\s*/i, '').trim();
     const parsed = parseDemoQuotePayload(payload);
     if (!parsed) {
@@ -103,7 +106,13 @@ const demoQuoteHandler: CommandHandler = {
       ), userLanguage)];
     }
 
-    const quotation = await createQuotationFromLine(customerName, phone, productName, qty);
+    // If an admin is quoting for a phone that's already a real Odoo
+    // contact, attach the quote to that exact partner instead of letting
+    // createQuotationFromLine's findOrCreatePartner blindly create/match a
+    // bystander contact by name+phone. Unverified/new customers (the
+    // common case) fall through to today's behavior unchanged.
+    const existingPartner = profile.role === 'admin' ? await getPartnerByPhone(phone) : null;
+    const quotation = await createQuotationFromLine(customerName, phone, productName, qty, existingPartner?.id);
     if (!quotation) {
       // Product genuinely exists, so this is a real failure (partner
       // creation, sale.order create, etc.) — logged server-side by
@@ -113,7 +122,20 @@ const demoQuoteHandler: CommandHandler = {
         "Found the product, but couldn't create the quote due to a system error. Please try again, or contact an admin if it keeps happening.",
       ), userLanguage)];
     }
-    return [createOrderSummaryFlexMessage(quotation.total, userLanguage)];
+
+    const order = await getSaleOrderById(quotation.orderId);
+    if (!order) {
+      // Created successfully but the immediate re-read failed — extremely
+      // unlikely, but don't leave the requester without any confirmation.
+      return [botText(tr(userLanguage,
+        `สร้างใบเสนอราคา ${quotation.orderName} สำเร็จแล้ว (${formatMoney(quotation.total, 'th')})`,
+        `Created quotation ${quotation.orderName} (${formatMoney(quotation.total, 'en')}).`,
+      ), userLanguage)];
+    }
+
+    const portalLink = (await getSaleOrderPortalLink(quotation.orderId)) || undefined;
+    const role = profile.role === 'admin' ? 'admin' : 'customer';
+    return [createQuotationJourneyFlexMessage(order, { role, portalLink }, userLanguage)];
   },
 };
 

@@ -1,5 +1,7 @@
 import { messagingApi } from '@line/bot-sdk';
 import { getAgentName } from './channels';
+import type { OdooSaleOrder } from '../services/odoo';
+import { t, stateLabel, type Lang } from '../services/i18n';
 
 type ReportLanguage = 'th' | 'en';
 
@@ -534,6 +536,150 @@ export const createFormPromptFlexMessage = (params: {
         layout: params.optional ? 'horizontal' : 'vertical',
         spacing: 'sm',
         contents: actions.map(action => createMessageActionButton(action.label, action.text, action.text === 'CANCEL' ? 'secondary' : 'primary', action.text === 'CANCEL' ? BRAND.goldTint : BRAND.teal)),
+      },
+    },
+  };
+};
+
+const QUOTATION_STATE_SEQUENCE = ['draft', 'sent', 'sale'] as const;
+
+/**
+ * Mirrors the real Odoo Sales record's status bar (Quotation -> Quotation
+ * Sent -> Sales Order) plus the actions relevant to who's looking at it.
+ * `role` controls the action set — an admin can drive the order forward
+ * (Confirm/Send); a customer can only Approve their own order or view it.
+ * See quotation.ts for the authorization check that keeps that split real
+ * (a customer's Approve tap is rejected server-side if the order isn't
+ * theirs, regardless of what buttons this card happens to render).
+ */
+export const createQuotationJourneyFlexMessage = (
+  order: OdooSaleOrder,
+  options: { role: 'admin' | 'customer'; portalLink?: string },
+  language: Lang
+): messagingApi.FlexMessage => {
+  const customerName = order.partner_id?.[1] || '-';
+  const isCancelled = order.state === 'cancel';
+  const currentIndex = isCancelled ? -1 : QUOTATION_STATE_SEQUENCE.indexOf(order.state as typeof QUOTATION_STATE_SEQUENCE[number]);
+
+  const lines = order.lines || [];
+  const visibleLines = lines.slice(0, 4);
+  const extraCount = lines.length - visibleLines.length;
+
+  const statusRow: messagingApi.FlexBox = isCancelled
+    ? {
+        type: 'box',
+        layout: 'vertical',
+        backgroundColor: '#F8D7DA',
+        cornerRadius: 'md',
+        paddingAll: 'sm',
+        contents: [
+          { type: 'text', text: stateLabel('cancel', language), align: 'center', weight: 'bold', size: 'sm', color: '#7A271A' },
+        ],
+      }
+    : {
+        type: 'box',
+        layout: 'horizontal',
+        spacing: 'xs',
+        contents: QUOTATION_STATE_SEQUENCE.map((state, index) => ({
+          type: 'box',
+          layout: 'vertical',
+          flex: 1,
+          cornerRadius: 'md',
+          paddingAll: 'xs',
+          backgroundColor: index === currentIndex ? BRAND.teal : BRAND.tealTint,
+          contents: [
+            {
+              type: 'text',
+              text: stateLabel(state, language),
+              size: 'xxs',
+              align: 'center',
+              wrap: true,
+              color: index === currentIndex ? '#FFFFFF' : BRAND.tealStrong,
+              weight: index === currentIndex ? 'bold' : 'regular',
+            },
+          ],
+        })),
+      };
+
+  const footerButtons: messagingApi.FlexButton[] = [];
+  const canStillAct = !isCancelled && order.state !== 'sale';
+
+  if (options.role === 'admin') {
+    if (canStillAct) {
+      footerButtons.push(createMessageActionButton(t('confirm', language), `QUOTE CONFIRM ${order.id}`, 'primary', BRAND.teal));
+      footerButtons.push(createMessageActionButton(t('sendToCustomer', language), `QUOTE SEND ${order.id}`, 'secondary', BRAND.tealTint));
+    }
+    if (options.portalLink) {
+      footerButtons.push(createUriActionButton(t('preview', language), options.portalLink, 'secondary', BRAND.goldTint));
+    }
+  } else {
+    if (canStillAct) {
+      footerButtons.push(createMessageActionButton(t('approve', language), `QUOTE APPROVE ${order.id}`, 'primary', BRAND.teal));
+    }
+    if (options.portalLink) {
+      footerButtons.push(createUriActionButton(t('viewFullQuotation', language), options.portalLink, 'secondary', BRAND.tealTint));
+    }
+  }
+  footerButtons.push(createMessageActionButton(language === 'en' ? 'Home' : 'หน้าหลัก', 'NAV HOME', 'secondary', BRAND.goldTint));
+
+  return {
+    type: 'flex',
+    altText: truncate(`${t('quotation', language)} ${order.name} — ${customerName} — ${formatMoney(order.amount_total, language)}`, 390),
+    contents: {
+      type: 'bubble',
+      styles: {
+        header: { backgroundColor: BRAND.teal },
+        body: { backgroundColor: BRAND.surface },
+        footer: { backgroundColor: BRAND.surface },
+      },
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: 'md',
+        contents: [
+          { type: 'text', text: order.name, weight: 'bold', size: 'lg', color: '#FFFFFF', wrap: true },
+          { type: 'text', text: `${t('customer', language)}: ${customerName}`, size: 'xs', color: '#DDEBE9', margin: 'xs', wrap: true },
+        ],
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'md',
+        contents: [
+          statusRow,
+          ...(visibleLines.length ? [{
+            type: 'box' as const,
+            layout: 'vertical' as const,
+            spacing: 'xs' as const,
+            contents: [
+              { type: 'text' as const, text: t('items', language), size: 'xs' as const, color: BRAND.inkSoft },
+              ...visibleLines.map(line => ({
+                type: 'text' as const,
+                text: `${line.productName} × ${line.qty}`,
+                size: 'sm' as const,
+                color: BRAND.ink,
+                wrap: true,
+              })),
+              ...(extraCount > 0 ? [{ type: 'text' as const, text: `+${extraCount} ${t('moreItems', language)}`, size: 'xs' as const, color: BRAND.inkSoft }] : []),
+            ],
+          }] : []),
+          {
+            type: 'box',
+            layout: 'vertical',
+            backgroundColor: BRAND.tealTint,
+            paddingAll: 'md',
+            contents: [
+              { type: 'text', text: t('total', language), size: 'xs', color: BRAND.inkSoft },
+              { type: 'text', text: formatMoney(order.amount_total, language), size: 'xl', color: BRAND.tealStrong, weight: 'bold', wrap: true },
+            ],
+          },
+        ],
+      },
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        contents: footerButtons,
       },
     },
   };

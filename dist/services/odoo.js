@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.seedOdooSampleSalesData = exports.getDailySalesSnapshot = exports.deleteServiceCatalogItem = exports.updateServiceCatalogItem = exports.createServiceCatalogItem = exports.getServiceByIdentifier = exports.listServiceCatalogItems = exports.deletePartnerFromLine = exports.updatePartnerFromLine = exports.createPartnerFromLine = exports.getPartnerByPhone = exports.createQuotationFromLine = exports.findOrderByReference = exports.findProductByQuery = exports.verifyOdooAdminAccess = exports.pingOdoo = exports.isOdooConfigured = void 0;
+exports.seedOdooSampleSalesData = exports.getDailySalesSnapshot = exports.deleteServiceCatalogItem = exports.updateServiceCatalogItem = exports.createServiceCatalogItem = exports.getServiceByIdentifier = exports.listServiceCatalogItems = exports.deletePartnerFromLine = exports.updatePartnerFromLine = exports.createPartnerFromLine = exports.getPartnerById = exports.getPartnerByPhone = exports.createQuotationFromLine = exports.markSaleOrderSent = exports.confirmSaleOrder = exports.getSaleOrderPortalLink = exports.getSaleOrderById = exports.findOrderByReference = exports.findProductByQuery = exports.verifyOdooAdminAccess = exports.pingOdoo = exports.isOdooConfigured = void 0;
 const ODOO_RPC_TIMEOUT_MS = Number(process.env.ODOO_RPC_TIMEOUT_MS || 7000);
 const ODOO_READ_RETRY_ATTEMPTS = Number(process.env.ODOO_READ_RETRY_ATTEMPTS || 3);
 const ODOO_READ_RETRY_BASE_DELAY_MS = Number(process.env.ODOO_READ_RETRY_BASE_DELAY_MS || 250);
@@ -169,6 +169,16 @@ const parseOrder = (row) => {
         amount_total: num(row.amount_total),
         partner_id: partnerTuple,
         date_order: str(row.date_order),
+        access_token: typeof row.access_token === 'string' ? row.access_token : undefined,
+    };
+};
+const parseOrderLine = (row) => {
+    const product = Array.isArray(row.product_id) ? row.product_id : undefined;
+    return {
+        productName: product && product.length >= 2 ? str(product[1]) : '',
+        qty: num(row.product_uom_qty),
+        priceUnit: num(row.price_unit),
+        subtotal: num(row.price_subtotal),
     };
 };
 const parsePartner = (row) => ({
@@ -261,7 +271,7 @@ const findOrderByReference = async (reference) => {
     if (!uid)
         return null;
     const rows = await executeKwRead(config, uid, 'sale.order', 'search_read', [[['name', '=', normalizedReference]]], {
-        fields: ['id', 'name', 'state', 'amount_total', 'partner_id'],
+        fields: ['id', 'name', 'state', 'amount_total', 'partner_id', 'access_token'],
         limit: 1,
     });
     if (!rows.length)
@@ -269,6 +279,105 @@ const findOrderByReference = async (reference) => {
     return parseOrder(rows[0]);
 };
 exports.findOrderByReference = findOrderByReference;
+/**
+ * Like findOrderByReference but by numeric id and with order lines attached
+ * — used to (re)render the quotation journey card at any state. Two reads
+ * (order + lines) since sale.order.line is a separate model; kept as two
+ * plain search_reads rather than an Odoo-side read_group to stay consistent
+ * with every other read in this file.
+ */
+const getSaleOrderById = async (orderId) => {
+    const config = getConfig();
+    if (!config)
+        return null;
+    const uid = await loginRead(config);
+    if (!uid)
+        return null;
+    const rows = await executeKwRead(config, uid, 'sale.order', 'search_read', [[['id', '=', orderId]]], { fields: ['id', 'name', 'state', 'amount_total', 'partner_id', 'access_token'], limit: 1 });
+    if (!rows.length)
+        return null;
+    const order = parseOrder(rows[0]);
+    const lineRows = await executeKwRead(config, uid, 'sale.order.line', 'search_read', [[['order_id', '=', orderId], ['display_type', '=', false]]], { fields: ['product_id', 'product_uom_qty', 'price_unit', 'price_subtotal'] });
+    order.lines = lineRows.map(parseOrderLine);
+    return order;
+};
+exports.getSaleOrderById = getSaleOrderById;
+/**
+ * Odoo's own customer-portal share link (verified live: get_portal_url
+ * lazily generates access_token if missing and returns the relative path).
+ * This is a bare shareable token — anyone with the URL can view the order —
+ * so it's offered only as a "view/print" convenience, never as the
+ * approval mechanism (see QUOTE APPROVE in quotation.ts, which is gated
+ * behind the requester's own verified identity instead).
+ */
+const getSaleOrderPortalLink = async (orderId) => {
+    const config = getConfig();
+    if (!config)
+        return null;
+    try {
+        const uid = await login(config);
+        if (!uid)
+            return null;
+        const relativePath = await executeKw(config, uid, 'sale.order', 'get_portal_url', [[orderId]]);
+        if (!relativePath)
+            return null;
+        return `${config.url.replace(/\/$/, '')}${relativePath}`;
+    }
+    catch (error) {
+        console.error('getSaleOrderPortalLink failed:', error);
+        return null;
+    }
+};
+exports.getSaleOrderPortalLink = getSaleOrderPortalLink;
+/** Quotation -> Sales Order. */
+const confirmSaleOrder = async (orderId) => {
+    const config = getConfig();
+    if (!config)
+        return false;
+    try {
+        const uid = await login(config);
+        if (!uid)
+            return false;
+        await executeKw(config, uid, 'sale.order', 'action_confirm', [[orderId]]);
+        return true;
+    }
+    catch (error) {
+        console.error('confirmSaleOrder failed:', error);
+        return false;
+    }
+};
+exports.confirmSaleOrder = confirmSaleOrder;
+/**
+ * Marks the order as sent and drops a chatter note for auditability in
+ * Odoo itself. The chatter note is best-effort — a failure there shouldn't
+ * fail the whole "send to customer" action, since the LINE push is what
+ * actually matters to the caller.
+ */
+const markSaleOrderSent = async (orderId) => {
+    const config = getConfig();
+    if (!config)
+        return false;
+    try {
+        const uid = await login(config);
+        if (!uid)
+            return false;
+        await executeKw(config, uid, 'sale.order', 'write', [[orderId], { state: 'sent' }]);
+        try {
+            await executeKw(config, uid, 'sale.order', 'message_post', [[orderId]], {
+                body: 'Sent to customer via LINE OA.',
+            });
+        }
+        catch (chatterError) {
+            console.warn('markSaleOrderSent: message_post chatter note failed (non-fatal):', chatterError);
+        }
+        return true;
+    }
+    catch (error) {
+        console.error('markSaleOrderSent failed:', error);
+        return false;
+    }
+};
+exports.markSaleOrderSent = markSaleOrderSent;
 const findOrCreatePartner = async (config, uid, name, phone) => {
     const normalizedPhone = phone.trim();
     // Only search by phone when we actually have one — matching on an empty
@@ -386,6 +495,20 @@ const getPartnerByPhone = async (phone) => {
     return parsePartner(rows[0]);
 };
 exports.getPartnerByPhone = getPartnerByPhone;
+/** By id rather than phone — used by QUOTE SEND to find the phone to look up against findVerifiedUserIdByPhone, since sale.order's partner_id only carries [id, displayName]. */
+const getPartnerById = async (partnerId) => {
+    const config = getConfig();
+    if (!config)
+        return null;
+    const uid = await loginRead(config);
+    if (!uid)
+        return null;
+    const rows = await executeKwRead(config, uid, 'res.partner', 'search_read', [[['id', '=', partnerId]]], { fields: ['id', 'name', 'phone', 'email'], limit: 1 });
+    if (!rows.length)
+        return null;
+    return parsePartner(rows[0]);
+};
+exports.getPartnerById = getPartnerById;
 const createPartnerFromLine = async (name, phone, email) => {
     const config = getConfig();
     if (!config)
