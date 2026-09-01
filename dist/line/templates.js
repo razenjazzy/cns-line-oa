@@ -42,6 +42,19 @@ const createMessageActionButton = (label, actionText, style = 'primary', color =
     color,
     action: { type: 'message', label: buttonLabel(label), text: actionText },
 });
+/**
+ * A `uri` action opens a real link when tapped — unlike plain text inside a
+ * Flex bubble, which LINE never auto-linkifies or makes selectable. Used
+ * for one-tap links (e.g. the Odoo verification link) that would otherwise
+ * be inert, uncopyable text.
+ */
+const createUriActionButton = (label, uri, style = 'primary', color = BRAND.teal) => ({
+    type: 'button',
+    style,
+    height: 'sm',
+    color,
+    action: { type: 'uri', label: buttonLabel(label), uri },
+});
 const truncate = (value, maxLength) => {
     const chars = Array.from(value.trim());
     return chars.length > maxLength ? `${chars.slice(0, maxLength - 3).join('')}...` : value.trim();
@@ -119,7 +132,8 @@ const createBotTextFlexMessage = (params) => {
                 layout: 'vertical',
                 spacing: 'sm',
                 contents: [
-                    createMessageActionButton(params.primaryAction?.label || (params.language === 'en' ? 'Home' : 'หน้าหลัก'), params.primaryAction?.text || 'NAV HOME', 'primary', BRAND.teal),
+                    ...(params.linkAction ? [createUriActionButton(params.linkAction.label, params.linkAction.uri, 'primary', BRAND.teal)] : []),
+                    createMessageActionButton(params.primaryAction?.label || (params.language === 'en' ? 'Home' : 'หน้าหลัก'), params.primaryAction?.text || 'NAV HOME', params.linkAction ? 'secondary' : 'primary', params.linkAction ? BRAND.goldTint : BRAND.teal),
                     ...(params.secondaryAction ? [createMessageActionButton(params.secondaryAction.label, params.secondaryAction.text, 'secondary', BRAND.goldTint)] : []),
                 ],
             },

@@ -27,7 +27,7 @@ const verifyStartHandler: CommandHandler = {
   handle: async (ctx) => {
     const { userLanguage, userId, agentName, baseUrl, text, channel } = ctx;
     const phone = text.trim().replace(/^VERIFY START\s*/i, '').trim();
-    const message = await startOdooUserVerification({
+    const result = await startOdooUserVerification({
       userId,
       rawPhone: phone,
       language: userLanguage,
@@ -35,7 +35,16 @@ const verifyStartHandler: CommandHandler = {
       fallbackBaseUrl: baseUrl,
       channelId: channel?.channelId,
     });
-    return [botText(message, userLanguage)];
+    // The link (when present) must render as a real uri-action button —
+    // Flex text isn't auto-linkified or selectable, so a raw URL in the
+    // body was previously an inert, uncopyable string.
+    return [createBotTextFlexMessage({
+      title: tr(userLanguage, 'ผู้ช่วย Cloudnex', 'Cloudnex assistant'),
+      body: result.message,
+      language: userLanguage,
+      tone: inferTone(result.message),
+      ...(result.link ? { linkAction: { label: result.linkLabel || 'Open link', uri: result.link } } : {}),
+    })];
   },
 };
 

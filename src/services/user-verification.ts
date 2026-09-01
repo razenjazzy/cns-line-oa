@@ -38,19 +38,28 @@ type StartVerificationInput = {
   channelId?: string;
 };
 
-export const startOdooUserVerification = async (input: StartVerificationInput): Promise<string> => {
+export type StartVerificationResult = {
+  message: string;
+  /** Present only once a challenge was actually created — render as a real uri-action button, never as raw text (Flex text isn't linkified or selectable). */
+  link?: string;
+  linkLabel?: string;
+};
+
+export const startOdooUserVerification = async (input: StartVerificationInput): Promise<StartVerificationResult> => {
   const phone = normalizePhone(input.rawPhone);
   if (!phone) {
-    return tr(input.language, `วิธีใช้: VERIFY START <เบอร์โทร>`, `Usage: VERIFY START <phone>`);
+    return { message: tr(input.language, `วิธีใช้: VERIFY START <เบอร์โทร>`, `Usage: VERIFY START <phone>`) };
   }
 
   const partner = await getPartnerByPhone(phone);
   if (!partner) {
-    return tr(
-      input.language,
-      `${input.agentName} ไม่พบบัญชี Odoo ที่ตรงกับเบอร์ ${phone}`,
-      `${input.agentName} no Odoo user matched phone ${phone}`
-    );
+    return {
+      message: tr(
+        input.language,
+        `${input.agentName} ไม่พบบัญชี Odoo ที่ตรงกับเบอร์ ${phone}`,
+        `${input.agentName} no Odoo user matched phone ${phone}`
+      ),
+    };
   }
 
   const otpCode = generateOtp();
@@ -65,22 +74,32 @@ export const startOdooUserVerification = async (input: StartVerificationInput): 
   });
 
   if (!created.ok || !created.data) {
-    return tr(
-      input.language,
-      `${input.agentName} ไม่สามารถเริ่มการยืนยันตัวตนได้ กรุณาลองใหม่`,
-      `${input.agentName} could not start verification. Please try again.`
-    );
+    return {
+      message: tr(
+        input.language,
+        `${input.agentName} ไม่สามารถเริ่มการยืนยันตัวตนได้ กรุณาลองใหม่`,
+        `${input.agentName} could not start verification. Please try again.`
+      ),
+    };
   }
 
   const link = `${buildBaseUrl(input.fallbackBaseUrl)}/verify/odoo?token=${encodeURIComponent(linkToken)}`;
+  // Kept short deliberately — Flex button labels get truncated at 20 chars
+  // (see buttonLabel() in templates.ts), and a label cut off mid-word
+  // ("Open verification...") reads worse than a short, complete one.
+  const linkLabel = tr(input.language, 'ยืนยันตอนนี้', 'Verify now');
   const includeOtpInMessage = /^(1|true|yes|on)$/i.test(process.env.ODOO_VERIFY_DEBUG_INCLUDE_OTP || 'false');
 
   if (includeOtpInMessage) {
-    return tr(
-      input.language,
-      `${input.agentName} เริ่มการยืนยันบัญชี Odoo แล้ว\n- ผู้ใช้: ${partner.name}\n- เบอร์: ${phone}\n- OTP: ${otpCode} (หมดอายุใน 10 นาที)\n- ลิงก์ยืนยัน: ${link}\n\nยืนยันด้วย: VERIFY OTP <รหัส>`,
-      `${input.agentName} started Odoo account verification\n- User: ${partner.name}\n- Phone: ${phone}\n- OTP: ${otpCode} (expires in 10 minutes)\n- Verify link: ${link}\n\nConfirm with: VERIFY OTP <code>`
-    );
+    return {
+      message: tr(
+        input.language,
+        `${input.agentName} เริ่มการยืนยันบัญชี Odoo แล้ว\n- ผู้ใช้: ${partner.name}\n- เบอร์: ${phone}\n- OTP: ${otpCode} (หมดอายุใน 10 นาที)\n\nแตะปุ่มด้านล่างเพื่อยืนยันทันที หรือพิมพ์: VERIFY OTP <รหัส>`,
+        `${input.agentName} started Odoo account verification\n- User: ${partner.name}\n- Phone: ${phone}\n- OTP: ${otpCode} (expires in 10 minutes)\n\nTap the button below to verify instantly, or type: VERIFY OTP <code>`
+      ),
+      link,
+      linkLabel,
+    };
   }
 
   console.log('[verification] OTP generated', {
@@ -91,11 +110,15 @@ export const startOdooUserVerification = async (input: StartVerificationInput): 
     otpCode,
   });
 
-  return tr(
-    input.language,
-    `${input.agentName} เริ่มการยืนยันบัญชี Odoo แล้ว\n- ผู้ใช้: ${partner.name}\n- เบอร์: ${phone}\n- ลิงก์ยืนยัน: ${link}\n\nกรอก OTP ที่ได้รับด้วยคำสั่ง: VERIFY OTP <รหัส>`,
-    `${input.agentName} started Odoo account verification\n- User: ${partner.name}\n- Phone: ${phone}\n- Verify link: ${link}\n\nSubmit the received OTP via: VERIFY OTP <code>`
-  );
+  return {
+    message: tr(
+      input.language,
+      `${input.agentName} เริ่มการยืนยันบัญชี Odoo แล้ว\n- ผู้ใช้: ${partner.name}\n- เบอร์: ${phone}\n\nแตะปุ่มด้านล่างเพื่อยืนยันทันที หรือกรอก OTP ที่ได้รับด้วยคำสั่ง: VERIFY OTP <รหัส>`,
+      `${input.agentName} started Odoo account verification\n- User: ${partner.name}\n- Phone: ${phone}\n\nTap the button below to verify instantly, or submit the received OTP via: VERIFY OTP <code>`
+    ),
+    link,
+    linkLabel,
+  };
 };
 
 type VerifyOtpInput = {

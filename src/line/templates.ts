@@ -51,6 +51,25 @@ const createMessageActionButton = (
   action: { type: 'message', label: buttonLabel(label), text: actionText },
 });
 
+/**
+ * A `uri` action opens a real link when tapped — unlike plain text inside a
+ * Flex bubble, which LINE never auto-linkifies or makes selectable. Used
+ * for one-tap links (e.g. the Odoo verification link) that would otherwise
+ * be inert, uncopyable text.
+ */
+const createUriActionButton = (
+  label: string,
+  uri: string,
+  style: 'primary' | 'secondary' | 'link' = 'primary',
+  color: string = BRAND.teal
+): messagingApi.FlexButton => ({
+  type: 'button',
+  style,
+  height: 'sm',
+  color,
+  action: { type: 'uri', label: buttonLabel(label), uri },
+});
+
 const truncate = (value: string, maxLength: number): string => {
   const chars = Array.from(value.trim());
   return chars.length > maxLength ? `${chars.slice(0, maxLength - 3).join('')}...` : value.trim();
@@ -65,6 +84,13 @@ export const createBotTextFlexMessage = (params: {
   secondaryAction?: { label: string; text: string };
   /** Optional quick-reply chips (e.g. Confirm/Cancel on a destructive action). */
   quickReplyActions?: { label: string; text: string }[];
+  /**
+   * A real tappable link (e.g. the Odoo verification link), rendered as the
+   * top footer button. When present, primaryAction/Home is demoted to a
+   * secondary button since the link becomes the message's main call to
+   * action.
+   */
+  linkAction?: { label: string; uri: string };
 }): messagingApi.FlexMessage => {
   const tone = params.tone || 'info';
   const toneColor = tone === 'error'
@@ -139,7 +165,13 @@ export const createBotTextFlexMessage = (params: {
         layout: 'vertical',
         spacing: 'sm',
         contents: [
-          createMessageActionButton(params.primaryAction?.label || (params.language === 'en' ? 'Home' : 'หน้าหลัก'), params.primaryAction?.text || 'NAV HOME', 'primary', BRAND.teal),
+          ...(params.linkAction ? [createUriActionButton(params.linkAction.label, params.linkAction.uri, 'primary', BRAND.teal)] : []),
+          createMessageActionButton(
+            params.primaryAction?.label || (params.language === 'en' ? 'Home' : 'หน้าหลัก'),
+            params.primaryAction?.text || 'NAV HOME',
+            params.linkAction ? 'secondary' : 'primary',
+            params.linkAction ? BRAND.goldTint : BRAND.teal
+          ),
           ...(params.secondaryAction ? [createMessageActionButton(params.secondaryAction.label, params.secondaryAction.text, 'secondary', BRAND.goldTint)] : []),
         ],
       },
