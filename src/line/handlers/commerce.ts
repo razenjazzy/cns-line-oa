@@ -88,11 +88,29 @@ const demoQuoteHandler: CommandHandler = {
     }
 
     const { productName, qty, customerName, phone } = parsed;
+
+    // createQuotationFromLine collapses every failure (no product match, a
+    // genuine Odoo error, anything) into a single null, so a real error was
+    // indistinguishable from a simple typo in the product name — both showed
+    // the same "check product name" message. Check the product separately
+    // first so the two cases get a message that actually points at the
+    // right fix.
+    const product = await findProductByQuery(productName);
+    if (!product) {
+      return [botText(tr(userLanguage,
+        `ไม่พบสินค้าที่ตรงกับ "${productName}" ลองพิมพ์ DEMO PRODUCT ${productName} เพื่อตรวจสอบชื่อที่ถูกต้องก่อนนะคะ`,
+        `No product matched "${productName}". Try DEMO PRODUCT ${productName} first to check the exact name in the catalog.`,
+      ), userLanguage)];
+    }
+
     const quotation = await createQuotationFromLine(customerName, phone, productName, qty);
     if (!quotation) {
+      // Product genuinely exists, so this is a real failure (partner
+      // creation, sale.order create, etc.) — logged server-side by
+      // createQuotationFromLine itself; tell the user it's not their input.
       return [botText(tr(userLanguage,
-        'สร้างใบเสนอราคาไม่สำเร็จ กรุณาตรวจสอบชื่อสินค้าแล้วลองใหม่อีกครั้งค่ะ',
-        "We couldn't create that quote. Please check the product name and try again.",
+        'พบสินค้าแล้ว แต่สร้างใบเสนอราคาไม่สำเร็จเนื่องจากข้อผิดพลาดของระบบ กรุณาลองใหม่ หรือแจ้งแอดมินหากยังไม่สำเร็จ',
+        "Found the product, but couldn't create the quote due to a system error. Please try again, or contact an admin if it keeps happening.",
       ), userLanguage)];
     }
     return [createOrderSummaryFlexMessage(quotation.total)];
