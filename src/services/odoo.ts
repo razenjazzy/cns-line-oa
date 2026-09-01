@@ -468,6 +468,35 @@ export const createQuotationFromLine = async (
   }
 };
 
+const normalizePhoneDigits = (value: string): string => value.replace(/[^0-9+]/g, '').trim();
+
+/**
+ * Odoo contacts are entered with inconsistent formatting (local 0-prefix vs
+ * +66/66 international) and the number often lives in `mobile` rather than
+ * `phone`. An exact single-field match against exactly what the customer
+ * typed was silently failing for legitimate accounts, so verification never
+ * completed. Expand to every plausible formatting variant instead.
+ */
+const buildPhoneMatchVariants = (phone: string): string[] => {
+  const cleaned = normalizePhoneDigits(phone);
+  if (!cleaned) return [];
+
+  const variants = new Set<string>([cleaned]);
+
+  if (cleaned.startsWith('0') && cleaned.length >= 9) {
+    variants.add(`+66${cleaned.slice(1)}`);
+    variants.add(`66${cleaned.slice(1)}`);
+  } else if (cleaned.startsWith('+66')) {
+    variants.add(`0${cleaned.slice(3)}`);
+    variants.add(cleaned.slice(1));
+  } else if (cleaned.startsWith('66') && cleaned.length >= 10) {
+    variants.add(`0${cleaned.slice(2)}`);
+    variants.add(`+${cleaned}`);
+  }
+
+  return Array.from(variants);
+};
+
 export const getPartnerByPhone = async (phone: string): Promise<OdooPartner | null> => {
   const config = getConfig();
   if (!config) return null;
@@ -475,12 +504,18 @@ export const getPartnerByPhone = async (phone: string): Promise<OdooPartner | nu
   const uid = await loginRead(config);
   if (!uid) return null;
 
+  const variants = buildPhoneMatchVariants(phone);
+  if (!variants.length) return null;
+
+  const fieldMatches = variants.flatMap(v => [['phone', '=', v], ['mobile', '=', v]]);
+  const domain = [...Array(fieldMatches.length - 1).fill('|'), ...fieldMatches];
+
   const rows = await executeKwRead<Record<string, unknown>[]>(
     config,
     uid,
     'res.partner',
     'search_read',
-    [[['phone', '=', phone]]],
+    [domain],
     { fields: ['id', 'name', 'phone', 'email'], limit: 1 }
   );
 

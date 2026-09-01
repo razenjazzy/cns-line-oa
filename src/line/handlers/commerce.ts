@@ -3,6 +3,7 @@ import {
   createProductCardFlexMessage,
   createOrderSummaryFlexMessage,
   createBotTextFlexMessage,
+  formatMoney,
 } from '../templates';
 import { parseDemoQuotePayload } from '../command-validators';
 import {
@@ -31,9 +32,6 @@ const botText = (value: string, language: UserLanguage) =>
     tone: inferTone(value),
   });
 
-const adminOnlyReply = (language: UserLanguage) =>
-  botText(tr(language, 'คำสั่งนี้สำหรับแอดมินเท่านั้น', 'This command is admin-only.'), language);
-
 // DEMO PRODUCT [query] — lookup product in Odoo; no query → guided form
 const demoProductHandler: CommandHandler = {
   name: 'commerce-demo-product',
@@ -47,7 +45,7 @@ const demoProductHandler: CommandHandler = {
     }
     const product = await findProductByQuery(query);
     if (!product) {
-      return [botText(tr(userLanguage, `ไม่พบสินค้าใน Odoo สำหรับ "${query}"`, `No product found in Odoo for "${query}"`), userLanguage)];
+      return [botText(tr(userLanguage, `ไม่พบสินค้าที่ตรงกับ "${query}" ลองใช้ชื่อสินค้าอื่นดูนะคะ`, `No product matched "${query}". Try a different product name?`), userLanguage)];
     }
     return [createProductCardFlexMessage(product.name, product.list_price, product.qty_available)];
   },
@@ -66,12 +64,12 @@ const demoOrderHandler: CommandHandler = {
     }
     const order = await findOrderByReference(orderRef);
     if (!order) {
-      return [botText(tr(userLanguage, `ไม่พบออเดอร์ Odoo เลขที่ ${orderRef}`, `No Odoo order found for ${orderRef}`), userLanguage)];
+      return [botText(tr(userLanguage, `ไม่พบออเดอร์เลขที่ ${orderRef} กรุณาตรวจสอบเลขที่อ้างอิงอีกครั้งค่ะ`, `We couldn't find an order with reference ${orderRef}. Please double-check the reference number.`), userLanguage)];
     }
     return [botText(tr(
       userLanguage,
-      `สถานะออเดอร์ Odoo\n- เลขที่: ${order.name}\n- สถานะ: ${order.state}\n- ยอดรวม: ${order.amount_total} บาท`,
-      `Odoo Order Status\n- Reference: ${order.name}\n- State: ${order.state}\n- Total: ${order.amount_total} THB`,
+      `สถานะออเดอร์\n- เลขที่: ${order.name}\n- สถานะ: ${order.state}\n- ยอดรวม: ${formatMoney(order.amount_total, 'th')}`,
+      `Order status\n- Reference: ${order.name}\n- Status: ${order.state}\n- Total: ${formatMoney(order.amount_total, 'en')}`,
     ), userLanguage)];
   },
 };
@@ -93,8 +91,8 @@ const demoQuoteHandler: CommandHandler = {
     const quotation = await createQuotationFromLine(customerName, phone, productName, qty);
     if (!quotation) {
       return [botText(tr(userLanguage,
-        'สร้างใบเสนอราคา Odoo ไม่สำเร็จ กรุณาตรวจชื่อสินค้าและการตั้งค่า Odoo',
-        'Failed to create Odoo quotation. Please check product name and Odoo configuration.',
+        'สร้างใบเสนอราคาไม่สำเร็จ กรุณาตรวจสอบชื่อสินค้าแล้วลองใหม่อีกครั้งค่ะ',
+        "We couldn't create that quote. Please check the product name and try again.",
       ), userLanguage)];
     }
     return [createOrderSummaryFlexMessage(quotation.total)];

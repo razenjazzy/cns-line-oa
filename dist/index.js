@@ -44,6 +44,7 @@ const webhook_1 = require("./line/webhook");
 const channels_1 = require("./line/channels");
 const command_router_1 = require("./line/command-router");
 const daily_report_1 = require("./jobs/daily-report");
+const audit_rotation_1 = require("./jobs/audit-rotation");
 const odoo_1 = require("./services/odoo");
 const demo_1 = require("./services/demo");
 const kpi_1 = require("./services/kpi");
@@ -54,8 +55,8 @@ const rate_limit_store_1 = require("./services/rate-limit-store");
 const user_verification_1 = require("./services/user-verification");
 const html_1 = require("./utils/html");
 const runtime_probes_1 = require("./services/runtime-probes");
-const adminAuth_1 = require("./services/adminAuth");
-const opsAuth_1 = require("./services/opsAuth");
+const admin_token_auth_1 = require("./services/admin-token-auth");
+const ops_token_auth_1 = require("./services/ops-token-auth");
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 const port = process.env.PORT || 8080;
@@ -336,18 +337,32 @@ app.get('/readyz', async (_req, res) => {
         timestamp: new Date().toISOString(),
     });
 });
-app.get('/ops/kpi', opsAuth_1.requireOpsToken, (_req, res) => {
+app.get('/ops/kpi', ops_token_auth_1.requireOpsToken, (_req, res) => {
     res.status(200).json({
         ...(0, kpi_1.getKpiSnapshot)(),
         rateLimitRuntime: (0, rate_limit_store_1.getRateLimitRuntimeStatus)(),
     });
 });
-app.get('/ops/audit-log', opsAuth_1.requireOpsToken, async (req, res) => {
+app.get('/ops/audit-log', ops_token_auth_1.requireOpsToken, async (req, res) => {
     const limit = Number(req.query.limit) || 50;
     const events = await (0, firestore_1.listRecentAuditEvents)(limit);
     res.status(200).json({ events, count: events.length });
 });
-app.post('/ops/demo-session/rotate', opsAuth_1.requireOpsToken, jsonParser, async (req, res) => {
+// Archives audit events past the retention window to BigQuery, then deletes
+// them from Firestore — see documents/AUDIT_LOG_POLICY.md. Safe to call on a
+// schedule (e.g. Cloud Scheduler) or by hand; no-ops safely if BigQuery isn't
+// configured, and never deletes anything that wasn't just archived.
+app.post('/ops/audit-log/rotate', ops_token_auth_1.requireOpsToken, jsonParser, async (_req, res) => {
+    try {
+        const result = await (0, audit_rotation_1.runAuditRotationJob)('ops-api');
+        res.status(result.ok ? 200 : 500).json(result);
+    }
+    catch (error) {
+        console.error('Error running audit-log rotation:', error);
+        res.status(500).json({ ok: false, error: 'Failed to run audit-log rotation.' });
+    }
+});
+app.post('/ops/demo-session/rotate', ops_token_auth_1.requireOpsToken, jsonParser, async (req, res) => {
     await ensureDemoSessionStateLoaded();
     const newSecret = String(req.body?.newSecret || '').trim();
     const graceMinutes = Number(req.body?.graceMinutes ?? demoSessionRotateGraceDefaultMinutes);
@@ -376,7 +391,7 @@ app.post('/ops/demo-session/rotate', opsAuth_1.requireOpsToken, jsonParser, asyn
         previousSecretGraceActive: Boolean(previousDemoSessionSecret && previousDemoSessionSecret.expiresAtMs > Date.now()),
     });
 });
-app.get('/ops/workflow-audit', opsAuth_1.requireOpsToken, async (_req, res) => {
+app.get('/ops/workflow-audit', ops_token_auth_1.requireOpsToken, async (_req, res) => {
     await ensureDemoSessionStateLoaded();
     const runtimeChecks = await (0, runtime_probes_1.runRuntimeProbes)(rateStore, readyzTimeoutMs);
     const audit = {
@@ -493,7 +508,7 @@ app.post('/webhook', webhookLimiter, webhook_1.handleWebhook);
 // LINE Webhook endpoint for additional configured channels
 app.post('/webhook/:channelId', webhookLimiter, webhook_1.handleWebhook);
 // Trigger daily report manually
-app.post('/jobs/daily-report', jsonParser, adminAuth_1.adminOnly, opsJobLimiter, async (_req, res) => {
+app.post('/jobs/daily-report', jsonParser, admin_token_auth_1.adminOnly, opsJobLimiter, async (_req, res) => {
     try {
         await (0, daily_report_1.runDailyReport)();
         res.status(200).send('Daily report triggered successfully');
@@ -504,7 +519,7 @@ app.post('/jobs/daily-report', jsonParser, adminAuth_1.adminOnly, opsJobLimiter,
     }
 });
 // Trigger segmentation job manually
-app.post('/jobs/segmentation', jsonParser, adminAuth_1.adminOnly, opsJobLimiter, async (_req, res) => {
+app.post('/jobs/segmentation', jsonParser, admin_token_auth_1.adminOnly, opsJobLimiter, async (_req, res) => {
     try {
         const { runSegmentationJob } = await Promise.resolve().then(() => __importStar(require('./jobs/segmentation')));
         await runSegmentationJob();
@@ -552,7 +567,7 @@ app.post('/demo/chat', requireDemoControlAccess, jsonParser, async (req, res) =>
         const userId = rawUserId && rawUserId.length <= 120 ? rawUserId : 'web_demo_user';
         const userLanguage = await (0, firestore_1.getUserLanguage)(userId);
         const profile = await (0, firestore_1.getUserProfile)(userId);
-        const agentName = process.env.LINE_AGENT_NAME?.trim() || 'น้องโซระ';
+        const agentName = (0, channels_1.getAgentName)();
         const baseUrl = `${req.protocol}://${req.get('host')}`;
         const botMessages = await (0, command_router_1.resolveCommandReply)({
             text: rawText,
@@ -651,7 +666,7 @@ app.get('/demo/workflow-audit', requireDemoControlAccess, async (req, res) => {
     res.json(audit);
 });
 // Seed Odoo sample data manually
-app.post('/jobs/seed-odoo', jsonParser, adminAuth_1.adminOnly, opsJobLimiter, async (_req, res) => {
+app.post('/jobs/seed-odoo', jsonParser, admin_token_auth_1.adminOnly, opsJobLimiter, async (_req, res) => {
     try {
         const status = await (0, odoo_1.seedOdooSampleSalesData)();
         res.status(200).send(status);
@@ -692,10 +707,10 @@ app.post('/webhook-test', jsonParser, webhookTestLimiter, async (req, res) => {
             if (!channelConfig) {
                 return res.status(400).json({ error: `Unknown or unconfigured LINE channel: ${rawChannelId}` });
             }
-            channel = { channelId: channelConfig.channelId, enabledServices: channelConfig.enabledServices };
+            channel = await (0, channels_1.resolveEffectiveChannelContext)(channelConfig);
         }
         console.log(`[TEST] userId=${userId} channelId=${rawChannelId || 'default'} text="${toSafeLogText(text)}"`);
-        const agentName = process.env.LINE_AGENT_NAME?.trim() || 'น้องโซระ';
+        const agentName = (0, channels_1.getAgentName)();
         const userLanguage = await (0, firestore_1.getUserLanguage)(userId);
         const profile = await (0, firestore_1.getUserProfile)(userId);
         const baseUrl = `${req.protocol}://${req.get('host')}`;

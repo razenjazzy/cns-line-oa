@@ -25,7 +25,7 @@ const verifyStartHandler: CommandHandler = {
   name: 'verify-start',
   match: (u) => u.startsWith('VERIFY START'),
   handle: async (ctx) => {
-    const { userLanguage, userId, agentName, baseUrl, text } = ctx;
+    const { userLanguage, userId, agentName, baseUrl, text, channel } = ctx;
     const phone = text.trim().replace(/^VERIFY START\s*/i, '').trim();
     const message = await startOdooUserVerification({
       userId,
@@ -33,6 +33,7 @@ const verifyStartHandler: CommandHandler = {
       language: userLanguage,
       agentName,
       fallbackBaseUrl: baseUrl,
+      channelId: channel?.channelId,
     });
     return [botText(message, userLanguage)];
   },

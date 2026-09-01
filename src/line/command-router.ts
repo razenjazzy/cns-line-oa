@@ -22,25 +22,23 @@
 
 import { messagingApi } from '@line/bot-sdk';
 import {
+  markConsentNoticeShown,
   markUserFirstContact,
-  recordAuditEvent,
-  setUserOdooPartner,
   setUserPendingFlow,
-  setUserRole,
   UserLanguage,
   UserProfile,
 } from '../services/firestore';
 import { isServiceEnabledForChannel } from '../services/service-catalog';
 import { resolveServiceForCommand } from '../services/service-catalog';
 import { FLOW_SPECS, getFlowByStartCommand } from '../services/guided-forms';
-import { createBotTextFlexMessage, createFormPromptFlexMessage, createServiceActionFlexMessage, createServiceHomeFlexMessage } from './templates';
-import { getAvailableServices, getServiceDefinition, getVisibleCommands } from '../services/service-catalog';
-import { buildCommandKeywordGuidance } from './command-guide';
+import { createBotTextFlexMessage, createFormPromptFlexMessage, createServiceHomeFlexMessage } from './templates';
+import { getAvailableServices } from '../services/service-catalog';
 import { ChannelContext } from './channels';
 import type { FlowSpec } from '../services/guided-forms';
 import { COMMAND_HANDLERS } from './handlers/index';
 import { buildKeywordGuidanceMessages } from './handlers/help';
 import { handleChatFallback } from './handlers/chat-fallback';
+import { checkMessagesAgainstLineLimits } from './message-limits';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -215,7 +213,7 @@ const handleFormCommand = async (ctx: CommandReplyContext): Promise<messagingApi
 // Main dispatch — resolveCommandReply
 // ---------------------------------------------------------------------------
 
-export const resolveCommandReply = async (ctx: CommandReplyContext): Promise<messagingApi.Message[]> => {
+const dispatchCommandReply = async (ctx: CommandReplyContext): Promise<messagingApi.Message[]> => {
   const { profile, userId, userLanguage, agentName } = ctx;
   const trimmed = ctx.text.trim();
   const upperText = trimmed.toUpperCase();
@@ -227,10 +225,18 @@ export const resolveCommandReply = async (ctx: CommandReplyContext): Promise<mes
     // flowSpec was null — fall through to normal dispatch
   }
 
-  // Step 2: First-contact → show home menu immediately
+  // Step 2: First-contact → PDPA data-collection notice (once, informational —
+  // does not block any feature) + show home menu immediately
   if (!profile.firstMessageAt && !ctx.isGroupContext) {
     await markUserFirstContact(userId);
-    return [buildHomeMenuMessage(userLanguage, agentName, ctx.channel, profile.role === 'admin')];
+    await markConsentNoticeShown(userId);
+    return [
+      text(tr(userLanguage,
+        `ก่อนเริ่มใช้งาน ${agentName} ขอเก็บข้อมูลที่คุณให้ไว้ (เช่น เบอร์โทร ชื่อ) เพื่อยืนยันตัวตนและให้บริการเท่านั้น\nพิมพ์ MY DATA เพื่อดูข้อมูลของคุณ หรือ DELETE MY DATA เพื่อขอลบข้อมูลได้ทุกเมื่อ`,
+        `Before we begin: ${agentName} stores what you share (like your phone number and name) only to verify your identity and provide service.\nType MY DATA anytime to see what's stored, or DELETE MY DATA to request erasure.`,
+      ), userLanguage),
+      buildHomeMenuMessage(userLanguage, agentName, ctx.channel, profile.role === 'admin'),
+    ];
   }
 
   // Step 3: Service channel gate
@@ -265,4 +271,21 @@ export const resolveCommandReply = async (ctx: CommandReplyContext): Promise<mes
 
   // Step 7: AI chat fallback (Gemini → ClawBridge → Odoo heuristic)
   return handleChatFallback(ctx);
+};
+
+/**
+ * Thin wrapper around the dispatch logic above — the single choke point both
+ * webhook.ts and index.ts's /webhook-test send through, so every outgoing
+ * message set gets checked against LINE's hard limits (src/line/message-limits.ts)
+ * in one place instead of duplicating the check at each call site. A
+ * violation here means the send is about to fail with the customer getting
+ * nothing — logged loudly rather than discovered from a support ticket.
+ */
+export const resolveCommandReply = async (ctx: CommandReplyContext): Promise<messagingApi.Message[]> => {
+  const messages = await dispatchCommandReply(ctx);
+  const violations = checkMessagesAgainstLineLimits(messages);
+  if (violations.length) {
+    console.error('[line-limits] Outgoing message set violates LINE Messaging API limits and may fail to send:', violations);
+  }
+  return messages;
 };

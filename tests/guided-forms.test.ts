@@ -79,6 +79,59 @@ describe('SERVICE_CREATE flow', () => {
   });
 });
 
+describe('USER_UPDATE flow', () => {
+  const spec = FLOW_SPECS.USER_UPDATE;
+
+  it('requires admin and resolves by start command', () => {
+    expect(spec.requiresAdmin).toBe(true);
+    expect(getFlowByStartCommand('FORM USER UPDATE')?.key).toBe('USER_UPDATE');
+  });
+
+  it('builds the final command with skipped optional fields left blank', () => {
+    const cmd = spec.buildFinalCommand({ phone: '0812345678', name: '', newPhone: '', email: '' });
+    expect(cmd).toBe('USER UPDATE 0812345678,,,');
+  });
+
+  it('builds the final command with optional fields filled in', () => {
+    const cmd = spec.buildFinalCommand({ phone: '0812345678', name: 'Somchai CEO', newPhone: '', email: 'somchai@example.com' });
+    expect(cmd).toBe('USER UPDATE 0812345678,Somchai CEO,,somchai@example.com');
+  });
+});
+
+describe('USER_DELETE flow', () => {
+  const spec = FLOW_SPECS.USER_DELETE;
+
+  it('requires admin and builds the final command', () => {
+    expect(spec.requiresAdmin).toBe(true);
+    expect(getFlowByStartCommand('FORM USER DELETE')?.key).toBe('USER_DELETE');
+    expect(spec.buildFinalCommand({ phone: '0812345678' })).toBe('USER DELETE 0812345678');
+  });
+});
+
+describe('SERVICE_UPDATE flow', () => {
+  const spec = FLOW_SPECS.SERVICE_UPDATE;
+
+  it('requires admin and resolves by start command', () => {
+    expect(spec.requiresAdmin).toBe(true);
+    expect(getFlowByStartCommand('FORM SERVICE UPDATE')?.key).toBe('SERVICE_UPDATE');
+  });
+
+  it('builds the final command with optional fields filled in', () => {
+    const cmd = spec.buildFinalCommand({ identifier: 'SVC-PREMIUM', name: '', price: '1290', newCode: 'SVC-PRO' });
+    expect(cmd).toBe('SERVICE UPDATE SVC-PREMIUM,,1290,SVC-PRO');
+  });
+});
+
+describe('SERVICE_DELETE flow', () => {
+  const spec = FLOW_SPECS.SERVICE_DELETE;
+
+  it('requires admin and builds the final command', () => {
+    expect(spec.requiresAdmin).toBe(true);
+    expect(getFlowByStartCommand('FORM SERVICE DELETE')?.key).toBe('SERVICE_DELETE');
+    expect(spec.buildFinalCommand({ identifier: 'SVC-PRO' })).toBe('SERVICE DELETE SVC-PRO');
+  });
+});
+
 describe('DEMO_QUOTE flow', () => {
   const spec = FLOW_SPECS.DEMO_QUOTE;
 

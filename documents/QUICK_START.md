@@ -1,241 +1,195 @@
-# 🚀 CNS LINE OA - Quick Start Guide
+# CNS LINE OA — Quick Start
 
-## Project Built Successfully ✅
+## Development
 
-Your LINE commerce bot project is **fully compiled and ready to deploy**.
-
----
-
-## 📋 Quick Commands
-
-### Development
 ```bash
-npm run dev        # Watch mode with nodemon (auto-restart on file changes)
+cp .env.example .env    # fill in the values you need (see "Configuration" below)
+npm install
+npm run dev              # nodemon + ts-node, watches src/
 ```
 
-### Production
+## Production
+
 ```bash
-npm run build      # Compile TypeScript → dist/
-npm start          # Run from dist/index.js
+npm run build            # tsc -> dist/
+npm start                # node dist/index.js
 ```
 
-### Docker
+## Docker
+
 ```bash
-docker build -t cns-line-oa .              # Build image
-docker run -p 8080:8080 --env-file .env cns-line-oa  # Run locally
-npm run deploy:staging   # Deploy to Cloud Run (staging profile)
-npm run deploy:prod      # Deploy to Cloud Run (production profile)
+docker build -t cns-line-oa .
+docker run -p 8080:8080 --env-file .env cns-line-oa
 ```
 
-### Free Cloudflare Tunnel
+There's also a lighter local dev container (`Dockerfile.dev` +
+`docker-compose.dev.yml`) and a single `./runner.sh` orchestrator for
+setup/build/test/health checks — see `RUNNER.md`.
+
+## Free Cloudflare Tunnel
+
 ```bash
-./deploy-cloudflare.sh   # Build the app and expose localhost:8080 through Cloudflare Tunnel
+./deploy-cloudflare.sh   # builds the app and exposes localhost:8080 publicly
 ```
 
 ---
 
-## 🔑 What's Included
+## Running fully on the free tier
 
-✅ **All Source Files** - 11 TypeScript files  
-✅ **Compiled JavaScript** - Ready to run  
-✅ **Dependencies** - 434 npm packages  
-✅ **Environment Config** - .env file  
-✅ **Docker Setup** - Dockerfile + deploy.sh  
-✅ **Secure Deploy Profiles** - deploy env templates + validation script  
-✅ **Build Tools** - TypeScript, nodemon, ts-node  
-
----
-
-## 📂 File Locations
-
-| What | Where |
-|------|-------|
-| Source Code | `src/` |
-| Compiled Code | `dist/` |
-| Config | `.env`, `tsconfig.json` |
-| Package Info | `package.json` |
-| Docker | `Dockerfile`, `deploy.sh` |
-| Deploy Profiles | `deploy.env.production.yaml.example`, `deploy.env.staging.yaml.example` |
-| Deploy Validation | `scripts/validate-deploy-env.sh` |
-| Cloudflare Tunnel | `deploy-cloudflare.sh` |
+Set `GOOGLE_AI_STUDIO_API_KEY` (or `GEMINI_API_KEY`) and **leave
+`GOOGLE_CLOUD_PROJECT` unset**. `src/services/chat.ts` and `vertexai.ts`
+both build the AI Studio client first and only construct billed Vertex AI
+clients when `GOOGLE_CLOUD_PROJECT` is present — so with only the AI Studio
+key set, the app never touches paid Vertex AI. `Firestore` and `Odoo` are
+both optional too (the app degrades gracefully without them, using
+in-memory/heuristic fallbacks), so a minimal free-tier setup only strictly
+needs LINE credentials + `GOOGLE_AI_STUDIO_API_KEY`.
 
 ---
 
-## 🧪 Test the Bot
+## Talking to the bot
 
-1. **Add bot to LINE** using QR code from LINE Developer Console
-2. **Send test messages**:
-   - `เริ่มต้น` → show full Thai demo journey
-   - `DEMO SEED ODOO` → upload sample products + quotations to Odoo
-   - `DEMO PRODUCT App` → read product from Odoo
-   - `DEMO QUOTE App Premium Plan,1,สมชาย,0812345678` → create quotation in Odoo
-   - `DEMO ORDER SO0001` → check order status from Odoo
-   - `DEMO REPORT` → send Thai daily report using real Odoo data
+On a user's **first message ever**, the bot immediately replies with a
+Flex nav-button menu (no "START" keyword needed) — tap a service to drill
+into its commands, or type any of these directly:
 
-### Demo Console
+- `FEATURES` / `GUIDE` — capability list / full step-by-step command guide
+- `VERIFY START <phone>` → `VERIFY OTP <code>` — bind your Odoo identity
+- `FORM DEMO QUOTE` — guided, one-field-at-a-time quotation flow (or type
+  the single-line form: `DEMO QUOTE <product>,<qty>,<customer>,<phone>`)
+- `DEMO PRODUCT <name>` / `DEMO ORDER <ref>` — Odoo lookups
+- `START GROUPBUY <product>,<targetQty>,<hours?>` /
+  `JOIN GROUPBUY <id>,<qty?>` / `CONFIRM GROUPBUY <id>` — group-buy flow
+  (gated by `GROUPBUY_ENABLED`/`GROUPBUY_ROLLOUT_PERCENT`)
+- `ADMIN VERIFY` / `ADMIN ENABLE` — admin role request (requires
+  `profile.odooVerified` + your LINE user ID in `ADMIN_USER_ID`)
+- `LANG EN` / `LANG TH` — language switch
 
-Open `http://localhost:8080/demo` to run the guided demo console.
+Any unrecognized command gets near-miss suggestions instead of a dead end.
 
-- `GET /demo/connections` → returns LINE OA, Odoo, and Firestore connection status
-- `POST /demo/journey` → runs an end-to-end application-to-Odoo journey and returns each step
-- `POST /webhook-test` → simulates a LINE OA user message through the app without signature validation
+### Web demo panel
+
+With `ENABLE_DEMO_CONTROL_PANEL=true` (default outside production), open
+`http://localhost:8080/demo`:
+
+- `GET /demo/connections` — LINE/Odoo/Firestore connection status
+- `POST /demo/journey` — end-to-end application-to-Odoo journey
+- `POST /demo/chat` — chat widget backend, routes through the exact same
+  `resolveCommandReply` real LINE traffic uses
+- `POST /webhook-test` — simulate a LINE message without signature
+  validation (mutating commands are blocked here in production unless
+  explicitly enabled)
+
+### Operator CLI and MCP server
+
+```bash
+npm run build
+npm run cli -- help                 # cns operator CLI
+CNS_BASE_URL=https://staging... OPS_API_TOKEN=... npm run cli -- kpi
+npm run mcp                          # MCP server over stdio (for Claude Desktop/Code etc.)
+```
+
+Both wrap the same `/healthz`, `/readyz`, `/ops/kpi`, `/ops/workflow-audit`,
+`/ops/demo-session/rotate`, and `/jobs/*` endpoints the app already
+authenticates server-side — see `src/ops-client/client.ts`. Mutating
+commands (`jobs:*`, `rotate-session`) require an explicit `--yes` flag on
+the CLI; the MCP tool descriptions call out which ones are destructive so
+a host app's approval UI can warn accordingly.
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
-### Required Environment Variables:
+All variables are documented in `.env.example`. The essentials:
+
 ```env
-PORT=8080                              # Server port
-GOOGLE_CLOUD_PROJECT=your-project-id   # GCP project
-GOOGLE_CLOUD_LOCATION=us-central1-a   # GCP region
-LINE_CHANNEL_ACCESS_TOKEN=...          # Your LINE token
-LINE_CHANNEL_SECRET=...                # Your LINE secret
-ADMIN_USER_ID=...                      # Your LINE user ID (for reports)
-LINE_AGENT_NAME=น้องโซระ               # Name shown by the LINE AI agent
+PORT=8080
+NODE_ENV=production
+
+LINE_CHANNEL_SECRET=...
+LINE_CHANNEL_ACCESS_TOKEN=...
+ADMIN_USER_ID=U...                 # comma-separated allowlist for ADMIN ENABLE
+LINE_AGENT_NAME=น้องโซระ
+
+GOOGLE_AI_STUDIO_API_KEY=...        # free-tier Gemini; omit GOOGLE_CLOUD_PROJECT to stay free
+
+ODOO_URL=...
+ODOO_DB=...
+ODOO_USERNAME=...
+ODOO_API_KEY=...
+
+OPS_API_TOKEN=...                   # protects /ops/* and the CLI/MCP tooling
+ADMIN_SECRET_TOKEN=...              # protects /jobs/* and CLI jobs:* commands
 ```
 
-### Get ADMIN_USER_ID:
-1. Send any message to the bot
-2. Check console logs: `📩 Message from userId: U...`
-3. Copy that ID to `.env` as `ADMIN_USER_ID`
+Additional LINE OAs: `LINE_CHANNEL_<ID>_SECRET` / `_ACCESS_TOKEN` /
+`_SERVICES`, received at `POST /webhook/<channelId>` — no code changes
+needed per channel (see `src/line/channels.ts`).
+
+### Finding your ADMIN_USER_ID
+
+1. Send any message to the bot.
+2. Check server logs: `📩 Message from source=... U...`
+3. Add that ID to `ADMIN_USER_ID` (comma-separated for multiple admins).
+4. As that user: `VERIFY START <phone-on-file-in-Odoo>` → `VERIFY OTP <code>`
+   → `ADMIN ENABLE`.
 
 ---
 
-## 🔧 Project Architecture
+## Architecture
 
 ```
-Request → Express Server
-        ↓
-    Webhook Handler (LINE)
-        ↓
-    Intent Classification (Vertex AI)
-        ↓
-    Chat Engine (Gemini + Tools)
-        ↓
-    Database Operations (Firestore)
-        ↓
-    Response to LINE User
+LINE event / voice ─▶ webhook.ts ─▶ command-router.ts ─▶ handlers/*.ts ─▶ services ─▶ Flex reply
+                                     │
+                                     ├─ guided-form intercept
+                                     ├─ first-contact nav menu
+                                     ├─ per-channel service gate
+                                     ├─ FORM * guided flow start
+                                     ├─ handler registry (11 modules)
+                                     └─ keyword guidance → Gemini/ClawBridge/Odoo-heuristic fallback
 ```
 
----
-
-## 📊 Core Features
-
-| Feature | File | Status |
-|---------|------|--------|
-| Message Handling | `line/webhook.ts` | ✅ |
-| AI Chat | `services/chat.ts` | ✅ |
-| Daily Reports | `jobs/daily-report.ts` | ✅ |
-| User Segmentation | `jobs/segmentation.ts` | ✅ |
-| Intent Recognition | `services/vertexai.ts` | ✅ |
-| User Tracking | `services/firestore.ts` | ✅ |
-| Analytics | `services/bigquery.ts` | ✅ |
+See `documents/PROJECT_SUMMARY.md` for the full file inventory and
+`CLAUDE.md` for the enforced security chains.
 
 ---
 
-## 🐛 Troubleshooting
+## Testing
 
-### "GOOGLE_CLOUD_PROJECT not set"
-→ Set it in `.env` and it will use Google Cloud services
+```bash
+npm test          # Vitest suite — 70+ tests across parsers/validators/config
+npm run lint        # ESLint
+npx tsc --noEmit   # type-check
+```
 
-### "LINE credentials missing"
-→ Webhook runs in demo mode (returns mock responses)
+## Deployment
 
-### "Port already in use"
-→ Change `PORT` in `.env` or kill existing process
+```bash
+cp deploy.env.staging.yaml.example deploy.env.staging.yaml
+cp deploy.env.production.yaml.example deploy.env.production.yaml
 
-### TypeScript errors after editing
-→ Run `npm run build` to check for errors
+npm run preflight:staging && npm run deploy:staging
+PRODUCTION_APPROVED=true npm run preflight:prod && npm run deploy:prod
 
----
+npm run smoke -- https://YOUR-CLOUD-RUN-URL
+npm run evidence -- https://YOUR-CLOUD-RUN-URL ./artifacts/deploy-evidence.json production
+```
 
-## 📈 Next Steps
+`preflight:*` runs deploy-env validation + cutover validation + build +
+test. CI/CD workflow (`.github/workflows/release.yml`): staging deploys
+automatically on `main` push (`preflight → deploy → smoke`); production
+requires a manual run with `deploy_production=true` and
+`PRODUCTION_APPROVED=true`, plus GitHub Environment approval gates.
 
-1. **Set up Google Cloud Project**
-   - Enable Firestore, BigQuery, Vertex AI APIs
-   - Set `GOOGLE_CLOUD_PROJECT` in `.env`
+An Ansible playbook set (`ansible/`) is also available for VM-based
+staging/production provisioning (Docker, nginx, health checks) as an
+alternative to Cloud Run.
 
-2. **Configure LINE Bot**
-   - Add webhook URL from Cloud Run
-   - Set channel access token and secret
+### Troubleshooting
 
-3. **Load Odoo Demo Data**
-   - Send `DEMO SEED ODOO` in LINE chat
-   - Or call `POST /jobs/seed-odoo`
-
-4. **Deploy to Cloud Run**
-   ```bash
-   cp deploy.env.staging.yaml.example deploy.env.staging.yaml
-   cp deploy.env.production.yaml.example deploy.env.production.yaml
-   ```
-
-   Set secret mappings once per shell (example format):
-   ```bash
-   export CLOUD_RUN_SECRETS="LINE_CHANNEL_ACCESS_TOKEN=projects/<project>/secrets/LINE_CHANNEL_ACCESS_TOKEN:latest,LINE_CHANNEL_SECRET=projects/<project>/secrets/LINE_CHANNEL_SECRET:latest,ODOO_API_KEY=projects/<project>/secrets/ODOO_API_KEY:latest,DEMO_CONTROL_TOKEN=projects/<project>/secrets/DEMO_CONTROL_TOKEN:latest,OPS_API_TOKEN=projects/<project>/secrets/OPS_API_TOKEN:latest,REDIS_URL=projects/<project>/secrets/REDIS_URL:latest"
-   ```
-
-   For shared rate limiting across multiple Cloud Run instances, keep:
-   ```yaml
-   RATE_LIMIT_STORE: "redis"
-   ```
-   and provide `REDIS_URL` via Secret Manager mapping above.
-
-   Validate and deploy:
-   ```bash
-   npm run preflight:staging
-   npm run deploy:staging
-
-   PRODUCTION_APPROVED=true npm run preflight:prod
-   npm run deploy:prod
-
-   # post-deploy sanity check
-   npm run smoke -- https://YOUR-CLOUD-RUN-URL
-
-   # generate machine-readable deploy evidence artifact
-   npm run evidence -- https://YOUR-CLOUD-RUN-URL ./artifacts/deploy-evidence.json production
-   ```
-
-   `preflight:*` includes: deploy-env validation + cutover validation + build + test.
-
-   CI/CD workflow:
-   - File: `.github/workflows/release.yml`
-   - On `main` push: staging pipeline runs `preflight -> deploy -> smoke`.
-   - Deployment evidence: workflow always generates and uploads JSON artifacts (`staging-deploy-evidence`, `production-deploy-evidence`) after smoke checks.
-   - For production: run workflow manually with `deploy_production=true`.
-   - Approval gate: configure GitHub Environments `staging` and `production`; add required reviewers on `production` to enforce manual promotion approval.
-   - Production policy check: deployment also requires `PRODUCTION_APPROVED=true` and verifies critical secret mappings before deploy starts.
-   - Required GitHub secrets: `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT`, `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`, `CLOUD_RUN_SERVICE_NAME`, `CLOUD_RUN_SECRETS`, `OPS_API_TOKEN`, `STAGING_BASE_URL`, `PRODUCTION_BASE_URL`, `DEPLOY_ENV_STAGING_YAML`, `DEPLOY_ENV_PRODUCTION_YAML`.
-
-   Or use the free Cloudflare Tunnel path:
-   ```bash
-   ./deploy-cloudflare.sh
-   ```
-
-   Then copy the public HTTPS URL printed by `cloudflared` and set your LINE webhook to:
-   ```text
-   https://YOUR-CLOUDFLARED-URL/webhook
-   ```
-
-5. **Monitor Logs**
-   ```bash
-   gcloud run logs read line-oa-commerce-agent --limit 50
-   ```
-
----
-
-## 📞 Support
-
-For issues with:
-- **LINE Bot SDK**: https://developers.line.biz/en/docs/
-- **Vertex AI**: https://cloud.google.com/vertex-ai/docs
-- **Firestore**: https://firebase.google.com/docs/firestore
-- **BigQuery**: https://cloud.google.com/bigquery/docs
-
----
-
-## ✨ You're All Set!
-
-Your project is **built, configured, and ready to deploy**. 
-
-Start with `npm run dev` for development or `npm run deploy:staging` for cloud deployment.
+- **"GOOGLE_CLOUD_PROJECT not set"** — expected if you're intentionally
+  running free-tier-only (AI Studio key only); not an error.
+- **"LINE credentials missing"** — `/webhook` returns 200 no-op until
+  `LINE_CHANNEL_SECRET`/`LINE_CHANNEL_ACCESS_TOKEN` are set.
+- **`ADMIN ENABLE` fails** — check `ADMIN_USER_ID` includes your exact LINE
+  user ID and that you've completed `VERIFY START`/`VERIFY OTP` first.

@@ -3,9 +3,10 @@ import dotenv from 'dotenv';
 import { buildDemoPage } from './demo/page';
 import { isGuideCommand } from './line/command-guide';
 import { handleWebhook } from './line/webhook';
-import { resolveChannelConfig } from './line/channels';
+import { getAgentName, resolveChannelConfig, resolveEffectiveChannelContext } from './line/channels';
 import { resolveCommandReply } from './line/command-router';
 import { runDailyReport } from './jobs/daily-report';
+import { runAuditRotationJob } from './jobs/audit-rotation';
 import { pingOdoo, seedOdooSampleSalesData } from './services/odoo';
 import { getDemoOverview, runDemoJourney } from './services/demo';
 import { getKpiSnapshot, recordHttpRequest } from './services/kpi';
@@ -17,8 +18,8 @@ import { verifyOdooUserByToken } from './services/user-verification';
 import { buildCspHeader, escapeHtml } from './utils/html';
 import { runRuntimeProbes, collectProbeFailures } from './services/runtime-probes';
 
-import { adminOnly } from './services/adminAuth';
-import { requireOpsToken } from './services/opsAuth';
+import { adminOnly } from './services/admin-token-auth';
+import { requireOpsToken } from './services/ops-token-auth';
 dotenv.config();
 
 const app = express();
@@ -355,6 +356,20 @@ app.get('/ops/audit-log', requireOpsToken, async (req, res) => {
     res.status(200).json({ events, count: events.length });
 });
 
+// Archives audit events past the retention window to BigQuery, then deletes
+// them from Firestore — see documents/AUDIT_LOG_POLICY.md. Safe to call on a
+// schedule (e.g. Cloud Scheduler) or by hand; no-ops safely if BigQuery isn't
+// configured, and never deletes anything that wasn't just archived.
+app.post('/ops/audit-log/rotate', requireOpsToken, jsonParser, async (_req, res) => {
+    try {
+        const result = await runAuditRotationJob('ops-api');
+        res.status(result.ok ? 200 : 500).json(result);
+    } catch (error) {
+        console.error('Error running audit-log rotation:', error);
+        res.status(500).json({ ok: false, error: 'Failed to run audit-log rotation.' });
+    }
+});
+
 app.post('/ops/demo-session/rotate', requireOpsToken, jsonParser, async (req, res) => {
     await ensureDemoSessionStateLoaded();
 
@@ -584,7 +599,7 @@ app.post('/demo/chat', requireDemoControlAccess, jsonParser, async (req, res) =>
 
         const userLanguage = await getUserLanguage(userId);
         const profile = await getUserProfile(userId);
-        const agentName = process.env.LINE_AGENT_NAME?.trim() || 'น้องโซระ';
+        const agentName = getAgentName();
         const baseUrl = `${req.protocol}://${req.get('host')}`;
 
         const botMessages = await resolveCommandReply({
@@ -735,12 +750,12 @@ app.post('/webhook-test', jsonParser, webhookTestLimiter, async (req, res) => {
             if (!channelConfig) {
                 return res.status(400).json({ error: `Unknown or unconfigured LINE channel: ${rawChannelId}` });
             }
-            channel = { channelId: channelConfig.channelId, enabledServices: channelConfig.enabledServices };
+            channel = await resolveEffectiveChannelContext(channelConfig);
         }
 
         console.log(`[TEST] userId=${userId} channelId=${rawChannelId || 'default'} text="${toSafeLogText(text)}"`);
 
-        const agentName = process.env.LINE_AGENT_NAME?.trim() || 'น้องโซระ';
+        const agentName = getAgentName();
         const userLanguage = await getUserLanguage(userId);
         const profile = await getUserProfile(userId);
         const baseUrl = `${req.protocol}://${req.get('host')}`;

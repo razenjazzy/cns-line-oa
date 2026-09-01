@@ -3,6 +3,7 @@ import { buildHomeMenuMessage } from '../command-router';
 import { buildCommandKeywordGuidance, buildStepByStepGuide, isGuideCommand } from '../command-guide';
 import { createBotTextFlexMessage } from '../templates';
 import { pingOdoo, seedOdooSampleSalesData } from '../../services/odoo';
+import { setEscalationState } from '../../services/firestore';
 import type { UserLanguage } from '../../services/firestore';
 
 const tr = (language: UserLanguage, th: string, en: string): string => (language === 'en' ? en : th);
@@ -77,6 +78,24 @@ const runDemoJourneyHandler: CommandHandler = {
   },
 };
 
+// HUMAN / AGENT / ติดต่อแอดมิน / คุยกับแอดมิน — guaranteed escalation to a
+// human agent. Deterministic path: does not depend on the AI fallback
+// deciding to call escalateToHuman (src/services/chat.ts), which only fires
+// on its own judgment and is never listed anywhere as a command a user can
+// rely on.
+const humanHandoffHandler: CommandHandler = {
+  name: 'help-human-handoff',
+  match: (u) => ['HUMAN', 'AGENT', 'ติดต่อแอดมิน', 'คุยกับแอดมิน', 'คุยกับเจ้าหน้าที่'].includes(u),
+  handle: async (ctx) => {
+    const { userLanguage, userId, agentName } = ctx;
+    const result = await setEscalationState(userId, true);
+    const message = result.ok
+      ? tr(userLanguage, `${agentName} โอนเคสให้แอดมินแล้วนะคะ เดี๋ยวเจ้าหน้าที่จะดูแลต่อทันที`, `${agentName} has escalated this chat to a human agent. Someone will follow up shortly.`)
+      : tr(userLanguage, `${agentName} ยังไม่สามารถโอนเคสให้แอดมินได้ กรุณาลองใหม่อีกครั้ง`, `${agentName} could not escalate right now. Please try again.`);
+    return [botText(message, userLanguage)];
+  },
+};
+
 // GUIDE commands — step-by-step keyword guidance
 const guideHandler: CommandHandler = {
   name: 'help-guide',
@@ -108,5 +127,6 @@ export const helpHandlers: CommandHandler[] = [
   journeyHandler,
   nameHandler,
   runDemoJourneyHandler,
+  humanHandoffHandler,
   guideHandler,
 ];

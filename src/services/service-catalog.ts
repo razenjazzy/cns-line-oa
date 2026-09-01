@@ -42,6 +42,8 @@ export const SERVICE_CATALOG: ServiceDefinition[] = [
     commands: [
       { text: 'FORM USER READ', labelTh: 'ดูข้อมูลผู้ใช้ (แอดมิน)', labelEn: 'Look up a customer (admin)', requiresAdmin: true },
       { text: 'FORM USER CREATE', labelTh: 'เพิ่มผู้ใช้ (แอดมิน)', labelEn: 'Add a customer (admin)', requiresAdmin: true },
+      { text: 'FORM USER UPDATE', labelTh: 'แก้ไขผู้ใช้ (แอดมิน)', labelEn: 'Edit a customer (admin)', requiresAdmin: true },
+      { text: 'FORM USER DELETE', labelTh: 'ลบผู้ใช้ (แอดมิน)', labelEn: 'Delete a customer (admin)', requiresAdmin: true },
     ],
   },
   {
@@ -52,6 +54,8 @@ export const SERVICE_CATALOG: ServiceDefinition[] = [
       { text: 'SERVICE LIST', labelTh: 'รายการบริการ', labelEn: 'Browse catalog' },
       { text: 'FORM SERVICE READ', labelTh: 'ค้นหาบริการ', labelEn: 'Find a service' },
       { text: 'FORM SERVICE CREATE', labelTh: 'เพิ่มบริการ (แอดมิน)', labelEn: 'Add an item (admin)', requiresAdmin: true },
+      { text: 'FORM SERVICE UPDATE', labelTh: 'แก้ไขบริการ (แอดมิน)', labelEn: 'Edit an item (admin)', requiresAdmin: true },
+      { text: 'FORM SERVICE DELETE', labelTh: 'ลบบริการ (แอดมิน)', labelEn: 'Delete an item (admin)', requiresAdmin: true },
     ],
   },
   {
@@ -85,6 +89,8 @@ const COMMAND_PREFIX_SERVICE_MAP: { prefix: string; service: ServiceKey }[] = [
   { prefix: 'USER DELETE', service: 'directory' },
   { prefix: 'FORM USER CREATE', service: 'directory' },
   { prefix: 'FORM USER READ', service: 'directory' },
+  { prefix: 'FORM USER UPDATE', service: 'directory' },
+  { prefix: 'FORM USER DELETE', service: 'directory' },
   { prefix: 'SERVICE LIST', service: 'catalog' },
   { prefix: 'SERVICE READ', service: 'catalog' },
   { prefix: 'SERVICE CREATE', service: 'catalog' },
@@ -92,6 +98,8 @@ const COMMAND_PREFIX_SERVICE_MAP: { prefix: string; service: ServiceKey }[] = [
   { prefix: 'SERVICE DELETE', service: 'catalog' },
   { prefix: 'FORM SERVICE CREATE', service: 'catalog' },
   { prefix: 'FORM SERVICE READ', service: 'catalog' },
+  { prefix: 'FORM SERVICE UPDATE', service: 'catalog' },
+  { prefix: 'FORM SERVICE DELETE', service: 'catalog' },
   { prefix: 'DEMO REPORT', service: 'reporting' },
   { prefix: 'DEMO SEGMENT', service: 'reporting' },
   { prefix: 'START GROUPBUY', service: 'groupBuy' },

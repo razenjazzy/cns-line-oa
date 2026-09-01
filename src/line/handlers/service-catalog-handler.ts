@@ -1,5 +1,5 @@
 import type { CommandHandler } from './index';
-import { createBotTextFlexMessage } from '../templates';
+import { createBotTextFlexMessage, formatMoney } from '../templates';
 import { parseServiceCreatePayload, parseServiceUpdatePayload } from '../command-validators';
 import {
   createServiceCatalogItem,
@@ -39,11 +39,11 @@ const serviceListHandler: CommandHandler = {
     const { userLanguage } = ctx;
     const services = await listServiceCatalogItems(10);
     if (!services.length) {
-      return [botText(tr(userLanguage, 'ยังไม่มีบริการใน Odoo', 'No service catalog items found in Odoo.'), userLanguage)];
+      return [botText(tr(userLanguage, 'ยังไม่มีบริการเปิดให้บริการตอนนี้ค่ะ', 'No services are available yet.'), userLanguage)];
     }
     return [botText(tr(userLanguage,
-      `รายการบริการ Odoo\n${services.map(s => `- ${s.default_code || '-'} | ${s.name} | ${s.list_price} บาท`).join('\n')}`,
-      `Odoo service catalog\n${services.map(s => `- ${s.default_code || '-'} | ${s.name} | ${s.list_price} THB`).join('\n')}`,
+      `รายการบริการ\n${services.map(s => `- ${s.name} (${s.default_code || '-'}) — ${formatMoney(s.list_price, 'th')}`).join('\n')}`,
+      `Our services\n${services.map(s => `- ${s.name} (${s.default_code || '-'}) — ${formatMoney(s.list_price, 'en')}`).join('\n')}`,
     ), userLanguage)];
   },
 };
@@ -64,8 +64,8 @@ const serviceReadHandler: CommandHandler = {
       return [botText(tr(userLanguage, `ไม่พบบริการ ${identifier}`, `Service ${identifier} not found.`), userLanguage)];
     }
     return [botText(tr(userLanguage,
-      `บริการ Odoo\n- ID: ${item.id}\n- รหัส: ${item.default_code || '-'}\n- ชื่อ: ${item.name}\n- ราคา: ${item.list_price} บาท`,
-      `Odoo service\n- ID: ${item.id}\n- Code: ${item.default_code || '-'}\n- Name: ${item.name}\n- Price: ${item.list_price} THB`,
+      `${item.name}\n- รหัส: ${item.default_code || '-'}\n- ราคา: ${formatMoney(item.list_price, 'th')}`,
+      `${item.name}\n- Code: ${item.default_code || '-'}\n- Price: ${formatMoney(item.list_price, 'en')}`,
     ), userLanguage)];
   },
 };
@@ -107,6 +107,10 @@ const serviceUpdateHandler: CommandHandler = {
     if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
 
     const payload = text.trim().replace(/^SERVICE UPDATE\s*/i, '').trim();
+    if (!payload) {
+      const { resolveCommandReply } = await import('../command-router');
+      return resolveCommandReply({ ...ctx, text: 'FORM SERVICE UPDATE' });
+    }
     const parsed = parseServiceUpdatePayload(payload);
     if (!parsed) {
       return [botText(tr(userLanguage,
@@ -139,7 +143,8 @@ const serviceDeleteHandler: CommandHandler = {
 
     const identifier = text.trim().replace(/^SERVICE DELETE\s*/i, '').trim();
     if (!identifier) {
-      return [botText(tr(userLanguage, 'วิธีใช้: SERVICE DELETE <รหัสหรือชื่อ>', 'Usage: SERVICE DELETE <code_or_name>'), userLanguage)];
+      const { resolveCommandReply } = await import('../command-router');
+      return resolveCommandReply({ ...ctx, text: 'FORM SERVICE DELETE' });
     }
 
     const ok = await deleteServiceCatalogItem(identifier);

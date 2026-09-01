@@ -13,7 +13,6 @@ const streamToBuffer = async (stream) => {
     }
     return Buffer.concat(chunks);
 };
-const getAgentName = () => process.env.LINE_AGENT_NAME?.trim() || 'น้องโซระ';
 const isAiOff = () => /^(1|true|yes|on)$/i.test(process.env.AI_OFF || '');
 const isProduction = process.env.NODE_ENV === 'production';
 const toSafeLogText = (text) => {
@@ -51,7 +50,7 @@ exports.handleWebhook = [
         try {
             const events = req.body.events;
             const baseUrl = `${req.protocol}://${req.get('host')}`;
-            const channel = { channelId: channelConfig.channelId, enabledServices: channelConfig.enabledServices };
+            const channel = await (0, channels_1.resolveEffectiveChannelContext)(channelConfig);
             const results = await Promise.all(events.map(async (event) => {
                 if (event.type !== 'message' || (event.message.type !== 'text' && event.message.type !== 'audio')) {
                     return null;
@@ -67,7 +66,7 @@ exports.handleWebhook = [
                 }
                 const userLanguage = await (0, firestore_1.getUserLanguage)(conversationId);
                 const profile = await (0, firestore_1.getUserProfile)(conversationId);
-                const agentName = getAgentName();
+                const agentName = (0, channels_1.getAgentName)();
                 let inputText;
                 if (event.message.type === 'text') {
                     inputText = event.message.text;

@@ -1,4 +1,5 @@
 import { getUserProfile, setUserLanguage, setUserOdooPartner } from './firestore';
+import { getAgentName } from '../line/channels';
 import {
   createPartnerFromLine,
   createQuotationFromLine,
@@ -138,7 +139,7 @@ export const getDemoOverview = async (baseUrl?: string): Promise<DemoOverview> =
     connections: {
       lineOA: {
         configured: isLineConfigured(),
-        agentName: process.env.LINE_AGENT_NAME?.trim() || 'น้องโซระ',
+        agentName: getAgentName(),
         webhookReady: isLineConfigured(),
       },
       odoo: {

@@ -97,6 +97,10 @@ const userUpdateHandler: CommandHandler = {
     if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
 
     const payload = text.trim().replace(/^USER UPDATE\s*/i, '').trim();
+    if (!payload) {
+      const { resolveCommandReply } = await import('../command-router');
+      return resolveCommandReply({ ...ctx, text: 'FORM USER UPDATE' });
+    }
     const parsed = parseUserUpdatePayload(payload);
     if (!parsed) {
       return [botText(tr(userLanguage, 'วิธีใช้: USER UPDATE <เบอร์>,<ชื่อใหม่?>,<เบอร์ใหม่?>,<อีเมล?>', 'Usage: USER UPDATE <phone>,<name?>,<newPhone?>,<email?>'), userLanguage)];
@@ -131,7 +135,8 @@ const userDeleteHandler: CommandHandler = {
 
     const phone = text.trim().replace(/^USER DELETE\s*/i, '').trim();
     if (!phone) {
-      return [botText(tr(userLanguage, 'วิธีใช้: USER DELETE <เบอร์>', 'Usage: USER DELETE <phone>'), userLanguage)];
+      const { resolveCommandReply } = await import('../command-router');
+      return resolveCommandReply({ ...ctx, text: 'FORM USER DELETE' });
     }
 
     const existing = await getPartnerByPhone(phone);

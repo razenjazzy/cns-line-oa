@@ -4,7 +4,7 @@ import type { Readable } from 'node:stream';
 import { classifyIntent, transcribeAudioToText } from '../services/vertexai';
 import { resolveCommandReply } from './command-router';
 import { getEscalationState, getUserLanguage, getUserProfile, updateUserScore } from '../services/firestore';
-import { ChannelConfig, DEFAULT_CHANNEL_ID, resolveChannelConfig } from './channels';
+import { ChannelConfig, DEFAULT_CHANNEL_ID, getAgentName, resolveChannelConfig, resolveEffectiveChannelContext } from './channels';
 
 const streamToBuffer = async (stream: Readable): Promise<Buffer> => {
   const chunks: Buffer[] = [];
@@ -14,7 +14,6 @@ const streamToBuffer = async (stream: Readable): Promise<Buffer> => {
   return Buffer.concat(chunks);
 };
 
-const getAgentName = (): string => process.env.LINE_AGENT_NAME?.trim() || 'น้องโซระ';
 const isAiOff = (): boolean => /^(1|true|yes|on)$/i.test(process.env.AI_OFF || '');
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -59,7 +58,7 @@ export const handleWebhook = [
     try {
       const events: webhook.Event[] = req.body.events;
       const baseUrl = `${req.protocol}://${req.get('host')}`;
-      const channel = { channelId: channelConfig.channelId, enabledServices: channelConfig.enabledServices };
+      const channel = await resolveEffectiveChannelContext(channelConfig);
 
       const results = await Promise.all(
         events.map(async (event) => {

@@ -12,3 +12,7 @@ yarn-error.log*
 .DS_Store
 .mcp.json
 clawframework
+.venv
+.backup/
+.build-info.txt
+build_log.txt

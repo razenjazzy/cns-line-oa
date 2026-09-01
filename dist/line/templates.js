@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.createFormPromptFlexMessage = exports.createOrderSummaryFlexMessage = exports.createServiceActionFlexMessage = exports.createServiceHomeFlexMessage = exports.createProductCardFlexMessage = exports.createDailyReportFlexMessage = exports.createBotTextFlexMessage = void 0;
+exports.createFormPromptFlexMessage = exports.createOrderSummaryFlexMessage = exports.createServiceActionFlexMessage = exports.createServiceHomeFlexMessage = exports.createProductCardFlexMessage = exports.createDailyReportFlexMessage = exports.createBotTextFlexMessage = exports.formatMoney = void 0;
+const channels_1 = require("./channels");
 // Cloudnex brand palette — kept consistent across every Flex message.
 const BRAND = {
     teal: '#0B6E6A',
@@ -18,9 +19,22 @@ const buttonLabel = (label) => {
     const chars = Array.from(cleaned);
     return chars.length > 20 ? `${chars.slice(0, 17).join('')}...` : cleaned;
 };
-const money = (value) => Number(value || 0).toLocaleString('en-US', {
-    maximumFractionDigits: 2,
-});
+/**
+ * Single source of truth for money formatting — a proper Intl.NumberFormat
+ * (locale-correct thousands separators, consistent decimals) plus the
+ * currency suffix, in one call. Previously several call sites string-
+ * concatenated `${value} บาท`/`${value} THB` directly with no formatting
+ * at all, which read fine for small numbers but showed raw floats
+ * (e.g. "1234567.891 บาท") for anything with cents or six figures.
+ */
+const formatMoney = (value, language) => {
+    const formatted = new Intl.NumberFormat(language === 'en' ? 'en-US' : 'th-TH', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2,
+    }).format(Number(value) || 0);
+    return language === 'en' ? `${formatted} THB` : `${formatted} บาท`;
+};
+exports.formatMoney = formatMoney;
 const createMessageActionButton = (label, actionText, style = 'primary', color = BRAND.teal) => ({
     type: 'button',
     style,
@@ -51,6 +65,14 @@ const createBotTextFlexMessage = (params) => {
     return {
         type: 'flex',
         altText: truncate(`${params.title}: ${params.body}`, 380),
+        ...(params.quickReplyActions?.length ? {
+            quickReply: {
+                items: params.quickReplyActions.slice(0, 13).map(action => ({
+                    type: 'action',
+                    action: { type: 'message', label: action.label, text: action.text },
+                })),
+            },
+        } : {}),
         contents: {
             type: 'bubble',
             styles: {
@@ -98,7 +120,7 @@ const createBotTextFlexMessage = (params) => {
                 spacing: 'sm',
                 contents: [
                     createMessageActionButton(params.primaryAction?.label || (params.language === 'en' ? 'Home' : 'หน้าหลัก'), params.primaryAction?.text || 'NAV HOME', 'primary', BRAND.teal),
-                    ...(params.secondaryAction ? [createMessageActionButton(params.secondaryAction.label, params.secondaryAction.text, 'secondary', BRAND.gold)] : []),
+                    ...(params.secondaryAction ? [createMessageActionButton(params.secondaryAction.label, params.secondaryAction.text, 'secondary', BRAND.goldTint)] : []),
                 ],
             },
         },
@@ -106,7 +128,7 @@ const createBotTextFlexMessage = (params) => {
 };
 exports.createBotTextFlexMessage = createBotTextFlexMessage;
 const createDailyReportFlexMessage = (reportData, insights, language = 'th') => {
-    const agentName = process.env.LINE_AGENT_NAME?.trim() || 'น้องโซระ';
+    const agentName = (0, channels_1.getAgentName)();
     const rows = (() => {
         try {
             const parsed = JSON.parse(String(reportData));
@@ -141,8 +163,8 @@ const createDailyReportFlexMessage = (reportData, insights, language = 'th') => 
                     ...rows.flatMap(row => ([
                         { type: 'text', text: row.product || '-', weight: 'bold', size: 'sm', margin: 'md', wrap: true, color: BRAND.tealStrong },
                         { type: 'text', text: language === 'en'
-                                ? `Sales ${Number(row.salesYesterday || 0).toFixed(0)} | Revenue ${Number(row.revenueYesterday || 0).toFixed(2)} THB | Stock ${Number(row.stock || 0).toFixed(0)}`
-                                : `ขาย ${Number(row.salesYesterday || 0).toFixed(0)} | รายได้ ${Number(row.revenueYesterday || 0).toFixed(2)} บาท | คงเหลือ ${Number(row.stock || 0).toFixed(0)}`,
+                                ? `Sales ${Number(row.salesYesterday || 0).toFixed(0)} | Revenue ${(0, exports.formatMoney)(row.revenueYesterday || 0, language)} | Stock ${Number(row.stock || 0).toFixed(0)}`
+                                : `ขาย ${Number(row.salesYesterday || 0).toFixed(0)} | รายได้ ${(0, exports.formatMoney)(row.revenueYesterday || 0, language)} | คงเหลือ ${Number(row.stock || 0).toFixed(0)}`,
                             size: 'xs', color: BRAND.inkSoft, wrap: true },
                     ])),
                 ],
@@ -155,7 +177,7 @@ const createProductCardFlexMessage = (productName, price, stock) => {
     const language = (process.env.DEFAULT_UI_LANGUAGE || 'th').toLowerCase() === 'en' ? 'en' : 'th';
     return {
         type: 'flex',
-        altText: language === 'en' ? `Product: ${productName}` : `สินค้า: ${productName}`,
+        altText: truncate(language === 'en' ? `Product: ${productName}` : `สินค้า: ${productName}`, 390),
         contents: {
             type: 'bubble',
             styles: {
@@ -190,7 +212,7 @@ const createProductCardFlexMessage = (productName, price, stock) => {
                                 paddingAll: 'sm',
                                 contents: [
                                     { type: 'text', text: language === 'en' ? 'Price' : 'ราคา', size: 'xs', color: BRAND.inkSoft },
-                                    { type: 'text', text: language === 'en' ? `${money(price)} THB` : `${money(price)} บาท`, size: 'sm', color: BRAND.tealStrong, weight: 'bold', wrap: true },
+                                    { type: 'text', text: (0, exports.formatMoney)(price, language), size: 'sm', color: BRAND.tealStrong, weight: 'bold', wrap: true },
                                 ],
                             },
                             {
@@ -213,8 +235,8 @@ const createProductCardFlexMessage = (productName, price, stock) => {
                 spacing: 'sm',
                 contents: [
                     createMessageActionButton(language === 'en' ? 'Create quote' : 'สร้างใบเสนอราคา', 'FORM DEMO QUOTE', 'primary', BRAND.teal),
-                    createMessageActionButton(language === 'en' ? 'Search again' : 'ค้นหาอีกครั้ง', 'FORM DEMO PRODUCT', 'secondary', BRAND.teal),
-                    createMessageActionButton(language === 'en' ? 'Home' : 'หน้าหลัก', 'NAV HOME', 'secondary', BRAND.gold),
+                    createMessageActionButton(language === 'en' ? 'Search again' : 'ค้นหาอีกครั้ง', 'FORM DEMO PRODUCT', 'secondary', BRAND.tealTint),
+                    createMessageActionButton(language === 'en' ? 'Home' : 'หน้าหลัก', 'NAV HOME', 'secondary', BRAND.goldTint),
                 ],
             },
         },
@@ -274,14 +296,14 @@ const createServiceHomeFlexMessage = (services, language, agentName) => {
                         type: 'button',
                         style: 'secondary',
                         height: 'sm',
-                        color: BRAND.teal,
+                        color: BRAND.tealTint,
                         action: { type: 'message', label: language === 'en' ? 'Language' : 'ภาษา', text: language === 'en' ? 'LANG TH' : 'LANG EN' },
                     },
                     {
                         type: 'button',
                         style: 'secondary',
                         height: 'sm',
-                        color: BRAND.teal,
+                        color: BRAND.tealTint,
                         action: { type: 'message', label: language === 'en' ? 'Guide' : 'คู่มือ', text: 'GUIDE' },
                     },
                 ],
@@ -293,7 +315,7 @@ exports.createServiceHomeFlexMessage = createServiceHomeFlexMessage;
 const createServiceActionFlexMessage = (serviceLabel, actions, language) => {
     return {
         type: 'flex',
-        altText: serviceLabel,
+        altText: truncate(serviceLabel, 390),
         contents: {
             type: 'bubble',
             styles: {
@@ -364,7 +386,7 @@ const createOrderSummaryFlexMessage = (total) => {
                         paddingAll: 'md',
                         contents: [
                             { type: 'text', text: language === 'en' ? 'Total' : 'ยอดรวม', size: 'xs', color: BRAND.inkSoft },
-                            { type: 'text', text: language === 'en' ? `${money(total)} THB` : `${money(total)} บาท`, size: 'xl', color: BRAND.tealStrong, weight: 'bold', wrap: true },
+                            { type: 'text', text: (0, exports.formatMoney)(total, language), size: 'xl', color: BRAND.tealStrong, weight: 'bold', wrap: true },
                         ],
                     },
                     { type: 'text', text: language === 'en' ? 'Please follow your payment workflow.' : 'กรุณาชำระเงินตามขั้นตอนที่ร้านกำหนด', size: 'sm', wrap: true, color: BRAND.inkSoft },
@@ -376,7 +398,7 @@ const createOrderSummaryFlexMessage = (total) => {
                 spacing: 'sm',
                 contents: [
                     createMessageActionButton(language === 'en' ? 'Check order' : 'เช็คออเดอร์', 'FORM DEMO ORDER', 'primary', BRAND.teal),
-                    createMessageActionButton(language === 'en' ? 'Home' : 'หน้าหลัก', 'NAV HOME', 'secondary', BRAND.gold),
+                    createMessageActionButton(language === 'en' ? 'Home' : 'หน้าหลัก', 'NAV HOME', 'secondary', BRAND.goldTint),
                 ],
             },
         },
@@ -390,7 +412,7 @@ const createFormPromptFlexMessage = (params) => {
     ];
     return {
         type: 'flex',
-        altText: params.prompt,
+        altText: truncate(params.prompt, 390),
         quickReply: {
             items: actions.map(action => ({
                 type: 'action',
@@ -434,7 +456,7 @@ const createFormPromptFlexMessage = (params) => {
                 type: 'box',
                 layout: params.optional ? 'horizontal' : 'vertical',
                 spacing: 'sm',
-                contents: actions.map(action => createMessageActionButton(action.label, action.text, action.text === 'CANCEL' ? 'secondary' : 'primary', action.text === 'CANCEL' ? BRAND.gold : BRAND.teal)),
+                contents: actions.map(action => createMessageActionButton(action.label, action.text, action.text === 'CANCEL' ? 'secondary' : 'primary', action.text === 'CANCEL' ? BRAND.goldTint : BRAND.teal)),
             },
         },
     };

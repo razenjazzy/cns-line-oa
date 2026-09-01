@@ -42,6 +42,9 @@ import { commerceHandlers }   from './commerce';
 import { userDirectoryHandlers } from './user-directory';
 import { serviceCatalogHandlers } from './service-catalog-handler';
 import { groupBuyHandler }    from './group-buy';
+import { privacyHandlers }    from './privacy';
+import { feedbackHandlers }   from './feedback';
+import { listSkillsHandler, skillsHandler } from './skills';
 
 export const COMMAND_HANDLERS: CommandHandler[] = [
   ...navigationHandlers,
@@ -49,10 +52,16 @@ export const COMMAND_HANDLERS: CommandHandler[] = [
   ...verificationHandlers,
   ...languageHandlers,
   ...helpHandlers,
+  ...privacyHandlers,
+  ...feedbackHandlers,
   ...commerceHandlers,
   ...userDirectoryHandlers,
   ...serviceCatalogHandlers,
   groupBuyHandler,
+  listSkillsHandler,
+  // Markdown skill files (skills/*.md) — always last, so a skill can add a
+  // command but can never shadow a built-in one. See src/services/skill-loader.ts.
+  skillsHandler,
   // chat-fallback is NOT in this list — command-router calls it explicitly
   // as the last resort after all handlers fail to match.
 ];

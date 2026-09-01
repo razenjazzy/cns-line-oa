@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "description": "",
   "main": "dist/index.js",
+  "bin": {
+    "cns": "dist/cli/index.js",
+    "cns-mcp": "dist/mcp/server.js"
+  },
   "engines": {
     "node": ">=22"
   },
@@ -10,6 +14,8 @@
     "start": "node dist/index.js",
     "dev": "nodemon --watch src --ext ts --exec ts-node src/index.ts",
     "build": "tsc",
+    "cli": "node dist/cli/index.js",
+    "mcp": "node dist/mcp/server.js",
     "preflight:staging": "bash ./scripts/preflight-check.sh staging deploy.env.staging.yaml",
     "preflight:prod": "bash ./scripts/preflight-check.sh production deploy.env.production.yaml",
     "cutover:check:staging": "bash ./scripts/validate-cutover.sh staging deploy.env.staging.yaml",
@@ -44,10 +50,12 @@
     "@google-cloud/firestore": "^8.6.0",
     "@google/genai": "^2.10.0",
     "@line/bot-sdk": "^11.0.2",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "googleapis": "^173.0.0",
-    "redis": "^4.7.1"
+    "redis": "^4.7.1",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@line/line-bot-mcp-server": "^0.5.0",

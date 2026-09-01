@@ -1,8 +1,12 @@
 export type FlowKey =
   | 'USER_CREATE'
   | 'USER_READ'
+  | 'USER_UPDATE'
+  | 'USER_DELETE'
   | 'SERVICE_CREATE'
   | 'SERVICE_READ'
+  | 'SERVICE_UPDATE'
+  | 'SERVICE_DELETE'
   | 'DEMO_PRODUCT'
   | 'DEMO_ORDER'
   | 'DEMO_QUOTE'
@@ -73,6 +77,31 @@ export const FLOW_SPECS: Record<FlowKey, FlowSpec> = {
     ],
     buildFinalCommand: (c) => `USER READ ${c.phone}`,
   },
+  USER_UPDATE: {
+    key: 'USER_UPDATE',
+    startCommand: 'FORM USER UPDATE',
+    requiresAdmin: true,
+    labelTh: 'แก้ไขผู้ใช้',
+    labelEn: 'Edit customer',
+    fields: [
+      { key: 'phone', promptTh: 'เบอร์โทรของผู้ใช้ที่ต้องการแก้ไข?', promptEn: 'Phone number of the customer to edit?', validate: isPhoneLike },
+      { key: 'name', promptTh: 'ชื่อใหม่ (พิมพ์ SKIP เพื่อข้าม)', promptEn: 'New name (type SKIP to skip)', optional: true, validate: isNonEmpty },
+      { key: 'newPhone', promptTh: 'เบอร์ใหม่ (พิมพ์ SKIP เพื่อข้าม)', promptEn: 'New phone number (type SKIP to skip)', optional: true, validate: isPhoneLike },
+      { key: 'email', promptTh: 'อีเมลใหม่ (พิมพ์ SKIP เพื่อข้าม)', promptEn: 'New email (type SKIP to skip)', optional: true, validate: isEmailLike },
+    ],
+    buildFinalCommand: (c) => `USER UPDATE ${c.phone},${c.name || ''},${c.newPhone || ''},${c.email || ''}`,
+  },
+  USER_DELETE: {
+    key: 'USER_DELETE',
+    startCommand: 'FORM USER DELETE',
+    requiresAdmin: true,
+    labelTh: 'ลบผู้ใช้',
+    labelEn: 'Delete customer',
+    fields: [
+      { key: 'phone', promptTh: 'เบอร์โทรของผู้ใช้ที่ต้องการลบ?', promptEn: 'Phone number of the customer to delete?', validate: isPhoneLike },
+    ],
+    buildFinalCommand: (c) => `USER DELETE ${c.phone}`,
+  },
   SERVICE_CREATE: {
     key: 'SERVICE_CREATE',
     startCommand: 'FORM SERVICE CREATE',
@@ -96,6 +125,31 @@ export const FLOW_SPECS: Record<FlowKey, FlowSpec> = {
       { key: 'identifier', promptTh: 'รหัสหรือชื่อบริการ?', promptEn: 'Service code or name?', validate: isNonEmpty },
     ],
     buildFinalCommand: (c) => `SERVICE READ ${c.identifier}`,
+  },
+  SERVICE_UPDATE: {
+    key: 'SERVICE_UPDATE',
+    startCommand: 'FORM SERVICE UPDATE',
+    requiresAdmin: true,
+    labelTh: 'แก้ไขบริการ',
+    labelEn: 'Edit service',
+    fields: [
+      { key: 'identifier', promptTh: 'รหัสหรือชื่อบริการที่ต้องการแก้ไข?', promptEn: 'Code or name of the service to edit?', validate: isNonEmpty },
+      { key: 'name', promptTh: 'ชื่อใหม่ (พิมพ์ SKIP เพื่อข้าม)', promptEn: 'New name (type SKIP to skip)', optional: true, validate: isNonEmpty },
+      { key: 'price', promptTh: 'ราคาใหม่ (พิมพ์ SKIP เพื่อข้าม)', promptEn: 'New price (type SKIP to skip)', optional: true, validate: isPositiveNumber },
+      { key: 'newCode', promptTh: 'รหัสใหม่ (พิมพ์ SKIP เพื่อข้าม)', promptEn: 'New code (type SKIP to skip)', optional: true, validate: isNonEmpty },
+    ],
+    buildFinalCommand: (c) => `SERVICE UPDATE ${c.identifier},${c.name || ''},${c.price || ''},${c.newCode || ''}`,
+  },
+  SERVICE_DELETE: {
+    key: 'SERVICE_DELETE',
+    startCommand: 'FORM SERVICE DELETE',
+    requiresAdmin: true,
+    labelTh: 'ลบบริการ',
+    labelEn: 'Delete service',
+    fields: [
+      { key: 'identifier', promptTh: 'รหัสหรือชื่อบริการที่ต้องการลบ?', promptEn: 'Code or name of the service to delete?', validate: isNonEmpty },
+    ],
+    buildFinalCommand: (c) => `SERVICE DELETE ${c.identifier}`,
   },
   DEMO_PRODUCT: {
     key: 'DEMO_PRODUCT',

@@ -20,6 +20,8 @@ type CachedUserState = {
     escalatedToHuman?: boolean;
     pendingFlow?: PendingFlowState;
     firstMessageAt?: string;
+    consentNoticeShownAt?: string;
+    marketingOptIn?: boolean;
 };
 
 const isPendingFlowActive = (pendingFlow: PendingFlowState | undefined | null): pendingFlow is PendingFlowState => {
@@ -351,11 +353,17 @@ export type UserProfile = {
     phone?: string;
     pendingFlow?: PendingFlowState;
     firstMessageAt?: string;
+    /** Set once, the first time the PDPA data-collection notice is shown. */
+    consentNoticeShownAt?: string;
+    /** Explicit opt-in for marketing/campaign multicasts. Defaults to false
+     *  (opt-out) — following the LINE OA is not treated as marketing consent. */
+    marketingOptIn: boolean;
 };
 
 export type OdooVerificationChallenge = {
     id: string;
     userId: string;
+    channelId: string;
     partnerId: number;
     phone: string;
     otpCode: string;
@@ -388,6 +396,7 @@ const toOdooVerificationChallenge = (id: string, raw: Record<string, unknown>): 
     return {
         id,
         userId: toOptionalString(raw.userId) || '',
+        channelId: toOptionalString(raw.channelId) || 'default',
         partnerId: toPositiveInt(raw.partnerId, 0),
         phone: toOptionalString(raw.phone) || '',
         otpCode: toOptionalString(raw.otpCode) || '',
@@ -439,6 +448,8 @@ export const getUserProfile = async (userId: string): Promise<UserProfile> => {
         phone: cached.phone,
         pendingFlow: isPendingFlowActive(cached.pendingFlow) ? cached.pendingFlow : undefined,
         firstMessageAt: cached.firstMessageAt,
+        consentNoticeShownAt: cached.consentNoticeShownAt,
+        marketingOptIn: cached.marketingOptIn || false,
     };
 
     return withFirestoreRead('getUserProfile', fallbackProfile, async (database) => {
@@ -456,11 +467,102 @@ export const getUserProfile = async (userId: string): Promise<UserProfile> => {
             phone: typeof data.phone === 'string' ? data.phone : undefined,
             pendingFlow: isPendingFlowActive(rawPendingFlow) ? rawPendingFlow : undefined,
             firstMessageAt: typeof data.firstMessageAt === 'string' ? data.firstMessageAt : undefined,
+            consentNoticeShownAt: typeof data.consentNoticeShownAt === 'string' ? data.consentNoticeShownAt : undefined,
+            marketingOptIn: data.marketingOptIn === true,
         };
 
         mergeCachedUserState(userId, profile);
         return profile;
     });
+};
+
+/**
+ * PDPA data-collection notice — shown once at first contact (see
+ * command-router.ts). Notice-only, not a blocking consent gate: it informs
+ * without adding friction to first use.
+ */
+export const markConsentNoticeShown = async (userId: string): Promise<boolean> => {
+    const previous = userStateCache.get(userId);
+    const now = new Date().toISOString();
+    mergeCachedUserState(userId, { consentNoticeShownAt: now });
+    const result = await withFirestoreWrite('markConsentNoticeShown', async (database) => {
+        await database.collection('users').doc(userId).set({ consentNoticeShownAt: now }, { merge: true });
+    });
+    if (!result.ok) {
+        if (previous) userStateCache.set(userId, previous);
+        else userStateCache.delete(userId);
+    }
+    return result.ok;
+};
+
+export const setMarketingOptIn = async (userId: string, optIn: boolean) => {
+    const previous = userStateCache.get(userId);
+    mergeCachedUserState(userId, { marketingOptIn: optIn });
+    const result = await withFirestoreWrite('setMarketingOptIn', async (database) => {
+        await database.collection('users').doc(userId).set({ marketingOptIn: optIn }, { merge: true });
+    });
+    if (!result.ok) {
+        if (previous) userStateCache.set(userId, previous);
+        else userStateCache.delete(userId);
+    }
+    return result;
+};
+
+/**
+ * Data-subject erasure request (PDPA "right to delete"). Hard-deletes the
+ * user's profile document — role, verification/Odoo link, language,
+ * marketing preference, everything in `users/{userId}`. Does NOT touch the
+ * append-only auditLog (a legitimate retained business record of past
+ * actions, not personal-preference state) or odooVerification challenge
+ * history. Returning to the bot after this creates a fresh, unverified
+ * profile — that's the intended effect of erasure, not a bug.
+ */
+export const deleteUserProfile = async (userId: string): Promise<FirestoreWriteResult> => {
+    userStateCache.delete(userId);
+    return withFirestoreWrite('deleteUserProfile', async (database) => {
+        await database.collection('users').doc(userId).delete();
+    });
+};
+
+/**
+ * Marketing-consent gate for multicast campaigns (src/jobs/segmentation.ts).
+ * Single source of truth for "who's allowed to receive a promotional
+ * message" so no campaign path can accidentally bypass the opt-in check.
+ */
+export const filterMarketingOptedInUserIds = async (userIds: string[]): Promise<string[]> => {
+    const profiles = await Promise.all(userIds.map(async (userId) => ({ userId, profile: await getUserProfile(userId) })));
+    return profiles.filter(({ profile }) => profile.marketingOptIn).map(({ userId }) => userId);
+};
+
+const chatFeedbackCollection = 'chatFeedback';
+
+/**
+ * Lightweight quality signal for AI-fallback replies (👍/👎 quick reply — see
+ * src/line/handlers/chat-fallback.ts and src/line/handlers/feedback.ts).
+ * Fire-and-forget like recordAuditEvent: never blocks or fails the reply
+ * that triggered it.
+ */
+export const recordChatFeedback = async (params: {
+    userId: string;
+    rating: 'good' | 'bad';
+    question?: string;
+    answer?: string;
+}): Promise<void> => {
+    const database = getDb();
+    if (!database) return;
+
+    try {
+        await database.collection(chatFeedbackCollection).add({
+            userId: params.userId,
+            rating: params.rating,
+            question: params.question || null,
+            answer: params.answer || null,
+            createdAt: new Date().toISOString(),
+            createdAtServer: FieldValue.serverTimestamp(),
+        });
+    } catch (error) {
+        logFirestoreError('recordChatFeedback', error);
+    }
 };
 
 export const setUserPendingFlow = async (userId: string, pendingFlow: PendingFlowState | null) => {
@@ -575,6 +677,7 @@ export const setPlatformConfig = async (key: string, value: Record<string, unkno
 
 export const createOdooVerificationChallenge = async (params: {
     userId: string;
+    channelId: string;
     partnerId: number;
     phone: string;
     otpCode: string;
@@ -597,6 +700,7 @@ export const createOdooVerificationChallenge = async (params: {
         const challenge: OdooVerificationChallenge = {
             id: challengeRef.id,
             userId: params.userId,
+            channelId: params.channelId,
             partnerId: params.partnerId,
             phone: params.phone,
             otpCode: params.otpCode,
@@ -1038,7 +1142,9 @@ export type AuditAction =
     | 'user_delete'
     | 'service_create'
     | 'service_update'
-    | 'service_delete';
+    | 'service_delete'
+    | 'channel_config_update'
+    | 'audit_rotate';
 
 export type AuditOutcome = 'success' | 'failure';
 
@@ -1106,5 +1212,54 @@ export const listRecentAuditEvents = async (limit: number = 50): Promise<AuditLo
                 createdAt: toOptionalString(raw.createdAt) || new Date(0).toISOString(),
             };
         });
+    });
+};
+
+/**
+ * Oldest-first page of audit events at/before a cutoff, for the archive-then-
+ * delete rotation job (src/services/audit-archive.ts). Ascending order so a
+ * partial run (capped by AUDIT_ROTATE_MAX_BATCHES) always drains the oldest
+ * backlog first.
+ */
+export const listAuditEventsOlderThan = async (cutoffIso: string, limit: number): Promise<AuditLogEntry[]> => {
+    return withFirestoreRead('listAuditEventsOlderThan', [], async (database) => {
+        const snapshot = await database.collection(auditLogCollection)
+            .where('createdAt', '<', cutoffIso)
+            .orderBy('createdAt', 'asc')
+            .limit(Math.min(Math.max(limit, 1), 500))
+            .get();
+
+        return snapshot.docs.map(doc => {
+            const raw = (doc.data() || {}) as Record<string, unknown>;
+            return {
+                id: doc.id,
+                action: toOptionalString(raw.action) || 'unknown',
+                outcome: toOptionalString(raw.outcome) || 'unknown',
+                actorUserId: toOptionalString(raw.actorUserId) || '',
+                channelId: toOptionalString(raw.channelId) || null,
+                targetId: toOptionalString(raw.targetId) || null,
+                detail: toOptionalString(raw.detail) || null,
+                createdAt: toOptionalString(raw.createdAt) || new Date(0).toISOString(),
+            };
+        });
+    });
+};
+
+/**
+ * Deletes a page of audit events by id. Only ever called by the rotation job
+ * after those exact rows have been durably archived to BigQuery — never
+ * exposed as a standalone bulk-delete to keep the audit trail append-mostly.
+ * A single Firestore batch caps out at 500 writes, matching the rotation
+ * job's max page size.
+ */
+export const deleteAuditEventsByIds = async (ids: string[]): Promise<FirestoreWriteResult> => {
+    if (!ids.length) return { ok: true };
+
+    return withFirestoreWrite('deleteAuditEventsByIds', async (database) => {
+        const batch = database.batch();
+        for (const id of ids) {
+            batch.delete(database.collection(auditLogCollection).doc(id));
+        }
+        await batch.commit();
     });
 };

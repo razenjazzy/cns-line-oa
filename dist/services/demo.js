@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.runDemoJourney = exports.getDemoOverview = void 0;
 const firestore_1 = require("./firestore");
+const channels_1 = require("../line/channels");
 const odoo_1 = require("./odoo");
 const isLineConfigured = () => {
     const accessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim() || '';
@@ -60,7 +61,7 @@ const getDemoOverview = async (baseUrl) => {
         connections: {
             lineOA: {
                 configured: isLineConfigured(),
-                agentName: process.env.LINE_AGENT_NAME?.trim() || 'น้องโซระ',
+                agentName: (0, channels_1.getAgentName)(),
                 webhookReady: isLineConfigured(),
             },
             odoo: {

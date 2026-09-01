@@ -1,6 +1,5 @@
 import { messagingApi } from '@line/bot-sdk';
 import type { CommandHandler } from './index';
-import type { CommandReplyContext } from '../command-router';
 import { buildHomeMenuMessage } from '../command-router';
 import { getServiceDefinition, getVisibleCommands, isServiceEnabledForChannel } from '../../services/service-catalog';
 import { createServiceActionFlexMessage } from '../templates';

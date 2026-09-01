@@ -3,11 +3,14 @@ import {
   consumeOdooVerificationByOtp,
   consumeOdooVerificationByToken,
   createOdooVerificationChallenge,
+  getUserLanguage,
   setUserOdooPartner,
   setUserOdooVerificationStatus,
   UserLanguage,
 } from './firestore';
 import { getPartnerByPhone } from './odoo';
+import { DEFAULT_CHANNEL_ID } from '../line/channels';
+import { sendTargetedMessage } from '../line/messaging';
 
 const tr = (language: UserLanguage, th: string, en: string): string => (language === 'en' ? en : th);
 
@@ -32,6 +35,7 @@ type StartVerificationInput = {
   language: UserLanguage;
   agentName: string;
   fallbackBaseUrl?: string;
+  channelId?: string;
 };
 
 export const startOdooUserVerification = async (input: StartVerificationInput): Promise<string> => {
@@ -53,6 +57,7 @@ export const startOdooUserVerification = async (input: StartVerificationInput): 
   const linkToken = generateLinkToken();
   const created = await createOdooVerificationChallenge({
     userId: input.userId,
+    channelId: input.channelId || DEFAULT_CHANNEL_ID,
     partnerId: partner.id,
     phone,
     otpCode,
@@ -163,6 +168,15 @@ export const verifyOdooUserByToken = async (token: string): Promise<{ ok: boolea
   if (!statusResult.ok) {
     return { ok: false, message: 'Verification succeeded, but failed to persist verification status.' };
   }
+
+  // The magic-link flow completes over plain HTTP, so without this push the
+  // customer's LINE chat never learns the verification actually succeeded.
+  const language = await getUserLanguage(consumed.data.userId);
+  await sendTargetedMessage(
+    [consumed.data.userId],
+    tr(language, '✅ ยืนยันบัญชี Odoo สำเร็จแล้ว พิมพ์ NAV HOME เพื่อกลับไปที่เมนู', '✅ Your Odoo account is now verified. Type NAV HOME to return to the menu.'),
+    consumed.data.channelId,
+  );
 
   return { ok: true, message: 'Odoo user verification completed successfully. You can return to LINE now.' };
 };

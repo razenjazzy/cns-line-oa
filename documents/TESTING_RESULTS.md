@@ -1,146 +1,57 @@
-# 🧪 Testing Results - CNS LINE OA Project
+# Testing
 
-**Status**: ✅ **FULLY FUNCTIONAL & TESTED**  
-**Date**: 2026-06-27  
-**Server**: Running on `localhost:8080`
+## Automated suite
 
----
-
-## ✅ All Tests Passing
-
-### Test 1: Product Lookup (Demo Endpoint)
 ```bash
-curl -X POST http://localhost:8080/webhook-test \
-  -H "Content-Type: application/json" \
-  -d '{"userId":"user1","text":"show me Widget A"}'
+npm test
 ```
 
-**Response**: ✅ **Success**
-- Returns **Flex Message** with product card
-- Displays: Widget A, Price: 100 THB, Stock: 10 left
-- Includes "Buy Now" button
+Vitest, pure-function level — parsers, validators, and config resolution,
+no live network/Firestore/Odoo calls:
 
----
+| File | Covers |
+|---|---|
+| `command-validators.test.ts` | Multi-field command payload parsing (USER/SERVICE CREATE/UPDATE, DEMO QUOTE) |
+| `guided-forms.test.ts` | `FORM *` flow specs and field validation |
+| `service-catalog.test.ts` | Command→service mapping, channel gating |
+| `group-buy.test.ts` | `START/JOIN/STATUS/CONFIRM/CANCEL GROUPBUY` parsing, incl. `<hours>` expiry field |
+| `admin-authorization.test.ts` | `ADMIN_USER_ID` allowlist chain, fail-closed behavior |
+| `demo-session.test.ts` | HMAC token creation/verification, rotation grace window |
+| `channels.test.ts` | Per-channel credential/service resolution from env |
+| `user-verification-parser.test.ts` | OTP/phone parsing |
+| `pricing-control.test.ts` | Cost model sanitization |
+| `cli.test.ts` | CLI argument parsing |
+| `ops-client.test.ts` | Ops-client config resolution from env |
 
-### Test 2: General Chat (Demo Endpoint)
-```bash
-curl -X POST http://localhost:8080/webhook-test \
-  -H "Content-Type: application/json" \
-  -d '{"userId":"user2","text":"hello"}'
-```
+Run `npm run lint` and `npx tsc --noEmit` alongside `npm test` — all three
+are expected to report zero errors on `main`.
 
-**Response**: ✅ **Success**
-- Returns bot introduction message
-- Tells user bot can help with products and orders
-- Prompts user to try: "show me Widget A"
+## What's not covered by the automated suite
 
----
+`resolveCommandReply` (the full dispatch pipeline) and every
+Firestore/Odoo-backed write path are integration-level and are **not**
+exercised by CI. They've been verified manually in this project's history
+against a live Odoo instance via `/webhook-test` and the `cns` CLI (`cns
+chat "..."`, `cns kpi`, `cns audit`) — see git history / PR discussions for
+specific verification runs. If you change routing logic in
+`command-router.ts` or any `handlers/*.ts`, verify manually with:
 
-### Test 3: Daily Report Job
-```bash
-curl -X POST http://localhost:8080/jobs/daily-report
-```
-
-**Response**: ⚠️ **Requires Configuration**
-- Endpoint works, but needs `ADMIN_USER_ID` in `.env`
-- Will generate mock sales report when configured
-- Requires Firestore credentials for storage
-
-**To enable**:
-```bash
-# 1. Set your LINE user ID in .env
-ADMIN_USER_ID=Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-
-# 2. Get your user ID by messaging the bot and checking logs
-```
-
----
-
-### Test 4: Segmentation Job
-```bash
-curl -X POST http://localhost:8080/jobs/segmentation
-```
-
-**Response**: ✅ **Success**
-- Job runs successfully
-- Segments mock users into: VIP, CART_ABANDONER, DORMANT, GENERAL
-- Processes cohort data from BigQuery
-- Sends targeted messages via LINE multicast API
-
----
-
-## 🔧 Issues Fixed During Testing
-
-| Issue | Solution | Status |
-|-------|----------|--------|
-| dotenv timing (env vars not loading) | Implemented lazy initialization for all clients | ✅ Fixed |
-| Nodemon restart loop on build | Changed to watch only `src/` folder | ✅ Fixed |
-| String escaping in responses | Escaped apostrophes in JSON strings | ✅ Fixed |
-| Vertex AI model availability | Updated to use gemini-1.5-pro | ✅ Fixed |
-
----
-
-## 🎯 Feature Status
-
-| Feature | Status | Notes |
-|---------|--------|-------|
-| LINE Webhook | ✅ Ready | Requires valid LINE signature in production |
-| Chat Handler | ✅ Working | Demo mode active |
-| Product Lookup | ✅ Working | Returns Flex Message |
-| Daily Reports | ✅ Configured | Needs ADMIN_USER_ID setup |
-| Segmentation | ✅ Working | Multicast messages configured |
-| Intent Classification | ✅ Configured | Ready with Vertex AI |
-| Conversation Tracking | ✅ Configured | Ready with Firestore |
-| User Engagement Scoring | ✅ Configured | Ready with Firestore |
-
----
-
-## 📊 Test Results Summary
-
-```
-Total Tests Run: 4
-Passed: 3 ✅
-Passed (Config needed): 1 ⚠️
-Failed: 0
-Success Rate: 100%
-```
-
----
-
-## 🚀 How to Use
-
-### Development
-```bash
-npm run dev
-```
-
-### Production
 ```bash
 npm run build
-npm start
+npm run dev &
+npm run cli -- chat "FEATURES"
+npm run cli -- chat "DEMO PRODUCT <something in your Odoo catalog>"
 ```
 
-### Docker
-```bash
-docker build -t cns-line-oa .
-docker run -p 8080:8080 --env-file .env cns-line-oa
-```
+against a real `.env` before considering the change done — the Vitest
+suite passing does not by itself confirm the dispatch pipeline works.
 
-### Cloud Run
-```bash
-./deploy.sh
-```
+## Known environment-specific gaps at time of writing
 
----
-
-## ✅ Project Status
-
-**COMPLETE & FULLY TESTED - READY FOR DEPLOYMENT**
-
-All code has been:
-- ✅ Compiled successfully (zero errors)
-- ✅ Tested with all endpoints working
-- ✅ Configured for production deployment
-- ✅ Ready for Cloud Run
-
-Next step: `./deploy.sh` to deploy to Google Cloud Run
+- `vertexai.ts` still uses a permanent `vertexUnavailable` boolean (unlike
+  `chat.ts`'s `AiCircuitBreaker`) — a single 404 there disables daily-report
+  insights, intent classification, and voice transcription until process
+  restart. Not yet fixed.
+- No payment workflow (pending/paid/expired/refunded) for group-buy.
+- Group-buy tier pricing and per-user min/max join caps are not implemented
+  — deliberately deferred pending business-policy decisions.
