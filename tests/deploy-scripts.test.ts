@@ -2,9 +2,10 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 
-const repoRoot = '/home/runner/work/cns-line-oa/cns-line-oa';
+const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 const materializeScript = join(repoRoot, 'scripts/materialize-deploy-env.sh');
 const evidenceScript = join(repoRoot, 'scripts/generate-deploy-evidence.sh');
 
