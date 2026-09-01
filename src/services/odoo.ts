@@ -497,6 +497,34 @@ const buildPhoneMatchVariants = (phone: string): string[] => {
   return Array.from(variants);
 };
 
+// `mobile` is a standard res.partner field on stock Odoo, but not every
+// instance has it (a stripped-down SaaS trial database can be missing it
+// entirely, which turns a domain that references it into a hard RPC error —
+// "Invalid field res.partner.mobile" — instead of just finding no match).
+// Discover which of the two fields actually exist once per process and only
+// query those, so verification degrades to phone-only matching instead of
+// breaking outright on instances without `mobile`.
+let cachedPartnerPhoneFields: string[] | null = null;
+
+const getPartnerPhoneFields = async (config: OdooConfig, uid: number): Promise<string[]> => {
+  if (cachedPartnerPhoneFields) return cachedPartnerPhoneFields;
+
+  let fields = ['phone'];
+  try {
+    const fieldsInfo = await executeKwRead<Record<string, unknown>>(
+      config, uid, 'res.partner', 'fields_get', [['phone', 'mobile']], { attributes: [] }
+    );
+    const available = Object.keys(fieldsInfo || {});
+    const discovered = ['phone', 'mobile'].filter(f => available.includes(f));
+    if (discovered.length) fields = discovered;
+  } catch (error) {
+    console.warn('Odoo fields_get for res.partner phone fields failed, defaulting to phone only:', error);
+  }
+
+  cachedPartnerPhoneFields = fields;
+  return fields;
+};
+
 export const getPartnerByPhone = async (phone: string): Promise<OdooPartner | null> => {
   const config = getConfig();
   if (!config) return null;
@@ -507,7 +535,8 @@ export const getPartnerByPhone = async (phone: string): Promise<OdooPartner | nu
   const variants = buildPhoneMatchVariants(phone);
   if (!variants.length) return null;
 
-  const fieldMatches = variants.flatMap(v => [['phone', '=', v], ['mobile', '=', v]]);
+  const phoneFields = await getPartnerPhoneFields(config, uid);
+  const fieldMatches = variants.flatMap(v => phoneFields.map(f => [f, '=', v]));
   const domain = [...Array(fieldMatches.length - 1).fill('|'), ...fieldMatches];
 
   const rows = await executeKwRead<Record<string, unknown>[]>(

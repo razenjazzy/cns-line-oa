@@ -32,7 +32,11 @@ const withFirestoreRead = async (action, fallback, operation) => {
 const withFirestoreWrite = async (action, operation) => {
     const database = getDb();
     if (!database) {
-        return { ok: false, error: `Firestore ${action} failed: Firestore not initialized` };
+        // Not configured is not a failure: the caller already applied its
+        // optimistic cache update, and that cache is the authoritative
+        // store in this mode. Report success so callers don't treat a
+        // by-design degraded mode as a broken write.
+        return { ok: true, notConfigured: true, error: `Firestore ${action} skipped: Firestore not initialized` };
     }
     try {
         await operation(database);
@@ -263,6 +267,92 @@ const markUserFirstContact = async (userId) => {
 };
 exports.markUserFirstContact = markUserFirstContact;
 const ODOO_VERIFY_OTP_MAX_ATTEMPTS = Number(process.env.ODOO_VERIFY_OTP_MAX_ATTEMPTS || 5);
+/**
+ * In-memory fallback store for OTP/magic-link verification challenges, used
+ * only when Firestore isn't configured (e.g. a Railway test deploy with no
+ * GOOGLE_CLOUD_PROJECT). Unlike the userStateCache-backed profile fields,
+ * this record has no Firestore counterpart to optimistically shadow — it's
+ * the *only* store when Firestore is absent, so verification would
+ * otherwise be structurally impossible to complete on such a deploy (every
+ * createOdooVerificationChallenge call would report failure, and
+ * startOdooUserVerification would tell the user "could not start
+ * verification" no matter what). Node is single-threaded and every mutation
+ * below runs with no `await` in between reading and writing an entry, so
+ * this is safe for a single process without needing real transactions —
+ * it just isn't shared across multiple instances/replicas, same limitation
+ * as userStateCache.
+ */
+const inMemoryVerificationChallenges = new Map();
+const generateInMemoryId = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+const createOdooVerificationChallengeInMemory = (params) => {
+    const now = new Date();
+    const ttlMinutes = Math.max(1, Math.trunc(params.ttlMinutes || Number(process.env.ODOO_VERIFY_OTP_TTL_MINUTES || 10)));
+    const createdAt = now.toISOString();
+    const expiresAt = new Date(now.getTime() + ttlMinutes * 60 * 1000).toISOString();
+    const challenge = {
+        id: generateInMemoryId(),
+        userId: params.userId,
+        channelId: params.channelId,
+        partnerId: params.partnerId,
+        phone: params.phone,
+        otpCode: params.otpCode,
+        linkToken: params.linkToken,
+        status: 'pending',
+        attemptCount: 0,
+        expiresAt,
+        createdAt,
+        updatedAt: createdAt,
+    };
+    inMemoryVerificationChallenges.set(challenge.id, challenge);
+    return { ok: true, data: challenge };
+};
+const consumeOdooVerificationByOtpInMemory = (params) => {
+    const pending = Array.from(inMemoryVerificationChallenges.values())
+        .filter(c => c.userId === params.userId && c.status === 'pending')
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .slice(0, 5);
+    if (!pending.length)
+        return { ok: false, error: 'verification_not_found' };
+    const newest = pending[0];
+    if (newest.attemptCount >= ODOO_VERIFY_OTP_MAX_ATTEMPTS) {
+        newest.status = 'expired';
+        newest.updatedAt = new Date().toISOString();
+        return { ok: false, error: 'verification_locked' };
+    }
+    const selected = pending.find(c => c.otpCode === params.otpCode);
+    if (!selected) {
+        newest.attemptCount += 1;
+        newest.updatedAt = new Date().toISOString();
+        return { ok: false, error: 'verification_invalid_otp' };
+    }
+    if (new Date(selected.expiresAt).getTime() <= Date.now()) {
+        selected.status = 'expired';
+        selected.updatedAt = new Date().toISOString();
+        return { ok: false, error: 'verification_expired' };
+    }
+    const now = new Date().toISOString();
+    selected.status = 'verified';
+    selected.verifiedAt = now;
+    selected.updatedAt = now;
+    return { ok: true, data: { ...selected } };
+};
+const consumeOdooVerificationByTokenInMemory = (token) => {
+    const challenge = Array.from(inMemoryVerificationChallenges.values()).find(c => c.linkToken === token);
+    if (!challenge)
+        return { ok: false, error: 'verification_token_not_found' };
+    if (challenge.status !== 'pending')
+        return { ok: false, error: 'verification_already_used' };
+    if (new Date(challenge.expiresAt).getTime() <= Date.now()) {
+        challenge.status = 'expired';
+        challenge.updatedAt = new Date().toISOString();
+        return { ok: false, error: 'verification_expired' };
+    }
+    const now = new Date().toISOString();
+    challenge.status = 'verified';
+    challenge.verifiedAt = now;
+    challenge.updatedAt = now;
+    return { ok: true, data: { ...challenge } };
+};
 const odooVerificationCollection = 'odooVerifications';
 const odooVerificationTokenIndexCollection = 'odooVerificationTokens';
 const platformConfigCollection = 'platformConfig';
@@ -554,7 +644,7 @@ exports.setPlatformConfig = setPlatformConfig;
 const createOdooVerificationChallenge = async (params) => {
     const database = getDb();
     if (!database) {
-        return { ok: false, error: 'Firestore createOdooVerificationChallenge failed: Firestore not initialized' };
+        return createOdooVerificationChallengeInMemory(params);
     }
     try {
         const now = new Date();
@@ -606,7 +696,7 @@ exports.createOdooVerificationChallenge = createOdooVerificationChallenge;
 const consumeOdooVerificationByOtp = async (params) => {
     const database = getDb();
     if (!database) {
-        return { ok: false, error: 'Firestore consumeOdooVerificationByOtp failed: Firestore not initialized' };
+        return consumeOdooVerificationByOtpInMemory(params);
     }
     try {
         const result = await database.runTransaction(async (tx) => {
@@ -684,7 +774,7 @@ exports.consumeOdooVerificationByOtp = consumeOdooVerificationByOtp;
 const consumeOdooVerificationByToken = async (token) => {
     const database = getDb();
     if (!database) {
-        return { ok: false, error: 'Firestore consumeOdooVerificationByToken failed: Firestore not initialized' };
+        return consumeOdooVerificationByTokenInMemory(token);
     }
     try {
         const result = await database.runTransaction(async (tx) => {
