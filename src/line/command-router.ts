@@ -100,14 +100,19 @@ export const buildHomeMenuMessage = (
 const GUIDED_FORM_TTL_MINUTES = Number(process.env.GUIDED_FORM_TTL_MINUTES || 10);
 const buildFlowExpiry = (): string => new Date(Date.now() + GUIDED_FORM_TTL_MINUTES * 60 * 1000).toISOString();
 
-const buildFormPromptMessage = (
+const buildFormPromptMessage = async (
   language: UserLanguage,
   agentName: string,
   flowSpec: FlowSpec,
   stepIndex: number,
   promptOverride?: string,
-): messagingApi.Message => {
+): Promise<messagingApi.Message> => {
   const field = flowSpec.fields[stepIndex];
+  // Best-effort: a picker-options load failure shouldn't block the step
+  // itself — falls back to free-text entry (field.validate still applies).
+  const options = field.loadOptions
+    ? await field.loadOptions().catch(err => { console.warn('buildFormPromptMessage: loadOptions failed (non-fatal):', err); return []; })
+    : undefined;
   return createFormPromptFlexMessage({
     title: tr(language, `${agentName} ${flowSpec.labelTh}`, `${agentName} ${flowSpec.labelEn}`),
     prompt: promptOverride || tr(language, field.promptTh, field.promptEn),
@@ -115,6 +120,7 @@ const buildFormPromptMessage = (
     totalSteps: flowSpec.fields.length,
     language,
     optional: field.optional,
+    options,
   });
 };
 
@@ -147,7 +153,7 @@ const handleGuidedFormStep = async (ctx: CommandReplyContext): Promise<messaging
   const value = isSkip ? '' : trimmed;
 
   if (!isSkip && !field.validate(value)) {
-    return [buildFormPromptMessage(
+    return [await buildFormPromptMessage(
       userLanguage, agentName, flowSpec, profile.pendingFlow!.stepIndex,
       tr(userLanguage,
         `ค่าที่กรอกไม่ถูกต้อง กรุณาลองใหม่\n${field.promptTh}`,
@@ -171,7 +177,7 @@ const handleGuidedFormStep = async (ctx: CommandReplyContext): Promise<messaging
     collected,
     expiresAt: buildFlowExpiry(),
   });
-  return [buildFormPromptMessage(userLanguage, agentName, flowSpec, nextIndex)];
+  return [await buildFormPromptMessage(userLanguage, agentName, flowSpec, nextIndex)];
 };
 
 // ---------------------------------------------------------------------------
@@ -206,7 +212,7 @@ const handleFormCommand = async (ctx: CommandReplyContext): Promise<messagingApi
     collected: {},
     expiresAt: buildFlowExpiry(),
   });
-  return [buildFormPromptMessage(userLanguage, agentName, flowSpec, 0)];
+  return [await buildFormPromptMessage(userLanguage, agentName, flowSpec, 0)];
 };
 
 // ---------------------------------------------------------------------------

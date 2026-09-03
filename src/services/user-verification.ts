@@ -11,7 +11,8 @@ import {
 } from './firestore';
 import { getPartnerByPhone } from './odoo';
 import { DEFAULT_CHANNEL_ID } from '../line/channels';
-import { sendTargetedMessage } from '../line/messaging';
+import { sendTargetedMessage, sendTargetedFlexMessage } from '../line/messaging';
+import { createBotTextFlexMessage } from '../line/templates';
 
 const tr = (language: UserLanguage, th: string, en: string): string => (language === 'en' ? en : th);
 
@@ -201,7 +202,7 @@ export const verifyOdooUserByOtp = async (input: VerifyOtpInput): Promise<string
   );
 };
 
-export const verifyOdooUserByToken = async (token: string): Promise<{ ok: boolean; message: string }> => {
+export const verifyOdooUserByToken = async (token: string): Promise<{ ok: boolean; message: string; channelId?: string }> => {
   const normalized = token.trim();
   if (!normalized) {
     return { ok: false, message: 'Missing token.' };
@@ -228,15 +229,20 @@ export const verifyOdooUserByToken = async (token: string): Promise<{ ok: boolea
 
   // The magic-link flow completes over plain HTTP, so without this push the
   // customer's LINE chat never learns the verification actually succeeded.
+  // A Flex card (not plain text) so there's an actual tappable next step —
+  // createBotTextFlexMessage already renders a "Home" button by default,
+  // same as every other bot reply in this codebase.
   const language = await getUserLanguage(consumed.data.userId);
-  await sendTargetedMessage(
-    [consumed.data.userId],
-    tr(language, '✅ ยืนยันบัญชี Odoo สำเร็จแล้ว พิมพ์ NAV HOME เพื่อกลับไปที่เมนู', '✅ Your Odoo account is now verified. Type NAV HOME to return to the menu.'),
-    consumed.data.channelId,
-  );
+  const successCard = createBotTextFlexMessage({
+    title: tr(language, 'ผู้ช่วย Cloudnex', 'Cloudnex assistant'),
+    body: tr(language, '✅ ยืนยันบัญชี Odoo สำเร็จแล้ว', '✅ Your Odoo account is now verified.'),
+    language,
+    tone: 'success',
+  });
+  await sendTargetedFlexMessage([consumed.data.userId], successCard, consumed.data.channelId);
 
   notifyAdminOfVerification({ userId: consumed.data.userId, phone: consumed.data.phone, partnerId: consumed.data.partnerId, channelId: consumed.data.channelId })
     .catch(err => console.warn('verifyOdooUserByToken: post-verify notify failed (non-fatal):', err));
 
-  return { ok: true, message: 'Odoo user verification completed successfully. You can return to LINE now.' };
+  return { ok: true, message: 'Odoo user verification completed successfully. You can return to LINE now.', channelId: consumed.data.channelId };
 };

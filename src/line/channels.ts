@@ -66,6 +66,26 @@ export const resolveChannelConfig = (channelId: string): ChannelConfig | null =>
   };
 };
 
+/**
+ * The bot's LINE "Basic ID" (the @xxx handle from LINE Official Account
+ * Manager) — used only to build a deep link back to the specific OA chat
+ * after an external browser action (e.g. the magic-link verification
+ * landing page). Same default/per-channel env pattern as resolveChannelConfig;
+ * returns undefined (not an error) when unconfigured so callers can fall
+ * back to a generic app-open link instead.
+ */
+export const resolveBasicId = (channelId: string): string | undefined => {
+  const normalized = channelId.trim();
+  if (!normalized) return undefined;
+
+  if (normalized === DEFAULT_CHANNEL_ID) {
+    return process.env.LINE_CHANNEL_BASIC_ID?.trim() || undefined;
+  }
+
+  const envKey = toEnvKey(normalized);
+  return process.env[`LINE_CHANNEL_${envKey}_BASIC_ID`]?.trim() || undefined;
+};
+
 const channelServiceOverrideKey = (channelId: string): string => `channelServices:${channelId}`;
 
 /**

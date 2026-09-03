@@ -387,6 +387,34 @@ export const findProductByQuery = async (query: string): Promise<OdooProduct | n
   return parseProduct(rows[0]);
 };
 
+/**
+ * Powers the guided-form product picker (select instead of type) — mirrors
+ * listServiceCatalogItems's convention exactly, just without the
+ * type='service' filter findProductByQuery also doesn't apply.
+ */
+export const listProducts = async (limit = 10): Promise<OdooProduct[]> => {
+  const config = getConfig();
+  if (!config) return [];
+
+  const uid = await loginRead(config);
+  if (!uid) return [];
+
+  const rows = await executeKwRead<Record<string, unknown>[]>(
+    config,
+    uid,
+    'product.product',
+    'search_read',
+    [[]],
+    {
+      fields: ['id', 'name', 'list_price', 'qty_available', 'default_code'],
+      limit,
+      order: 'write_date desc',
+    }
+  );
+
+  return rows.map(parseProduct);
+};
+
 export const findOrderByReference = async (reference: string): Promise<OdooSaleOrder | null> => {
   const normalizedReference = normalizeOrderReference(reference);
   if (!normalizedReference) return null;

@@ -456,14 +456,21 @@ const createFormPromptFlexMessage = (params) => {
         ...(params.optional ? [{ label: params.language === 'en' ? 'Skip' : 'ข้าม', text: 'SKIP' }] : []),
         { label: params.language === 'en' ? 'Cancel' : 'ยกเลิก', text: 'CANCEL' },
     ];
+    const optionItems = (params.options || []).slice(0, 13 - actions.length).map(value => ({
+        type: 'action',
+        action: { type: 'message', label: buttonLabel(value), text: value },
+    }));
     return {
         type: 'flex',
         altText: truncate(params.prompt, 390),
         quickReply: {
-            items: actions.map(action => ({
-                type: 'action',
-                action: { type: 'message', label: action.label, text: action.text },
-            })),
+            items: [
+                ...optionItems,
+                ...actions.map(action => ({
+                    type: 'action',
+                    action: { type: 'message', label: action.label, text: action.text },
+                })),
+            ],
         },
         contents: {
             type: 'bubble',
@@ -493,7 +500,13 @@ const createFormPromptFlexMessage = (params) => {
                         cornerRadius: BRAND.radius,
                         paddingAll: 'md',
                         contents: [
-                            { type: 'text', text: params.language === 'en' ? 'Please type your answer in the chat box.' : 'กรุณาพิมพ์คำตอบในช่องแชท', size: 'xs', color: BRAND.inkSoft, wrap: true },
+                            {
+                                type: 'text',
+                                text: params.options?.length
+                                    ? (params.language === 'en' ? 'Tap an option below, or type your own answer.' : 'แตะเลือกตัวเลือกด้านล่าง หรือพิมพ์คำตอบเอง')
+                                    : (params.language === 'en' ? 'Please type your answer in the chat box.' : 'กรุณาพิมพ์คำตอบในช่องแชท'),
+                                size: 'xs', color: BRAND.inkSoft, wrap: true,
+                            },
                             { type: 'text', text: params.prompt, size: 'md', color: BRAND.ink, weight: 'bold', margin: 'sm', wrap: true },
                         ],
                     },

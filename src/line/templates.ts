@@ -513,20 +513,35 @@ export const createFormPromptFlexMessage = (params: {
   totalSteps: number;
   language: ReportLanguage;
   optional?: boolean;
+  /**
+   * Tappable options for fields with a bounded, listable set of values
+   * (e.g. product/service names) — select instead of type. Rendered as
+   * quick-reply chips only (not footer buttons, which would get crowded
+   * with more than a couple of options); Skip/Cancel remain as both.
+   * Capped so the combined quick-reply list never exceeds LINE's 13-item limit.
+   */
+  options?: string[];
 }): messagingApi.FlexMessage => {
   const actions = [
     ...(params.optional ? [{ label: params.language === 'en' ? 'Skip' : 'ข้าม', text: 'SKIP' }] : []),
     { label: params.language === 'en' ? 'Cancel' : 'ยกเลิก', text: 'CANCEL' },
   ];
+  const optionItems = (params.options || []).slice(0, 13 - actions.length).map(value => ({
+    type: 'action' as const,
+    action: { type: 'message' as const, label: buttonLabel(value), text: value },
+  }));
 
   return {
     type: 'flex',
     altText: truncate(params.prompt, 390),
     quickReply: {
-      items: actions.map(action => ({
-        type: 'action',
-        action: { type: 'message', label: action.label, text: action.text },
-      })),
+      items: [
+        ...optionItems,
+        ...actions.map(action => ({
+          type: 'action' as const,
+          action: { type: 'message' as const, label: action.label, text: action.text },
+        })),
+      ],
     },
     contents: {
       type: 'bubble',
@@ -556,7 +571,13 @@ export const createFormPromptFlexMessage = (params: {
             cornerRadius: BRAND.radius,
             paddingAll: 'md',
             contents: [
-              { type: 'text', text: params.language === 'en' ? 'Please type your answer in the chat box.' : 'กรุณาพิมพ์คำตอบในช่องแชท', size: 'xs', color: BRAND.inkSoft, wrap: true },
+              {
+                type: 'text',
+                text: params.options?.length
+                  ? (params.language === 'en' ? 'Tap an option below, or type your own answer.' : 'แตะเลือกตัวเลือกด้านล่าง หรือพิมพ์คำตอบเอง')
+                  : (params.language === 'en' ? 'Please type your answer in the chat box.' : 'กรุณาพิมพ์คำตอบในช่องแชท'),
+                size: 'xs', color: BRAND.inkSoft, wrap: true,
+              },
               { type: 'text', text: params.prompt, size: 'md', color: BRAND.ink, weight: 'bold', margin: 'sm', wrap: true },
             ],
           },

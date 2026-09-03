@@ -1,3 +1,8 @@
+import { listProducts, listServiceCatalogItems } from './odoo';
+
+const loadProductOptions = async (): Promise<string[]> => (await listProducts(10)).map(p => p.name);
+const loadServiceOptions = async (): Promise<string[]> => (await listServiceCatalogItems(10)).map(s => s.name);
+
 export type FlowKey =
   | 'USER_CREATE'
   | 'USER_READ'
@@ -18,6 +23,15 @@ export type FlowFieldSpec = {
   promptEn: string;
   optional?: boolean;
   validate: (value: string) => boolean;
+  /**
+   * When present, the field's prompt renders these as tappable quick-reply
+   * chips (in addition to Skip/Cancel) — select instead of type. Only for
+   * fields with a genuinely bounded, listable option set (product/service
+   * names); most fields have no finite list and stay free-text. Tapping a
+   * chip sends the exact string as the answer, same as typing it — no
+   * separate value/label distinction needed.
+   */
+  loadOptions?: () => Promise<string[]>;
 };
 
 export type FlowSpec = {
@@ -127,7 +141,7 @@ export const FLOW_SPECS: Record<FlowKey, FlowSpec> = {
     labelTh: 'ค้นหาบริการ',
     labelEn: 'Find a service',
     fields: [
-      { key: 'identifier', promptTh: 'รหัสหรือชื่อบริการ?', promptEn: 'Service code or name?', validate: isNonEmpty },
+      { key: 'identifier', promptTh: 'รหัสหรือชื่อบริการ?', promptEn: 'Service code or name?', validate: isNonEmpty, loadOptions: loadServiceOptions },
     ],
     buildFinalCommand: (c) => `SERVICE READ ${c.identifier}`,
   },
@@ -138,7 +152,7 @@ export const FLOW_SPECS: Record<FlowKey, FlowSpec> = {
     labelTh: 'แก้ไขบริการ',
     labelEn: 'Edit service',
     fields: [
-      { key: 'identifier', promptTh: 'รหัสหรือชื่อบริการที่ต้องการแก้ไข?', promptEn: 'Code or name of the service to edit?', validate: isNonEmpty },
+      { key: 'identifier', promptTh: 'รหัสหรือชื่อบริการที่ต้องการแก้ไข?', promptEn: 'Code or name of the service to edit?', validate: isNonEmpty, loadOptions: loadServiceOptions },
       { key: 'name', promptTh: 'ชื่อใหม่ (พิมพ์ SKIP เพื่อข้าม)', promptEn: 'New name (type SKIP to skip)', optional: true, validate: isNonEmpty },
       { key: 'price', promptTh: 'ราคาใหม่ (พิมพ์ SKIP เพื่อข้าม)', promptEn: 'New price (type SKIP to skip)', optional: true, validate: isPositiveNumber },
       { key: 'newCode', promptTh: 'รหัสใหม่ (พิมพ์ SKIP เพื่อข้าม)', promptEn: 'New code (type SKIP to skip)', optional: true, validate: isNonEmpty },
@@ -152,7 +166,7 @@ export const FLOW_SPECS: Record<FlowKey, FlowSpec> = {
     labelTh: 'ลบบริการ',
     labelEn: 'Delete service',
     fields: [
-      { key: 'identifier', promptTh: 'รหัสหรือชื่อบริการที่ต้องการลบ?', promptEn: 'Code or name of the service to delete?', validate: isNonEmpty },
+      { key: 'identifier', promptTh: 'รหัสหรือชื่อบริการที่ต้องการลบ?', promptEn: 'Code or name of the service to delete?', validate: isNonEmpty, loadOptions: loadServiceOptions },
     ],
     buildFinalCommand: (c) => `SERVICE DELETE ${c.identifier}`,
   },
@@ -163,7 +177,7 @@ export const FLOW_SPECS: Record<FlowKey, FlowSpec> = {
     labelTh: 'ค้นหาสินค้า',
     labelEn: 'Find a product',
     fields: [
-      { key: 'productName', promptTh: 'ชื่อสินค้าที่ต้องการค้นหา?', promptEn: 'Product name to search for?', validate: isNonEmpty },
+      { key: 'productName', promptTh: 'ชื่อสินค้าที่ต้องการค้นหา?', promptEn: 'Product name to search for?', validate: isNonEmpty, loadOptions: loadProductOptions },
     ],
     buildFinalCommand: (c) => `DEMO PRODUCT ${c.productName}`,
   },
@@ -185,7 +199,7 @@ export const FLOW_SPECS: Record<FlowKey, FlowSpec> = {
     labelTh: 'สร้างใบเสนอราคา',
     labelEn: 'Create a quote',
     fields: [
-      { key: 'productName', promptTh: 'ชื่อสินค้า?', promptEn: 'Product name?', validate: isNonEmpty },
+      { key: 'productName', promptTh: 'ชื่อสินค้า?', promptEn: 'Product name?', validate: isNonEmpty, loadOptions: loadProductOptions },
       { key: 'qty', promptTh: 'จำนวน?', promptEn: 'Quantity?', validate: isPositiveNumber },
       { key: 'customerName', promptTh: 'ชื่อลูกค้า?', promptEn: "Customer's name?", validate: isNonEmpty },
       { key: 'phone', promptTh: 'เบอร์โทรลูกค้า?', promptEn: "Customer's phone?", validate: isPhoneLike },
