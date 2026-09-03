@@ -85,6 +85,23 @@ export const parseOrderIdAndProductQty = (text: string, prefix: string): { order
 const usageReply = (language: UserLanguage, example: string) =>
   botText(tr(language, `รูปแบบไม่ถูกต้อง ตัวอย่าง: ${example}`, `That doesn't look right. Example: ${example}`), language);
 
+// "<prefix> <orderId> <free-text message>" — unlike parseOrderIdAndProductQty,
+// the remainder is arbitrary text (a message to the customer), not a
+// comma-split payload.
+const parseOrderIdAndMessage = (text: string, prefix: string): { orderId: number; message: string } | null => {
+  const raw = text.trim().replace(new RegExp(`^${prefix}\\s*`, 'i'), '').trim();
+  const firstSpace = raw.indexOf(' ');
+  if (firstSpace === -1) return null;
+
+  const orderId = Number(raw.slice(0, firstSpace).trim());
+  if (!Number.isFinite(orderId) || orderId <= 0) return null;
+
+  const message = raw.slice(firstSpace + 1).trim();
+  if (!message) return null;
+
+  return { orderId, message };
+};
+
 // Push the customer their order's current card after an admin-side state
 // change (e.g. QUOTE CONFIRM) that they weren't the one who triggered.
 // Silent no-op — not a failure — when the order has no linked partner or
@@ -429,6 +446,39 @@ const quoteListHandler: CommandHandler = {
   },
 };
 
+// QUOTE MESSAGE <orderId> <text> — admin-only. Sends a short custom message
+// to that order's customer, tied to the specific quote the admin is already
+// looking at — transactional, not marketing, so (unlike MESSAGE CUSTOMER in
+// sales-message.ts) this doesn't check marketingOptIn, same as QUOTE SEND's
+// existing unconditional push.
+const quoteMessageHandler: CommandHandler = {
+  name: 'quote-message',
+  match: (u) => u.startsWith('QUOTE MESSAGE'),
+  handle: async (ctx) => {
+    const { userLanguage, userId, profile, channel, text } = ctx;
+    if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
+
+    const parsed = parseOrderIdAndMessage(text, 'QUOTE MESSAGE');
+    if (!parsed) return [usageReply(userLanguage, 'QUOTE MESSAGE 17 Your quote is ready for review!')];
+
+    const order = await getSaleOrderById(parsed.orderId);
+    if (!order || !order.partner_id) return [notFoundReply(userLanguage)];
+
+    const partner = await getPartnerById(order.partner_id[0]);
+    const customerUserId = partner?.phone ? await findVerifiedUserIdByPhone(partner.phone) : null;
+    if (!customerUserId) {
+      recordAuditEvent({ action: 'quote_message', outcome: 'failure', actorUserId: userId, channelId: channel?.channelId, targetId: String(parsed.orderId), detail: 'customer_not_linked' });
+      return [botText(t('quoteNotLinked', userLanguage), userLanguage)];
+    }
+
+    const customerLanguage = await getUserLanguage(customerUserId);
+    await sendTargetedFlexMessage([customerUserId], botText(parsed.message, customerLanguage), channel?.channelId || DEFAULT_CHANNEL_ID);
+
+    recordAuditEvent({ action: 'quote_message', outcome: 'success', actorUserId: userId, channelId: channel?.channelId, targetId: String(parsed.orderId) });
+    return [botText(tr(userLanguage, 'ส่งข้อความให้ลูกค้าแล้ว', 'Message sent to the customer.'), userLanguage)];
+  },
+};
+
 export const quotationHandlers: CommandHandler[] = [
   quoteStatusHandler,
   quoteConfirmHandler,
@@ -438,5 +488,6 @@ export const quotationHandlers: CommandHandler[] = [
   quoteEditHandler,
   quoteCancelHandler,
   quoteInvoiceHandler,
+  quoteMessageHandler,
   quoteListHandler,
 ];

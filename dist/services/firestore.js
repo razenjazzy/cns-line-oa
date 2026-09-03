@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteAuditEventsByIds = exports.listAuditEventsOlderThan = exports.listRecentAuditEvents = exports.recordAuditEvent = exports.cancelGroupBuy = exports.confirmGroupBuy = exports.joinGroupBuy = exports.attachGroupBuyOdooOrder = exports.listGroupBuysByCreator = exports.getGroupBuyById = exports.createGroupBuy = exports.consumeOdooVerificationByToken = exports.consumeOdooVerificationByOtp = exports.createOdooVerificationChallenge = exports.setPlatformConfig = exports.getPlatformConfig = exports.findVerifiedUserIdByPhone = exports.setUserOdooVerificationStatus = exports.setUserOdooPartner = exports.setUserRole = exports.setUserPendingFlow = exports.recordChatFeedback = exports.filterMarketingOptedInUserIds = exports.deleteUserProfile = exports.setMarketingOptIn = exports.markConsentNoticeShown = exports.getUserProfile = exports.setUserLanguage = exports.getUserLanguage = exports.markUserFirstContact = exports.setEscalationState = exports.getEscalationState = exports.saveConversationMessage = exports.getConversationHistory = exports.updateUserScore = exports.saveReportLog = exports.checkFirestoreReady = void 0;
+exports.deleteAuditEventsByIds = exports.listAuditEventsOlderThan = exports.listRecentAuditEvents = exports.recordAuditEvent = exports.cancelGroupBuy = exports.confirmGroupBuy = exports.joinGroupBuy = exports.attachGroupBuyOdooOrder = exports.listGroupBuysByCreator = exports.getGroupBuyById = exports.createGroupBuy = exports.consumeActionOtpChallenge = exports.createActionOtpChallenge = exports.consumeOdooVerificationByToken = exports.consumeOdooVerificationByOtp = exports.createOdooVerificationChallenge = exports.setPlatformConfig = exports.getPlatformConfig = exports.findVerifiedUserIdByPhone = exports.setUserOdooVerificationStatus = exports.setUserOdooPartner = exports.setUserRole = exports.setUserPendingFlow = exports.recordChatFeedback = exports.filterMarketingOptedInUserIds = exports.deleteUserProfile = exports.setMarketingOptIn = exports.setLastActionOtpAt = exports.markConsentNoticeShown = exports.getUserProfile = exports.setUserLanguage = exports.getUserLanguage = exports.markUserFirstContact = exports.setEscalationState = exports.getEscalationState = exports.saveConversationMessage = exports.getConversationHistory = exports.updateUserScore = exports.saveReportLog = exports.checkFirestoreReady = void 0;
 const firestore_1 = require("@google-cloud/firestore");
 let db = null;
 const isPendingFlowActive = (pendingFlow) => {
@@ -114,11 +114,19 @@ const getDb = () => {
         // test deploy) there's no such identity, so allow credentials to be
         // supplied inline as JSON instead of relying on ADC.
         const credentialsJson = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON?.trim();
+        // ignoreUndefinedProperties: the Firestore SDK otherwise throws on any
+        // write containing an `undefined` field (found live this session —
+        // clearing an optional field by setting it to `undefined` silently
+        // failed the whole write and rolled the optimistic cache update back,
+        // discarding real user input). Dropping the field instead — the same
+        // effect merge:true already has for an omitted key — matches how every
+        // write in this file is meant to behave, so this closes that entire
+        // class of bug rather than just the one call site that surfaced it.
         if (credentialsJson) {
-            db = new firestore_1.Firestore({ projectId, credentials: JSON.parse(credentialsJson) });
+            db = new firestore_1.Firestore({ projectId, credentials: JSON.parse(credentialsJson), ignoreUndefinedProperties: true });
         }
         else {
-            db = new firestore_1.Firestore({ projectId });
+            db = new firestore_1.Firestore({ projectId, ignoreUndefinedProperties: true });
         }
     }
     catch (error) {
@@ -418,6 +426,7 @@ const getUserProfile = async (userId) => {
         firstMessageAt: cached.firstMessageAt,
         consentNoticeShownAt: cached.consentNoticeShownAt,
         marketingOptIn: cached.marketingOptIn || false,
+        lastActionOtpAt: cached.lastActionOtpAt,
     };
     return withFirestoreRead('getUserProfile', fallbackProfile, async (database) => {
         const doc = await database.collection('users').doc(userId).get();
@@ -435,6 +444,7 @@ const getUserProfile = async (userId) => {
             firstMessageAt: typeof data.firstMessageAt === 'string' ? data.firstMessageAt : undefined,
             consentNoticeShownAt: typeof data.consentNoticeShownAt === 'string' ? data.consentNoticeShownAt : undefined,
             marketingOptIn: data.marketingOptIn === true,
+            lastActionOtpAt: typeof data.lastActionOtpAt === 'string' ? data.lastActionOtpAt : undefined,
         };
         mergeCachedUserState(userId, profile);
         return profile;
@@ -462,6 +472,22 @@ const markConsentNoticeShown = async (userId) => {
     return result.ok;
 };
 exports.markConsentNoticeShown = markConsentNoticeShown;
+const setLastActionOtpAt = async (userId) => {
+    const previous = userStateCache.get(userId);
+    const now = new Date().toISOString();
+    mergeCachedUserState(userId, { lastActionOtpAt: now });
+    const result = await withFirestoreWrite('setLastActionOtpAt', async (database) => {
+        await database.collection('users').doc(userId).set({ lastActionOtpAt: now }, { merge: true });
+    });
+    if (!result.ok) {
+        if (previous)
+            userStateCache.set(userId, previous);
+        else
+            userStateCache.delete(userId);
+    }
+    return result.ok;
+};
+exports.setLastActionOtpAt = setLastActionOtpAt;
 const setMarketingOptIn = async (userId, optIn) => {
     const previous = userStateCache.get(userId);
     mergeCachedUserState(userId, { marketingOptIn: optIn });
@@ -894,6 +920,142 @@ const consumeOdooVerificationByToken = async (token) => {
     }
 };
 exports.consumeOdooVerificationByToken = consumeOdooVerificationByToken;
+const ACTION_OTP_TTL_MINUTES = Number(process.env.ACTION_OTP_TTL_MINUTES || 10);
+const actionOtpCollection = 'actionOtpChallenges';
+/** In-memory fallback, same not-configured-Firestore rationale as inMemoryVerificationChallenges above. */
+const inMemoryActionOtpChallenges = new Map();
+const createActionOtpChallengeInMemory = (params) => {
+    const now = new Date();
+    const createdAt = now.toISOString();
+    const expiresAt = new Date(now.getTime() + ACTION_OTP_TTL_MINUTES * 60 * 1000).toISOString();
+    const challenge = {
+        id: generateInMemoryId(),
+        userId: params.userId,
+        channelId: params.channelId,
+        otpCode: params.otpCode,
+        pendingCommandText: params.pendingCommandText,
+        status: 'pending',
+        attemptCount: 0,
+        expiresAt,
+        createdAt,
+        updatedAt: createdAt,
+    };
+    inMemoryActionOtpChallenges.set(challenge.id, challenge);
+    return { ok: true, data: challenge };
+};
+const consumeActionOtpChallengeInMemory = (params) => {
+    const pending = Array.from(inMemoryActionOtpChallenges.values())
+        .filter(c => c.userId === params.userId && c.status === 'pending')
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    if (!pending.length)
+        return { ok: false, error: 'action_otp_not_found' };
+    const newest = pending[0];
+    if (newest.attemptCount >= ODOO_VERIFY_OTP_MAX_ATTEMPTS) {
+        newest.status = 'expired';
+        newest.updatedAt = new Date().toISOString();
+        return { ok: false, error: 'action_otp_locked' };
+    }
+    if (newest.otpCode !== params.otpCode) {
+        newest.attemptCount += 1;
+        newest.updatedAt = new Date().toISOString();
+        return { ok: false, error: 'action_otp_invalid' };
+    }
+    if (new Date(newest.expiresAt).getTime() <= Date.now()) {
+        newest.status = 'expired';
+        newest.updatedAt = new Date().toISOString();
+        return { ok: false, error: 'action_otp_expired' };
+    }
+    const now = new Date().toISOString();
+    newest.status = 'verified';
+    newest.updatedAt = now;
+    return { ok: true, data: { ...newest } };
+};
+const toActionOtpChallenge = (id, raw) => {
+    const statusRaw = toOptionalString(raw.status);
+    const status = statusRaw === 'verified' || statusRaw === 'expired' ? statusRaw : 'pending';
+    return {
+        id,
+        userId: toOptionalString(raw.userId) || '',
+        channelId: toOptionalString(raw.channelId) || 'default',
+        otpCode: toOptionalString(raw.otpCode) || '',
+        pendingCommandText: toOptionalString(raw.pendingCommandText) || '',
+        status,
+        attemptCount: Math.max(0, Math.trunc(typeof raw.attemptCount === 'number' ? raw.attemptCount : 0)),
+        expiresAt: toOptionalString(raw.expiresAt) || new Date(0).toISOString(),
+        createdAt: toOptionalString(raw.createdAt) || new Date(0).toISOString(),
+        updatedAt: toOptionalString(raw.updatedAt) || new Date(0).toISOString(),
+    };
+};
+const createActionOtpChallenge = async (params) => {
+    const database = getDb();
+    if (!database)
+        return createActionOtpChallengeInMemory(params);
+    try {
+        const now = new Date();
+        const createdAt = now.toISOString();
+        const expiresAt = new Date(now.getTime() + ACTION_OTP_TTL_MINUTES * 60 * 1000).toISOString();
+        const ref = database.collection(actionOtpCollection).doc();
+        const challenge = {
+            id: ref.id,
+            userId: params.userId,
+            channelId: params.channelId,
+            otpCode: params.otpCode,
+            pendingCommandText: params.pendingCommandText,
+            status: 'pending',
+            attemptCount: 0,
+            expiresAt,
+            createdAt,
+            updatedAt: createdAt,
+        };
+        await ref.set({ ...challenge, createdAtServer: firestore_1.FieldValue.serverTimestamp(), updatedAtServer: firestore_1.FieldValue.serverTimestamp() });
+        return { ok: true, data: challenge };
+    }
+    catch (error) {
+        logFirestoreError('createActionOtpChallenge', error);
+        return { ok: false, error: `Firestore createActionOtpChallenge failed: ${toErrorMessage(error)}` };
+    }
+};
+exports.createActionOtpChallenge = createActionOtpChallenge;
+const consumeActionOtpChallenge = async (params) => {
+    const database = getDb();
+    if (!database)
+        return consumeActionOtpChallengeInMemory(params);
+    try {
+        const result = await database.runTransaction(async (tx) => {
+            const query = database.collection(actionOtpCollection)
+                .where('userId', '==', params.userId)
+                .where('status', '==', 'pending')
+                .orderBy('createdAt', 'desc')
+                .limit(1);
+            const pending = await tx.get(query);
+            if (pending.empty)
+                throw new Error('action_otp_not_found');
+            const doc = pending.docs[0];
+            const challenge = toActionOtpChallenge(doc.id, (doc.data() || {}));
+            if (challenge.attemptCount >= ODOO_VERIFY_OTP_MAX_ATTEMPTS) {
+                tx.update(doc.ref, { status: 'expired', updatedAt: new Date().toISOString(), updatedAtServer: firestore_1.FieldValue.serverTimestamp() });
+                throw new Error('action_otp_locked');
+            }
+            if (challenge.otpCode !== params.otpCode) {
+                tx.update(doc.ref, { attemptCount: firestore_1.FieldValue.increment(1), updatedAt: new Date().toISOString(), updatedAtServer: firestore_1.FieldValue.serverTimestamp() });
+                throw new Error('action_otp_invalid');
+            }
+            if (new Date(challenge.expiresAt).getTime() <= Date.now()) {
+                tx.update(doc.ref, { status: 'expired', updatedAt: new Date().toISOString(), updatedAtServer: firestore_1.FieldValue.serverTimestamp() });
+                throw new Error('action_otp_expired');
+            }
+            const now = new Date().toISOString();
+            tx.update(doc.ref, { status: 'verified', updatedAt: now, updatedAtServer: firestore_1.FieldValue.serverTimestamp() });
+            return { ...challenge, status: 'verified', updatedAt: now };
+        });
+        return { ok: true, data: result };
+    }
+    catch (error) {
+        logFirestoreError('consumeActionOtpChallenge', error);
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+};
+exports.consumeActionOtpChallenge = consumeActionOtpChallenge;
 const createGroupBuy = async (params) => {
     const database = getDb();
     if (!database) {

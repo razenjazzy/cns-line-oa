@@ -67,6 +67,7 @@ export const UI_STRINGS = {
   myQuotations: { en: 'My quotations', th: 'ใบเสนอราคาของฉัน' },
   noQuotations: { en: "No quotations found.", th: 'ไม่พบใบเสนอราคา' },
   moreQuotations: { en: 'More quotations exist — ask an admin to narrow the search.', th: 'มีใบเสนอราคาเพิ่มเติม — กรุณาแจ้งแอดมินให้ช่วยค้นหาแบบเจาะจงมากขึ้น' },
+  messageCustomer: { en: 'Message customer', th: 'ส่งข้อความลูกค้า' },
 } as const;
 
 export type UiStringKey = keyof typeof UI_STRINGS;

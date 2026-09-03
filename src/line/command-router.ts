@@ -31,7 +31,7 @@ import {
 import { isServiceEnabledForChannel } from '../services/service-catalog';
 import { resolveServiceForCommand } from '../services/service-catalog';
 import { FLOW_SPECS, getFlowByStartCommand } from '../services/guided-forms';
-import { createBotTextFlexMessage, createFormPromptFlexMessage, createServiceHomeFlexMessage } from './templates';
+import { createBotTextFlexMessage, createFormPromptFlexMessage, createOptionalSummaryFlexMessage, createServiceHomeFlexMessage } from './templates';
 import { getAvailableServices } from '../services/service-catalog';
 import { ChannelContext } from './channels';
 import type { FlowSpec } from '../services/guided-forms';
@@ -124,6 +124,26 @@ const buildFormPromptMessage = async (
   });
 };
 
+const buildOptionalSummaryMessage = (
+  language: UserLanguage,
+  agentName: string,
+  flowSpec: FlowSpec,
+  collected: Record<string, string>,
+): messagingApi.Message => {
+  const startIndex = flowSpec.optionalSummaryStartIndex ?? flowSpec.fields.length;
+  const fields = flowSpec.fields.slice(startIndex).map((field, offset) => ({
+    index: startIndex + offset,
+    label: tr(language, field.summaryLabelTh || field.promptTh, field.summaryLabelEn || field.promptEn),
+    value: collected[field.key] || undefined,
+  }));
+  return createOptionalSummaryFlexMessage({
+    title: tr(language, `${agentName} ${flowSpec.labelTh}`, `${agentName} ${flowSpec.labelEn}`),
+    fields,
+    language,
+    finalizeLabel: tr(language, 'สร้างเลย', 'Create now'),
+  });
+};
+
 // ---------------------------------------------------------------------------
 // Guided form step handler
 // ---------------------------------------------------------------------------
@@ -132,8 +152,9 @@ const handleGuidedFormStep = async (ctx: CommandReplyContext): Promise<messaging
   const { profile, userId, userLanguage, agentName } = ctx;
   const trimmed = ctx.text.trim();
   const upperText = trimmed.toUpperCase();
+  const pending = profile.pendingFlow!;
 
-  const flowSpec = FLOW_SPECS[profile.pendingFlow!.flow as keyof typeof FLOW_SPECS];
+  const flowSpec = FLOW_SPECS[pending.flow as keyof typeof FLOW_SPECS];
 
   if (!flowSpec) {
     await setUserPendingFlow(userId, null);
@@ -148,13 +169,62 @@ const handleGuidedFormStep = async (ctx: CommandReplyContext): Promise<messaging
     ];
   }
 
-  const field = flowSpec.fields[profile.pendingFlow!.stepIndex];
+  // --- Grouped optional-fields summary mode ---
+  if (pending.summaryMode) {
+    if (upperText === 'FORM FINALIZE') {
+      await setUserPendingFlow(userId, null);
+      const finalCommandText = flowSpec.buildFinalCommand(pending.collected);
+      return resolveCommandReply({ ...ctx, text: finalCommandText, profile: { ...profile, pendingFlow: undefined } });
+    }
+
+    const fieldMatch = pending.editingFieldIndex === undefined ? upperText.match(/^FORM FIELD (\d+)$/) : null;
+    if (fieldMatch) {
+      const idx = Number(fieldMatch[1]);
+      if (flowSpec.fields[idx]) {
+        await setUserPendingFlow(userId, { ...pending, editingFieldIndex: idx, expiresAt: buildFlowExpiry() });
+        return [await buildFormPromptMessage(userLanguage, agentName, flowSpec, idx)];
+      }
+    }
+
+    if (pending.editingFieldIndex !== undefined) {
+      const field = flowSpec.fields[pending.editingFieldIndex];
+      const isSkip = Boolean(field.optional) && upperText === 'SKIP';
+      const value = isSkip ? '' : trimmed;
+
+      if (!isSkip && !field.validate(value)) {
+        return [await buildFormPromptMessage(
+          userLanguage, agentName, flowSpec, pending.editingFieldIndex,
+          tr(userLanguage,
+            `ค่าที่กรอกไม่ถูกต้อง กรุณาลองใหม่\n${field.promptTh}`,
+            `That doesn't look right, please try again.\n${field.promptEn}`,
+          ),
+        )];
+      }
+
+      const collected = { ...pending.collected, [field.key]: value };
+      // Omit editingFieldIndex entirely rather than setting it to
+      // `undefined` — the Firestore SDK rejects any document field whose
+      // value is `undefined` outright (throws, not a no-op), which was
+      // silently failing this exact write and rolling the cache back to
+      // the pre-edit state, discarding whatever the user just answered.
+      const { editingFieldIndex: _clearedFieldIndex, ...pendingWithoutEditingField } = pending;
+      await setUserPendingFlow(userId, { ...pendingWithoutEditingField, collected, expiresAt: buildFlowExpiry() });
+      return [buildOptionalSummaryMessage(userLanguage, agentName, flowSpec, collected)];
+    }
+
+    // Idling at the summary card with unrecognized input — re-show it
+    // rather than treating stray text as an error.
+    return [buildOptionalSummaryMessage(userLanguage, agentName, flowSpec, pending.collected)];
+  }
+
+  // --- Linear one-field-at-a-time mode (existing behavior) ---
+  const field = flowSpec.fields[pending.stepIndex];
   const isSkip = Boolean(field.optional) && upperText === 'SKIP';
   const value = isSkip ? '' : trimmed;
 
   if (!isSkip && !field.validate(value)) {
     return [await buildFormPromptMessage(
-      userLanguage, agentName, flowSpec, profile.pendingFlow!.stepIndex,
+      userLanguage, agentName, flowSpec, pending.stepIndex,
       tr(userLanguage,
         `ค่าที่กรอกไม่ถูกต้อง กรุณาลองใหม่\n${field.promptTh}`,
         `That doesn't look right, please try again.\n${field.promptEn}`,
@@ -162,8 +232,19 @@ const handleGuidedFormStep = async (ctx: CommandReplyContext): Promise<messaging
     )];
   }
 
-  const collected = { ...profile.pendingFlow!.collected, [field.key]: value };
-  const nextIndex = profile.pendingFlow!.stepIndex + 1;
+  const collected = { ...pending.collected, [field.key]: value };
+  const nextIndex = pending.stepIndex + 1;
+
+  if (flowSpec.optionalSummaryStartIndex !== undefined && nextIndex === flowSpec.optionalSummaryStartIndex) {
+    await setUserPendingFlow(userId, {
+      flow: flowSpec.key,
+      stepIndex: nextIndex,
+      collected,
+      expiresAt: buildFlowExpiry(),
+      summaryMode: true,
+    });
+    return [buildOptionalSummaryMessage(userLanguage, agentName, flowSpec, collected)];
+  }
 
   if (nextIndex >= flowSpec.fields.length) {
     await setUserPendingFlow(userId, null);

@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.createQuotationListFlexMessage = exports.createQuotationJourneyFlexMessage = exports.createFormPromptFlexMessage = exports.createOrderSummaryFlexMessage = exports.createServiceActionFlexMessage = exports.createServiceHomeFlexMessage = exports.createProductCardFlexMessage = exports.createDailyReportFlexMessage = exports.createBotTextFlexMessage = exports.formatMoney = void 0;
+exports.createOptionalSummaryFlexMessage = exports.createQuotationListFlexMessage = exports.createQuotationJourneyFlexMessage = exports.createFormPromptFlexMessage = exports.createOrderSummaryFlexMessage = exports.createServiceActionFlexMessage = exports.createServiceHomeFlexMessage = exports.createProductCardFlexMessage = exports.createDailyReportFlexMessage = exports.createBotTextFlexMessage = exports.formatMoney = void 0;
 const channels_1 = require("./channels");
 const i18n_1 = require("../services/i18n");
 // Cloudnex brand palette — kept consistent across every Flex message.
@@ -597,6 +597,7 @@ const createQuotationJourneyFlexMessage = (order, options, language) => {
         if (canInvoice) {
             footerRows.push([createMessageActionButton((0, i18n_1.t)('createInvoice', language), `QUOTE INVOICE ${order.id}`, 'primary', BRAND.teal)]);
         }
+        footerRows.push([createPrefillButton((0, i18n_1.t)('messageCustomer', language), `QUOTE MESSAGE ${order.id} `, 'secondary', BRAND.tealTint)]);
         if (options.portalLink || options.pdfLink) {
             footerRows.push([
                 ...(options.portalLink ? [createUriActionButton((0, i18n_1.t)('preview', language), options.portalLink, 'secondary', BRAND.goldTint)] : []),
@@ -776,3 +777,72 @@ const createQuotationListFlexMessage = (orders, hasMore, language) => {
     };
 };
 exports.createQuotationListFlexMessage = createQuotationListFlexMessage;
+/**
+ * Grouped optional-fields step for a guided form (see FlowSpec.optionalSummaryStartIndex
+ * in guided-forms.ts) — every remaining optional field shown together with
+ * its current value, one quick-reply chip per field to fill just that one
+ * (returns to this same card afterward), and one primary "finalize" button
+ * to create with whatever's been filled. Replaces N sequential prompts with
+ * one card for flows where that's a long journey for a repeat user.
+ */
+const createOptionalSummaryFlexMessage = (params) => {
+    return {
+        type: 'flex',
+        altText: truncate(params.title, 390),
+        quickReply: {
+            items: params.fields.slice(0, 13).map(f => ({
+                type: 'action',
+                action: { type: 'message', label: buttonLabel(`${f.value ? '✓ ' : ''}${f.label}`), text: `FORM FIELD ${f.index}` },
+            })),
+        },
+        contents: {
+            type: 'bubble',
+            styles: {
+                header: { backgroundColor: BRAND.teal },
+                body: { backgroundColor: BRAND.surface },
+                footer: { backgroundColor: BRAND.surface },
+            },
+            header: {
+                type: 'box',
+                layout: 'vertical',
+                paddingAll: 'md',
+                contents: [
+                    { type: 'text', text: params.title, weight: 'bold', size: 'md', color: '#FFFFFF', wrap: true },
+                    { type: 'text', text: params.language === 'en' ? 'Optional — tap any to fill, or finalize as-is' : 'ไม่บังคับ — แตะเพื่อกรอก หรือสร้างได้เลย', size: 'xs', color: '#DDEBE9', margin: 'xs', wrap: true },
+                ],
+            },
+            body: {
+                type: 'box',
+                layout: 'vertical',
+                spacing: 'sm',
+                contents: params.fields.map(f => ({
+                    type: 'box',
+                    layout: 'horizontal',
+                    backgroundColor: BRAND.paper,
+                    cornerRadius: BRAND.radius,
+                    paddingAll: 'sm',
+                    action: { type: 'message', text: `FORM FIELD ${f.index}` },
+                    contents: [
+                        { type: 'text', text: f.label, size: 'sm', weight: 'bold', color: BRAND.ink, flex: 2, wrap: true },
+                        {
+                            type: 'text',
+                            text: f.value || (params.language === 'en' ? '(not set)' : '(ยังไม่ระบุ)'),
+                            size: 'sm',
+                            color: f.value ? BRAND.tealStrong : BRAND.inkSoft,
+                            align: 'end',
+                            flex: 3,
+                            wrap: true,
+                        },
+                    ],
+                })),
+            },
+            footer: {
+                type: 'box',
+                layout: 'vertical',
+                spacing: 'sm',
+                contents: [createMessageActionButton(params.finalizeLabel, 'FORM FINALIZE', 'primary', BRAND.teal)],
+            },
+        },
+    };
+};
+exports.createOptionalSummaryFlexMessage = createOptionalSummaryFlexMessage;

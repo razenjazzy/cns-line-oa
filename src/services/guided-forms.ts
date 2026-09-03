@@ -19,6 +19,7 @@ export type FlowKey =
   | 'DEMO_PRODUCT'
   | 'DEMO_ORDER'
   | 'DEMO_QUOTE'
+  | 'MESSAGE_CUSTOMER'
   | 'VERIFY';
 
 export type FlowFieldSpec = {
@@ -27,6 +28,9 @@ export type FlowFieldSpec = {
   promptEn: string;
   optional?: boolean;
   validate: (value: string) => boolean;
+  /** Short label for the grouped optional-fields summary card (see FlowSpec.optionalSummaryStartIndex) — falls back to the full prompt if omitted. */
+  summaryLabelTh?: string;
+  summaryLabelEn?: string;
   /**
    * When present, the field's prompt renders these as tappable quick-reply
    * chips (in addition to Skip/Cancel) — select instead of type. Only for
@@ -46,6 +50,15 @@ export type FlowSpec = {
   labelEn: string;
   fields: FlowFieldSpec[];
   buildFinalCommand: (collected: Record<string, string>) => string;
+  /**
+   * Once linear progress reaches this field index, switch from
+   * one-field-at-a-time prompts to a single grouped summary card listing
+   * every field from here on, each fillable independently (return to the
+   * same card) or skippable in bulk via one "finalize" tap. Only set for
+   * flows with several optional fields worth grouping — most flows leave
+   * this unset and stay purely linear.
+   */
+  optionalSummaryStartIndex?: number;
 };
 
 const isNonEmpty = (value: string): boolean => value.trim().length > 0;
@@ -208,14 +221,32 @@ export const FLOW_SPECS: Record<FlowKey, FlowSpec> = {
       { key: 'customerName', promptTh: 'ชื่อลูกค้า?', promptEn: "Customer's name?", validate: isNonEmpty },
       { key: 'phone', promptTh: 'เบอร์โทรลูกค้า?', promptEn: "Customer's phone?", validate: isPhoneLike },
       // Optional, exactly like Odoo web — blank/SKIP leaves the field
-      // entirely unset in Odoo rather than writing an empty value.
-      { key: 'customerReference', promptTh: 'เลขอ้างอิงลูกค้า (ถ้ามี)?', promptEn: "Customer reference, if any?", optional: true, validate: isCommaFreeText },
-      { key: 'discountPercent', promptTh: 'ส่วนลด % (ถ้ามี)?', promptEn: 'Discount %, if any?', optional: true, validate: isPercent },
-      { key: 'validityDate', promptTh: 'วันหมดอายุใบเสนอราคา (YYYY-MM-DD, ถ้ามี)?', promptEn: 'Quotation expiration date (YYYY-MM-DD), if any?', optional: true, validate: isIsoDate },
-      { key: 'note', promptTh: 'หมายเหตุ (ถ้ามี)?', promptEn: 'Note, if any?', optional: true, validate: isCommaFreeText },
-      { key: 'paymentTerm', promptTh: 'เงื่อนไขการชำระเงิน (เช่น 30 Days, ถ้ามี)?', promptEn: 'Payment term (e.g. 30 Days), if any?', optional: true, validate: isCommaFreeText },
+      // entirely unset in Odoo rather than writing an empty value. Grouped
+      // into one summary card (see optionalSummaryStartIndex below) rather
+      // than 5 sequential prompts — summaryLabel* keeps the card's chips short.
+      { key: 'customerReference', promptTh: 'เลขอ้างอิงลูกค้า (ถ้ามี)?', promptEn: "Customer reference, if any?", optional: true, validate: isCommaFreeText, summaryLabelTh: 'เลขอ้างอิงลูกค้า', summaryLabelEn: 'Customer ref' },
+      { key: 'discountPercent', promptTh: 'ส่วนลด % (ถ้ามี)?', promptEn: 'Discount %, if any?', optional: true, validate: isPercent, summaryLabelTh: 'ส่วนลด %', summaryLabelEn: 'Discount %' },
+      { key: 'validityDate', promptTh: 'วันหมดอายุใบเสนอราคา (YYYY-MM-DD, ถ้ามี)?', promptEn: 'Quotation expiration date (YYYY-MM-DD), if any?', optional: true, validate: isIsoDate, summaryLabelTh: 'วันหมดอายุ', summaryLabelEn: 'Valid until' },
+      { key: 'note', promptTh: 'หมายเหตุ (ถ้ามี)?', promptEn: 'Note, if any?', optional: true, validate: isCommaFreeText, summaryLabelTh: 'หมายเหตุ', summaryLabelEn: 'Note' },
+      { key: 'paymentTerm', promptTh: 'เงื่อนไขการชำระเงิน (เช่น 30 Days, ถ้ามี)?', promptEn: 'Payment term (e.g. 30 Days), if any?', optional: true, validate: isCommaFreeText, summaryLabelTh: 'เงื่อนไขชำระเงิน', summaryLabelEn: 'Payment term' },
     ],
+    optionalSummaryStartIndex: 4,
     buildFinalCommand: (c) => `DEMO QUOTE ${c.productName},${c.qty},${c.customerName},${c.phone},${c.customerReference || ''},${c.discountPercent || ''},${c.validityDate || ''},${c.note || ''},${c.paymentTerm || ''}`,
+  },
+  MESSAGE_CUSTOMER: {
+    key: 'MESSAGE_CUSTOMER',
+    startCommand: 'FORM MESSAGE CUSTOMER',
+    requiresAdmin: true,
+    labelTh: 'ส่งข้อความหาลูกค้า',
+    labelEn: 'Message a customer',
+    fields: [
+      { key: 'phone', promptTh: 'เบอร์โทรลูกค้า?', promptEn: "Customer's phone?", validate: isPhoneLike },
+      // Not comma-guarded like the other free-text optional fields — this
+      // isn't CSV-joined (buildFinalCommand keeps it as the trailing
+      // free-text segment), so commas in the message are safe here.
+      { key: 'message', promptTh: 'ข้อความที่ต้องการส่ง?', promptEn: 'Message to send?', validate: isNonEmpty },
+    ],
+    buildFinalCommand: (c) => `MESSAGE CUSTOMER ${c.phone} ${c.message}`,
   },
 };
 

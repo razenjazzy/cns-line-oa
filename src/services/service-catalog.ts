@@ -34,6 +34,7 @@ export const SERVICE_CATALOG: ServiceDefinition[] = [
       { text: 'FORM DEMO QUOTE', labelTh: 'สร้างใบเสนอราคา', labelEn: 'Create a quote' },
       { text: 'FORM DEMO ORDER', labelTh: 'เช็คสถานะออเดอร์', labelEn: 'Check an order' },
       { text: 'QUOTE LIST', labelTh: 'ใบเสนอราคาของฉัน', labelEn: 'My quotations' },
+      { text: 'FORM MESSAGE CUSTOMER', labelTh: 'ส่งข้อความหาลูกค้า (แอดมิน)', labelEn: 'Message a customer (admin)', requiresAdmin: true },
     ],
   },
   {
@@ -93,6 +94,9 @@ const COMMAND_PREFIX_SERVICE_MAP: { prefix: string; service: ServiceKey }[] = [
   { prefix: 'QUOTE CANCEL', service: 'commerce' },
   { prefix: 'QUOTE INVOICE', service: 'commerce' },
   { prefix: 'QUOTE LIST', service: 'commerce' },
+  { prefix: 'QUOTE MESSAGE', service: 'commerce' },
+  { prefix: 'MESSAGE CUSTOMER', service: 'commerce' },
+  { prefix: 'FORM MESSAGE CUSTOMER', service: 'commerce' },
   { prefix: 'USER CREATE', service: 'directory' },
   { prefix: 'USER READ', service: 'directory' },
   { prefix: 'USER UPDATE', service: 'directory' },

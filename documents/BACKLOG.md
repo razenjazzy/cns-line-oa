@@ -1,11 +1,26 @@
 # Backlog
 
-## Status as of 2026-09-03
+## Status as of 2026-09-04
 
-Follow-up items after the quotation-journey P0/P1/P2 pass (quote lifecycle
-actions, optional Odoo fields, "my quotations" listing, Flex design-system
-hardening, rich-menu fix). Nothing here blocks what's already shipped —
-these are the explicitly deferred or not-yet-verified pieces.
+Follow-up items after the quotation-journey P0/P1/P2 pass and the step-up
+OTP / grouped optional-fields / sales messaging pass that followed it.
+Nothing here blocks what's already shipped — these are the explicitly
+deferred or not-yet-verified pieces.
+
+---
+
+## Deferred by explicit request — not yet scoped
+
+- **"Edit/delete for authorized users"** — raised alongside the step-up OTP
+  request, but the user asked to discuss the actual gap separately rather
+  than guess at it. Not implemented. Come back to this once scoped.
+- **Step-up OTP scope** — currently gates only the quote lifecycle
+  (`DEMO QUOTE`, `QUOTE ADD`/`EDIT`/`CANCEL`/`CONFIRM`/`SEND`/`INVOICE`/
+  `APPROVE`/`MESSAGE`, `MESSAGE CUSTOMER`) — a deliberate scope decision,
+  not an oversight. `USER`/`SERVICE` CRUD and `ADMIN ENABLE`/`DISABLE` are
+  not gated by a fresh OTP yet; revisit if that surface needs the same
+  treatment (the mechanism in `src/line/handlers/action-otp.ts` is generic
+  enough to extend — just add prefixes to `GATED_MUTATION_PREFIXES`).
 
 ---
 

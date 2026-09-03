@@ -33,6 +33,7 @@ export type CommandHandler = {
 // ---------------------------------------------------------------------------
 // Registry — order matters; earlier handlers have higher priority.
 // ---------------------------------------------------------------------------
+import { actionOtpHandlers }  from './action-otp';
 import { navigationHandlers } from './navigation';
 import { adminHandlers }      from './admin';
 import { verificationHandlers } from './verification';
@@ -40,6 +41,7 @@ import { languageHandlers }   from './language';
 import { helpHandlers }       from './help';
 import { commerceHandlers }   from './commerce';
 import { quotationHandlers }  from './quotation';
+import { salesMessageHandlers } from './sales-message';
 import { userDirectoryHandlers } from './user-directory';
 import { serviceCatalogHandlers } from './service-catalog-handler';
 import { groupBuyHandler }    from './group-buy';
@@ -48,6 +50,10 @@ import { feedbackHandlers }   from './feedback';
 import { listSkillsHandler, skillsHandler } from './skills';
 
 export const COMMAND_HANDLERS: CommandHandler[] = [
+  // Must come first — intercepts a gated quote-mutation command before its
+  // real handler runs when the caller's step-up OTP isn't fresh. See
+  // src/line/handlers/action-otp.ts.
+  ...actionOtpHandlers,
   ...navigationHandlers,
   ...adminHandlers,
   ...verificationHandlers,
@@ -57,6 +63,7 @@ export const COMMAND_HANDLERS: CommandHandler[] = [
   ...feedbackHandlers,
   ...commerceHandlers,
   ...quotationHandlers,
+  ...salesMessageHandlers,
   ...userDirectoryHandlers,
   ...serviceCatalogHandlers,
   groupBuyHandler,

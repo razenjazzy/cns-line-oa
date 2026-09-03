@@ -24,7 +24,7 @@ const buildBaseUrl = (fallbackBaseUrl?: string): string => {
   return candidate.replace(/\/$/, '');
 };
 
-const generateOtp = (): string => {
+export const generateOtp = (): string => {
   const value = crypto.randomInt(0, 1_000_000);
   return String(value).padStart(6, '0');
 };
