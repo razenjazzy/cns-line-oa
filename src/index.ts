@@ -220,12 +220,12 @@ const isReadOnlyWebhookTestCommand = (text: string): boolean => {
         'LANG TH',
         'THAI',
         'ENGLISH',
-        'DEMO ODOO',
+        'SYSTEM STATUS',
     ].includes(upperText)
-        || upperText.startsWith('DEMO PRODUCT ')
-        || upperText.startsWith('DEMO ORDER ')
-        || upperText === 'DEMO PRODUCT'
-        || upperText === 'DEMO ORDER';
+        || upperText.startsWith('PRODUCT FIND ')
+        || upperText.startsWith('ORDER STATUS ')
+        || upperText === 'PRODUCT FIND'
+        || upperText === 'ORDER STATUS';
 };
 
 const toSafeLogText = (text: string): string => {

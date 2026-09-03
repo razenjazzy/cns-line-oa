@@ -278,8 +278,8 @@ const createProductCardFlexMessage = (productName, price, stock, language = defa
                 layout: 'vertical',
                 spacing: 'sm',
                 contents: [
-                    createMessageActionButton(language === 'en' ? 'Create quote' : 'สร้างใบเสนอราคา', 'FORM DEMO QUOTE', 'primary', BRAND.teal),
-                    createMessageActionButton(language === 'en' ? 'Search again' : 'ค้นหาอีกครั้ง', 'FORM DEMO PRODUCT', 'secondary', BRAND.tealTint),
+                    createMessageActionButton(language === 'en' ? 'Create quote' : 'สร้างใบเสนอราคา', 'FORM QUOTE CREATE', 'primary', BRAND.teal),
+                    createMessageActionButton(language === 'en' ? 'Search again' : 'ค้นหาอีกครั้ง', 'FORM PRODUCT FIND', 'secondary', BRAND.tealTint),
                     createMessageActionButton(language === 'en' ? 'Home' : 'หน้าหลัก', 'NAV HOME', 'secondary', BRAND.goldTint),
                 ],
             },
@@ -443,7 +443,7 @@ const createOrderSummaryFlexMessage = (total, language = defaultUiLanguage()) =>
                 layout: 'vertical',
                 spacing: 'sm',
                 contents: [
-                    createMessageActionButton(language === 'en' ? 'Check order' : 'เช็คออเดอร์', 'FORM DEMO ORDER', 'primary', BRAND.teal),
+                    createMessageActionButton(language === 'en' ? 'Check order' : 'เช็คออเดอร์', 'FORM ORDER STATUS', 'primary', BRAND.teal),
                     createMessageActionButton(language === 'en' ? 'Home' : 'หน้าหลัก', 'NAV HOME', 'secondary', BRAND.goldTint),
                 ],
             },

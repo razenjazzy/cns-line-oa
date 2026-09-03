@@ -416,7 +416,7 @@ const quoteInvoiceHandler: CommandHandler = {
 // orders (customer's own profile.odooPartnerId — same identity source
 // quoteApproveHandler's authorization check relies on). With a phone:
 // admin-only lookup of someone else's orders, same phone->partner
-// resolution commerce.ts already uses for DEMO QUOTE's admin path.
+// resolution commerce.ts already uses for QUOTE CREATE's admin path.
 const quoteListHandler: CommandHandler = {
   name: 'quote-list',
   match: (u) => u === 'QUOTE LIST' || u.startsWith('QUOTE LIST '),

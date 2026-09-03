@@ -9,15 +9,15 @@ import {
 
 describe('resolveServiceForCommand', () => {
   it('maps mapped command prefixes to their service key', () => {
-    expect(resolveServiceForCommand('DEMO PRODUCT App')).toBe('commerce');
-    expect(resolveServiceForCommand('FORM DEMO PRODUCT')).toBe('commerce');
-    expect(resolveServiceForCommand('DEMO QUOTE App,1,Somchai,0812345678')).toBe('commerce');
-    expect(resolveServiceForCommand('FORM DEMO ORDER')).toBe('commerce');
+    expect(resolveServiceForCommand('PRODUCT FIND App')).toBe('commerce');
+    expect(resolveServiceForCommand('FORM PRODUCT FIND')).toBe('commerce');
+    expect(resolveServiceForCommand('QUOTE CREATE App,1,Somchai,0812345678')).toBe('commerce');
+    expect(resolveServiceForCommand('FORM ORDER STATUS')).toBe('commerce');
     expect(resolveServiceForCommand('USER CREATE Somchai,0812345678')).toBe('directory');
     expect(resolveServiceForCommand('FORM USER READ')).toBe('directory');
     expect(resolveServiceForCommand('SERVICE LIST')).toBe('catalog');
     expect(resolveServiceForCommand('FORM SERVICE READ')).toBe('catalog');
-    expect(resolveServiceForCommand('DEMO REPORT')).toBe('reporting');
+    expect(resolveServiceForCommand('DAILY REPORT')).toBe('reporting');
     expect(resolveServiceForCommand('START GROUPBUY App,25')).toBe('groupBuy');
   });
 

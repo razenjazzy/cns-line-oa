@@ -55,9 +55,9 @@ into its commands, or type any of these directly:
 
 - `FEATURES` / `GUIDE` — capability list / full step-by-step command guide
 - `VERIFY START <phone>` → `VERIFY OTP <code>` — bind your Odoo identity
-- `FORM DEMO QUOTE` — guided, one-field-at-a-time quotation flow (or type
-  the single-line form: `DEMO QUOTE <product>,<qty>,<customer>,<phone>`)
-- `DEMO PRODUCT <name>` / `DEMO ORDER <ref>` — Odoo lookups
+- `FORM QUOTE CREATE` — guided, one-field-at-a-time quotation flow (or type
+  the single-line form: `QUOTE CREATE <product>,<qty>,<customer>,<phone>`)
+- `PRODUCT FIND <name>` / `ORDER STATUS <ref>` — Odoo lookups
 - `START GROUPBUY <product>,<targetQty>,<hours?>` /
   `JOIN GROUPBUY <id>,<qty?>` / `CONFIRM GROUPBUY <id>` — group-buy flow
   (gated by `GROUPBUY_ENABLED`/`GROUPBUY_ROLLOUT_PERCENT`)

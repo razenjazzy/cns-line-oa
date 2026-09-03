@@ -380,7 +380,7 @@ const buildDemoPage = () => `<!DOCTYPE html>
         </div>
         <div class="chat-menu-panel" id="chat-menu-panel"></div>
         <form id="chat-form" class="chat-input-row">
-          <textarea id="chat-input" placeholder="Type a message or command, e.g. FORM DEMO QUOTE" rows="1"></textarea>
+          <textarea id="chat-input" placeholder="Type a message or command, e.g. FORM QUOTE CREATE" rows="1"></textarea>
           <button class="chat-send" type="submit">Send</button>
         </form>
       </article>
@@ -528,7 +528,7 @@ const buildDemoPage = () => `<!DOCTYPE html>
           </div>
           <div class="actions">
             <button type="submit">Run Journey</button>
-            <button id="send-line" type="button" class="ghost">Send DEMO PRODUCT to /webhook-test</button>
+            <button id="send-line" type="button" class="ghost">Send PRODUCT FIND to /webhook-test</button>
           </div>
         </form>
         <pre id="journey-output">No journey executed yet.</pre>
@@ -681,11 +681,11 @@ const buildDemoPage = () => `<!DOCTYPE html>
 
     async function sendLineSimulation() {
       const output = document.getElementById('journey-output');
-      output.textContent = 'Sending DEMO PRODUCT command to /webhook-test...';
+      output.textContent = 'Sending PRODUCT FIND command to /webhook-test...';
       const form = new FormData(document.getElementById('journey-form'));
       const payload = {
         userId: form.get('userId'),
-        text: 'DEMO PRODUCT ' + (form.get('productQuery') || 'App'),
+        text: 'PRODUCT FIND ' + (form.get('productQuery') || 'App'),
       };
       const data = await postJson('/webhook-test', 'POST', payload);
       output.textContent = pretty(data);
@@ -796,7 +796,7 @@ const buildDemoPage = () => `<!DOCTYPE html>
     });
 
     document.getElementById('chat-example').addEventListener('click', () => {
-      sendChat('FORM DEMO QUOTE').catch(() => {});
+      sendChat('FORM QUOTE CREATE').catch(() => {});
     });
 
     document.getElementById('chat-clear').addEventListener('click', () => {
@@ -865,9 +865,9 @@ const buildDemoPage = () => `<!DOCTYPE html>
     }
 
     const CHAT_MENU_ITEMS = [
-      ['Products & Quotes: Find a product', 'FORM DEMO PRODUCT'],
-      ['Create a quote', 'FORM DEMO QUOTE'],
-      ['Check an order', 'FORM DEMO ORDER'],
+      ['Products & Quotes: Find a product', 'FORM PRODUCT FIND'],
+      ['Create a quote', 'FORM QUOTE CREATE'],
+      ['Check an order', 'FORM ORDER STATUS'],
       ['Browse catalog', 'SERVICE LIST'],
       ['Group-Buy status', 'STATUS GROUPBUY'],
     ];

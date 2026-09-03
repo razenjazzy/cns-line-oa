@@ -40,7 +40,7 @@ real device · ⬜ not built · 🔒 blocked by Odoo-side configuration, not cod
 
 ## Phase 2 — Product & catalog discovery
 
-5. `DEMO PRODUCT <name>` / `FORM DEMO PRODUCT` → product lookup; the
+5. `PRODUCT FIND <name>` / `FORM PRODUCT FIND` → product lookup; the
    guided form shows real product names as tappable chips instead of
    requiring exact typing. ✅
 6. `SERVICE LIST` / `FORM SERVICE READ` (+ `UPDATE`/`DELETE`, admin) →
@@ -48,7 +48,7 @@ real device · ⬜ not built · 🔒 blocked by Odoo-side configuration, not cod
 
 ## Phase 3 — Quotation creation (the core Sales flow)
 
-7. `FORM DEMO QUOTE` → 4 mandatory fields one at a time (product via
+7. `FORM QUOTE CREATE` → 4 mandatory fields one at a time (product via
    picker, quantity, customer name, phone) → **one grouped summary card**
    for the 5 optional fields (customer reference, discount %, payment
    term, note, validity date) — tap any to fill it and return to the same
@@ -95,7 +95,7 @@ real device · ⬜ not built · 🔒 blocked by Odoo-side configuration, not cod
 20. Every journey card offers "View Quote" (Odoo's own portal share link)
     and "Download PDF" (same link + `report_type=pdf`, confirmed to
     return a real PDF). ✅
-21. `DEMO ORDER <ref>` now renders the **same** rich card as `QUOTE STATUS`
+21. `ORDER STATUS <ref>` now renders the **same** rich card as `QUOTE STATUS`
     instead of a bare text summary — one consistent design, not two. ✅
 
 ## Phase 6 — Sales ↔ customer messaging beyond a specific quote
@@ -108,7 +108,7 @@ real device · ⬜ not built · 🔒 blocked by Odoo-side configuration, not cod
 ## Phase 7 — Admin/ops surface (parallel track, not sales-journey-specific)
 
 - `USER`/`SERVICE` CRUD via guided forms. ✅ — **not** step-up-OTP-gated yet (scoped out this pass, noted in BACKLOG.md)
-- `DEMO REPORT` (AI-summarized daily report), `DEMO SEGMENT` (segmentation + targeted multicast). ✅
+- `DAILY REPORT` (AI-summarized daily report), `SEGMENT CUSTOMERS` (segmentation + targeted multicast). ✅
 - `/ops/audit-log` + BigQuery archive/rotation, `/ops/kpi`, `/ops/workflow-audit`. ✅
 - CLI (`cns`) and MCP server exposing the same ops endpoints as agent tools. ✅
 

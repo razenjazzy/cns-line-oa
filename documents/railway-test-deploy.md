@@ -48,5 +48,5 @@ silently unavailable.
 
 - `GET /healthz` — should be immediate, no dependency checks
 - `GET /readyz` — reports Firestore/Odoo/rate-limiter status individually; useful for spotting the credentials gotcha above (Firestore will show `ok: false` if `GOOGLE_APPLICATION_CREDENTIALS_JSON` is missing/wrong)
-- `./scripts/validate-railway.sh https://<your-service>.up.railway.app` — runs through the existing smoke checks (health, demo, a live `DEMO ODOO` webhook-test call, language switching)
+- `./scripts/validate-railway.sh https://<your-service>.up.railway.app` — runs through the existing smoke checks (health, demo, a live `SYSTEM STATUS` webhook-test call, language switching)
 - Register `https://<your-service>.up.railway.app/webhook` as the test channel's webhook URL in the LINE Developers console

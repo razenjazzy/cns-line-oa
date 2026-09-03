@@ -61,7 +61,7 @@ Then:
 - [ ] Message the bot as a test user: `OPTIONS`, `NAV HOME` — confirm the menu renders and only shows intended services
 - [ ] `VERIFY START <a real Odoo contact's phone>` → `VERIFY OTP <code>` — confirm the verification loop works against their real Odoo data
 - [ ] As the designated admin: `ADMIN VERIFY` → `ADMIN ENABLE` — confirm it succeeds (this is the point where `ADMIN_USER_ID` gets exercised for real)
-- [ ] Run one real `DEMO PRODUCT`, one `FORM DEMO QUOTE`, one `USER READ` against real Odoo data
+- [ ] Run one real `PRODUCT FIND`, one `FORM QUOTE CREATE`, one `USER READ` against real Odoo data
 - [ ] Check `GET /ops/audit-log` shows the admin grant and any test writes
 
 ## 6. Train the pilot's staff

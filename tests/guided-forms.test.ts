@@ -7,9 +7,9 @@ describe('getFlowByStartCommand', () => {
     expect(getFlowByStartCommand('FORM USER READ')?.key).toBe('USER_READ');
     expect(getFlowByStartCommand('FORM SERVICE CREATE')?.key).toBe('SERVICE_CREATE');
     expect(getFlowByStartCommand('FORM SERVICE READ')?.key).toBe('SERVICE_READ');
-    expect(getFlowByStartCommand('FORM DEMO PRODUCT')?.key).toBe('DEMO_PRODUCT');
-    expect(getFlowByStartCommand('FORM DEMO ORDER')?.key).toBe('DEMO_ORDER');
-    expect(getFlowByStartCommand('FORM DEMO QUOTE')?.key).toBe('DEMO_QUOTE');
+    expect(getFlowByStartCommand('FORM PRODUCT FIND')?.key).toBe('PRODUCT_FIND');
+    expect(getFlowByStartCommand('FORM ORDER STATUS')?.key).toBe('ORDER_STATUS');
+    expect(getFlowByStartCommand('FORM QUOTE CREATE')?.key).toBe('QUOTE_CREATE');
   });
 
   it('returns null for an unknown form command', () => {
@@ -19,16 +19,16 @@ describe('getFlowByStartCommand', () => {
 
 describe('lookup flows', () => {
   it('builds product, order, user, and service lookup commands', () => {
-    expect(FLOW_SPECS.DEMO_PRODUCT.buildFinalCommand({ productName: 'App Premium Plan' })).toBe('DEMO PRODUCT App Premium Plan');
-    expect(FLOW_SPECS.DEMO_ORDER.buildFinalCommand({ reference: 'SO0001' })).toBe('DEMO ORDER SO0001');
+    expect(FLOW_SPECS.PRODUCT_FIND.buildFinalCommand({ productName: 'App Premium Plan' })).toBe('PRODUCT FIND App Premium Plan');
+    expect(FLOW_SPECS.ORDER_STATUS.buildFinalCommand({ reference: 'SO0001' })).toBe('ORDER STATUS SO0001');
     expect(FLOW_SPECS.USER_READ.buildFinalCommand({ phone: '0812345678' })).toBe('USER READ 0812345678');
     expect(FLOW_SPECS.SERVICE_READ.buildFinalCommand({ identifier: 'SVC-PREMIUM' })).toBe('SERVICE READ SVC-PREMIUM');
   });
 
   it('keeps admin-only protection on user lookup', () => {
     expect(FLOW_SPECS.USER_READ.requiresAdmin).toBe(true);
-    expect(FLOW_SPECS.DEMO_PRODUCT.requiresAdmin).toBe(false);
-    expect(FLOW_SPECS.DEMO_ORDER.requiresAdmin).toBe(false);
+    expect(FLOW_SPECS.PRODUCT_FIND.requiresAdmin).toBe(false);
+    expect(FLOW_SPECS.ORDER_STATUS.requiresAdmin).toBe(false);
     expect(FLOW_SPECS.SERVICE_READ.requiresAdmin).toBe(false);
   });
 });
@@ -132,8 +132,8 @@ describe('SERVICE_DELETE flow', () => {
   });
 });
 
-describe('DEMO_QUOTE flow', () => {
-  const spec = FLOW_SPECS.DEMO_QUOTE;
+describe('QUOTE_CREATE flow', () => {
+  const spec = FLOW_SPECS.QUOTE_CREATE;
 
   it('does not require admin', () => {
     expect(spec.requiresAdmin).toBe(false);
@@ -141,7 +141,7 @@ describe('DEMO_QUOTE flow', () => {
 
   it('builds the final command with skipped optional fields left blank', () => {
     const cmd = spec.buildFinalCommand({ productName: 'App Premium Plan', qty: '1', customerName: 'Somchai', phone: '0812345678' });
-    expect(cmd).toBe('DEMO QUOTE App Premium Plan,1,Somchai,0812345678,,,,,');
+    expect(cmd).toBe('QUOTE CREATE App Premium Plan,1,Somchai,0812345678,,,,,');
   });
 
   it('builds the final command with optional fields filled in', () => {
@@ -150,6 +150,6 @@ describe('DEMO_QUOTE flow', () => {
       customerReference: 'PO-1001', discountPercent: '10', validityDate: '2026-12-31',
       note: 'Rush order', paymentTerm: '30 Days',
     });
-    expect(cmd).toBe('DEMO QUOTE App Premium Plan,1,Somchai,0812345678,PO-1001,10,2026-12-31,Rush order,30 Days');
+    expect(cmd).toBe('QUOTE CREATE App Premium Plan,1,Somchai,0812345678,PO-1001,10,2026-12-31,Rush order,30 Days');
   });
 });

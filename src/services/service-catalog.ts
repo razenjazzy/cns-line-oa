@@ -30,9 +30,9 @@ export const SERVICE_CATALOG: ServiceDefinition[] = [
     labelTh: 'สินค้าและใบเสนอราคา',
     labelEn: 'Products & Quotes',
     commands: [
-      { text: 'FORM DEMO PRODUCT', labelTh: 'ค้นหาสินค้า', labelEn: 'Find a product' },
-      { text: 'FORM DEMO QUOTE', labelTh: 'สร้างใบเสนอราคา', labelEn: 'Create a quote' },
-      { text: 'FORM DEMO ORDER', labelTh: 'เช็คสถานะออเดอร์', labelEn: 'Check an order' },
+      { text: 'FORM PRODUCT FIND', labelTh: 'ค้นหาสินค้า', labelEn: 'Find a product' },
+      { text: 'FORM QUOTE CREATE', labelTh: 'สร้างใบเสนอราคา', labelEn: 'Create a quote' },
+      { text: 'FORM ORDER STATUS', labelTh: 'เช็คสถานะออเดอร์', labelEn: 'Check an order' },
       { text: 'QUOTE LIST', labelTh: 'ใบเสนอราคาของฉัน', labelEn: 'My quotations' },
       { text: 'FORM MESSAGE CUSTOMER', labelTh: 'ส่งข้อความหาลูกค้า (แอดมิน)', labelEn: 'Message a customer (admin)', requiresAdmin: true },
     ],
@@ -65,7 +65,7 @@ export const SERVICE_CATALOG: ServiceDefinition[] = [
     labelTh: 'รายงาน (แอดมิน)',
     labelEn: 'Reporting (admin)',
     commands: [
-      { text: 'DEMO REPORT', labelTh: 'รายงานประจำวัน', labelEn: 'Daily report', requiresAdmin: true },
+      { text: 'DAILY REPORT', labelTh: 'รายงานประจำวัน', labelEn: 'Daily report', requiresAdmin: true },
     ],
   },
   {
@@ -79,12 +79,12 @@ export const SERVICE_CATALOG: ServiceDefinition[] = [
 ];
 
 const COMMAND_PREFIX_SERVICE_MAP: { prefix: string; service: ServiceKey }[] = [
-  { prefix: 'DEMO PRODUCT', service: 'commerce' },
-  { prefix: 'DEMO QUOTE', service: 'commerce' },
-  { prefix: 'DEMO ORDER', service: 'commerce' },
-  { prefix: 'FORM DEMO PRODUCT', service: 'commerce' },
-  { prefix: 'FORM DEMO QUOTE', service: 'commerce' },
-  { prefix: 'FORM DEMO ORDER', service: 'commerce' },
+  { prefix: 'PRODUCT FIND', service: 'commerce' },
+  { prefix: 'QUOTE CREATE', service: 'commerce' },
+  { prefix: 'ORDER STATUS', service: 'commerce' },
+  { prefix: 'FORM PRODUCT FIND', service: 'commerce' },
+  { prefix: 'FORM QUOTE CREATE', service: 'commerce' },
+  { prefix: 'FORM ORDER STATUS', service: 'commerce' },
   { prefix: 'QUOTE STATUS', service: 'commerce' },
   { prefix: 'QUOTE CONFIRM', service: 'commerce' },
   { prefix: 'QUOTE SEND', service: 'commerce' },
@@ -114,8 +114,8 @@ const COMMAND_PREFIX_SERVICE_MAP: { prefix: string; service: ServiceKey }[] = [
   { prefix: 'FORM SERVICE READ', service: 'catalog' },
   { prefix: 'FORM SERVICE UPDATE', service: 'catalog' },
   { prefix: 'FORM SERVICE DELETE', service: 'catalog' },
-  { prefix: 'DEMO REPORT', service: 'reporting' },
-  { prefix: 'DEMO SEGMENT', service: 'reporting' },
+  { prefix: 'DAILY REPORT', service: 'reporting' },
+  { prefix: 'SEGMENT CUSTOMERS', service: 'reporting' },
   { prefix: 'START GROUPBUY', service: 'groupBuy' },
   { prefix: 'JOIN GROUPBUY', service: 'groupBuy' },
   { prefix: 'STATUS GROUPBUY', service: 'groupBuy' },

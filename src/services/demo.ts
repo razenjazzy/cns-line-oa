@@ -165,7 +165,7 @@ export const getDemoOverview = async (baseUrl?: string): Promise<DemoOverview> =
       ],
       sampleLinePayload: {
         userId: 'demo_line_user',
-        text: 'DEMO PRODUCT App',
+        text: 'PRODUCT FIND App',
       },
     },
   };
@@ -202,8 +202,8 @@ export const runDemoJourney = async (input: DemoJourneyInput) => {
       ok: false,
       steps,
       sampleLineCommands: [
-        'DEMO ODOO',
-        `DEMO PRODUCT ${productQuery}`,
+        'SYSTEM STATUS',
+        `PRODUCT FIND ${productQuery}`,
       ],
     };
   }
@@ -255,8 +255,8 @@ export const runDemoJourney = async (input: DemoJourneyInput) => {
       ok: false,
       steps,
       sampleLineCommands: [
-        `DEMO PRODUCT ${productQuery}`,
-        'DEMO SEED ODOO',
+        `PRODUCT FIND ${productQuery}`,
+        'SEED SAMPLE DATA',
       ],
     };
   }
@@ -279,7 +279,7 @@ export const runDemoJourney = async (input: DemoJourneyInput) => {
       ok: false,
       steps,
       sampleLineCommands: [
-        `DEMO QUOTE ${product.name},${qty},${customerName},${customerPhone}`,
+        `QUOTE CREATE ${product.name},${qty},${customerName},${customerPhone}`,
       ],
     };
   }
@@ -315,9 +315,9 @@ export const runDemoJourney = async (input: DemoJourneyInput) => {
     applicationUser: profile,
     sampleLineCommands: [
       `USER READ ${customerPhone}`,
-      `DEMO PRODUCT ${product.name}`,
-      `DEMO QUOTE ${product.name},${qty},${customerName},${customerPhone}`,
-      `DEMO ORDER ${quotation.orderName}`,
+      `PRODUCT FIND ${product.name}`,
+      `QUOTE CREATE ${product.name},${qty},${customerName},${customerPhone}`,
+      `ORDER STATUS ${quotation.orderName}`,
     ],
   };
 };

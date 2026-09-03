@@ -15,7 +15,7 @@ deferred or not-yet-verified pieces.
   request, but the user asked to discuss the actual gap separately rather
   than guess at it. Not implemented. Come back to this once scoped.
 - **Step-up OTP scope** — currently gates only the quote lifecycle
-  (`DEMO QUOTE`, `QUOTE ADD`/`EDIT`/`CANCEL`/`CONFIRM`/`SEND`/`INVOICE`/
+  (`QUOTE CREATE`, `QUOTE ADD`/`EDIT`/`CANCEL`/`CONFIRM`/`SEND`/`INVOICE`/
   `APPROVE`/`MESSAGE`, `MESSAGE CUSTOMER`) — a deliberate scope decision,
   not an oversight. `USER`/`SERVICE` CRUD and `ADMIN ENABLE`/`DISABLE` are
   not gated by a fresh OTP yet; revisit if that surface needs the same
@@ -68,15 +68,15 @@ deferred or not-yet-verified pieces.
 - The rich-menu chat-bar label ("Tap to open") is English-only. LINE has no
   per-user-language chat-bar text without maintaining separate per-user rich
   menus (a meaningfully bigger feature than this).
-- `DEMO QUOTE` always asks for customer name + phone, even when the caller
+- `QUOTE CREATE` always asks for customer name + phone, even when the caller
   is an already-verified admin creating their own quote — an explicit
   product decision made this session (kept for consistency/simplicity over
   saving a couple of taps).
-- The optional trailing fields on the single-line `DEMO QUOTE` command
+- The optional trailing fields on the single-line `QUOTE CREATE` command
   (customer reference, note, payment term) have no comma-escaping — a comma
   inside one of them will misalign the fields after it, since `parseCsv` has
   no quoting support. Pre-existing limitation of the CSV-shaped command
-  format, not introduced by this pass. The guided form (`FORM DEMO QUOTE`)
+  format, not introduced by this pass. The guided form (`FORM QUOTE CREATE`)
   avoids this entirely since each field is entered as its own message.
 
 ## Test coverage gap

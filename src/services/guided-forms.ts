@@ -16,9 +16,9 @@ export type FlowKey =
   | 'SERVICE_READ'
   | 'SERVICE_UPDATE'
   | 'SERVICE_DELETE'
-  | 'DEMO_PRODUCT'
-  | 'DEMO_ORDER'
-  | 'DEMO_QUOTE'
+  | 'PRODUCT_FIND'
+  | 'ORDER_STATUS'
+  | 'QUOTE_CREATE'
   | 'MESSAGE_CUSTOMER'
   | 'VERIFY';
 
@@ -187,31 +187,31 @@ export const FLOW_SPECS: Record<FlowKey, FlowSpec> = {
     ],
     buildFinalCommand: (c) => `SERVICE DELETE ${c.identifier}`,
   },
-  DEMO_PRODUCT: {
-    key: 'DEMO_PRODUCT',
-    startCommand: 'FORM DEMO PRODUCT',
+  PRODUCT_FIND: {
+    key: 'PRODUCT_FIND',
+    startCommand: 'FORM PRODUCT FIND',
     requiresAdmin: false,
     labelTh: 'ค้นหาสินค้า',
     labelEn: 'Find a product',
     fields: [
       { key: 'productName', promptTh: 'ชื่อสินค้าที่ต้องการค้นหา?', promptEn: 'Product name to search for?', validate: isNonEmpty, loadOptions: loadProductOptions },
     ],
-    buildFinalCommand: (c) => `DEMO PRODUCT ${c.productName}`,
+    buildFinalCommand: (c) => `PRODUCT FIND ${c.productName}`,
   },
-  DEMO_ORDER: {
-    key: 'DEMO_ORDER',
-    startCommand: 'FORM DEMO ORDER',
+  ORDER_STATUS: {
+    key: 'ORDER_STATUS',
+    startCommand: 'FORM ORDER STATUS',
     requiresAdmin: false,
     labelTh: 'เช็คสถานะออเดอร์',
     labelEn: 'Check an order',
     fields: [
       { key: 'reference', promptTh: 'เลขอ้างอิงออเดอร์?', promptEn: 'Order reference?', validate: isNonEmpty },
     ],
-    buildFinalCommand: (c) => `DEMO ORDER ${c.reference}`,
+    buildFinalCommand: (c) => `ORDER STATUS ${c.reference}`,
   },
-  DEMO_QUOTE: {
-    key: 'DEMO_QUOTE',
-    startCommand: 'FORM DEMO QUOTE',
+  QUOTE_CREATE: {
+    key: 'QUOTE_CREATE',
+    startCommand: 'FORM QUOTE CREATE',
     requiresAdmin: false,
     labelTh: 'สร้างใบเสนอราคา',
     labelEn: 'Create a quote',
@@ -231,7 +231,7 @@ export const FLOW_SPECS: Record<FlowKey, FlowSpec> = {
       { key: 'paymentTerm', promptTh: 'เงื่อนไขการชำระเงิน (เช่น 30 Days, ถ้ามี)?', promptEn: 'Payment term (e.g. 30 Days), if any?', optional: true, validate: isCommaFreeText, summaryLabelTh: 'เงื่อนไขชำระเงิน', summaryLabelEn: 'Payment term' },
     ],
     optionalSummaryStartIndex: 4,
-    buildFinalCommand: (c) => `DEMO QUOTE ${c.productName},${c.qty},${c.customerName},${c.phone},${c.customerReference || ''},${c.discountPercent || ''},${c.validityDate || ''},${c.note || ''},${c.paymentTerm || ''}`,
+    buildFinalCommand: (c) => `QUOTE CREATE ${c.productName},${c.qty},${c.customerName},${c.phone},${c.customerReference || ''},${c.discountPercent || ''},${c.validityDate || ''},${c.note || ''},${c.paymentTerm || ''}`,
   },
   MESSAGE_CUSTOMER: {
     key: 'MESSAGE_CUSTOMER',

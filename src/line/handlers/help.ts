@@ -25,9 +25,9 @@ const buildFeaturesMessage = (language: UserLanguage, agentName: string): string
 
 const buildJourneyMessage = (language: UserLanguage, agentName: string): string => {
   if (language === 'en') {
-    return `${agentName} end-to-end demo journey\nStep 1: ADMIN VERIFY\nStep 2: ADMIN ENABLE\nStep 3: DEMO SEED ODOO\nStep 4: USER CREATE Somchai,0812345678,somchai@example.com\nStep 5: DEMO PRODUCT App\nStep 6: DEMO QUOTE App Premium Plan,1,Somchai,0812345678\nStep 7: DEMO ORDER <reference>\nStep 8: DEMO REPORT\nStep 9: USER UPDATE 0812345678,Somchai CEO,0812345678,somchai.ceo@example.com\nStep 10: USER DELETE 0812345678`;
+    return `${agentName} end-to-end demo journey\nStep 1: ADMIN VERIFY\nStep 2: ADMIN ENABLE\nStep 3: SEED SAMPLE DATA\nStep 4: USER CREATE Somchai,0812345678,somchai@example.com\nStep 5: PRODUCT FIND App\nStep 6: QUOTE CREATE App Premium Plan,1,Somchai,0812345678\nStep 7: ORDER STATUS <reference>\nStep 8: DAILY REPORT\nStep 9: USER UPDATE 0812345678,Somchai CEO,0812345678,somchai.ceo@example.com\nStep 10: USER DELETE 0812345678`;
   }
-  return `${agentName} เส้นทางเดโมครบวงจร\nขั้นที่ 1: ADMIN VERIFY\nขั้นที่ 2: ADMIN ENABLE\nขั้นที่ 3: DEMO SEED ODOO\nขั้นที่ 4: USER CREATE สมชาย,0812345678,somchai@example.com\nขั้นที่ 5: DEMO PRODUCT App\nขั้นที่ 6: DEMO QUOTE App Premium Plan,1,สมชาย,0812345678\nขั้นที่ 7: DEMO ORDER <เลขอ้างอิง>\nขั้นที่ 8: DEMO REPORT\nขั้นที่ 9: USER UPDATE 0812345678,สมชาย ซีอีโอ,0812345678,somchai.ceo@example.com\nขั้นที่ 10: USER DELETE 0812345678`;
+  return `${agentName} เส้นทางเดโมครบวงจร\nขั้นที่ 1: ADMIN VERIFY\nขั้นที่ 2: ADMIN ENABLE\nขั้นที่ 3: SEED SAMPLE DATA\nขั้นที่ 4: USER CREATE สมชาย,0812345678,somchai@example.com\nขั้นที่ 5: PRODUCT FIND App\nขั้นที่ 6: QUOTE CREATE App Premium Plan,1,สมชาย,0812345678\nขั้นที่ 7: ORDER STATUS <เลขอ้างอิง>\nขั้นที่ 8: DAILY REPORT\nขั้นที่ 9: USER UPDATE 0812345678,สมชาย ซีอีโอ,0812345678,somchai.ceo@example.com\nขั้นที่ 10: USER DELETE 0812345678`;
 };
 
 // START / HELP / OPTIONS / MENU / เริ่มต้น — show home menu

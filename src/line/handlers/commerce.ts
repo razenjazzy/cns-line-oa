@@ -37,16 +37,16 @@ const botText = (value: string, language: UserLanguage) =>
     tone: inferTone(value),
   });
 
-// DEMO PRODUCT [query] — lookup product in Odoo; no query → guided form
+// PRODUCT FIND [query] — lookup product in Odoo; no query → guided form
 const demoProductHandler: CommandHandler = {
-  name: 'commerce-demo-product',
-  match: (u) => u === 'DEMO PRODUCT' || u.startsWith('DEMO PRODUCT '),
+  name: 'commerce-product-find',
+  match: (u) => u === 'PRODUCT FIND' || u.startsWith('PRODUCT FIND '),
   handle: async (ctx) => {
     const { userLanguage, text } = ctx;
-    const query = text.trim().replace(/^DEMO PRODUCT\s*/i, '').trim();
+    const query = text.trim().replace(/^PRODUCT FIND\s*/i, '').trim();
     if (!query) {
       const { resolveCommandReply } = await import('../command-router');
-      return resolveCommandReply({ ...ctx, text: 'FORM DEMO PRODUCT' });
+      return resolveCommandReply({ ...ctx, text: 'FORM PRODUCT FIND' });
     }
     const product = await findProductByQuery(query);
     if (!product) {
@@ -56,16 +56,16 @@ const demoProductHandler: CommandHandler = {
   },
 };
 
-// DEMO ORDER [ref] — check order status; no ref → guided form
+// ORDER STATUS [ref] — check order status; no ref → guided form
 const demoOrderHandler: CommandHandler = {
-  name: 'commerce-demo-order',
-  match: (u) => u === 'DEMO ORDER' || u.startsWith('DEMO ORDER '),
+  name: 'commerce-order-status',
+  match: (u) => u === 'ORDER STATUS' || u.startsWith('ORDER STATUS '),
   handle: async (ctx) => {
     const { userLanguage, text } = ctx;
-    const orderRef = text.trim().replace(/^DEMO ORDER\s*/i, '').trim();
+    const orderRef = text.trim().replace(/^ORDER STATUS\s*/i, '').trim();
     if (!orderRef) {
       const { resolveCommandReply } = await import('../command-router');
-      return resolveCommandReply({ ...ctx, text: 'FORM DEMO ORDER' });
+      return resolveCommandReply({ ...ctx, text: 'FORM ORDER STATUS' });
     }
     const found = await findOrderByReference(orderRef);
     if (!found) {
@@ -87,17 +87,17 @@ const demoOrderHandler: CommandHandler = {
   },
 };
 
-// DEMO QUOTE [product,qty,customer,phone] — create Odoo quotation; no payload → guided form
+// QUOTE CREATE [product,qty,customer,phone] — create Odoo quotation; no payload → guided form
 const demoQuoteHandler: CommandHandler = {
-  name: 'commerce-demo-quote',
-  match: (u) => u === 'DEMO QUOTE' || u.startsWith('DEMO QUOTE '),
+  name: 'commerce-quote-create',
+  match: (u) => u === 'QUOTE CREATE' || u.startsWith('QUOTE CREATE '),
   handle: async (ctx) => {
     const { userLanguage, profile, text } = ctx;
-    const payload = text.trim().replace(/^DEMO QUOTE\s*/i, '').trim();
+    const payload = text.trim().replace(/^QUOTE CREATE\s*/i, '').trim();
     const parsed = parseDemoQuotePayload(payload);
     if (!parsed) {
       const { resolveCommandReply } = await import('../command-router');
-      return resolveCommandReply({ ...ctx, text: 'FORM DEMO QUOTE' });
+      return resolveCommandReply({ ...ctx, text: 'FORM QUOTE CREATE' });
     }
 
     const { productName, qty, customerName, phone, customerReference, discountPercent, validityDate, note, paymentTerm } = parsed;
@@ -111,8 +111,8 @@ const demoQuoteHandler: CommandHandler = {
     const product = await findProductByQuery(productName);
     if (!product) {
       return [botText(tr(userLanguage,
-        `ไม่พบสินค้าที่ตรงกับ "${productName}" ลองพิมพ์ DEMO PRODUCT ${productName} เพื่อตรวจสอบชื่อที่ถูกต้องก่อนนะคะ`,
-        `No product matched "${productName}". Try DEMO PRODUCT ${productName} first to check the exact name in the catalog.`,
+        `ไม่พบสินค้าที่ตรงกับ "${productName}" ลองพิมพ์ PRODUCT FIND ${productName} เพื่อตรวจสอบชื่อที่ถูกต้องก่อนนะคะ`,
+        `No product matched "${productName}". Try PRODUCT FIND ${productName} first to check the exact name in the catalog.`,
       ), userLanguage)];
     }
 
@@ -182,10 +182,10 @@ const demoQuoteHandler: CommandHandler = {
   },
 };
 
-// DEMO ODOO — ping Odoo connectivity
+// SYSTEM STATUS — ping Odoo connectivity
 const demoOdooHandler: CommandHandler = {
-  name: 'commerce-demo-odoo',
-  match: (u) => u === 'DEMO ODOO',
+  name: 'commerce-system-status',
+  match: (u) => u === 'SYSTEM STATUS',
   handle: async (ctx) => {
     const { userLanguage } = ctx;
     try {
@@ -201,10 +201,10 @@ const demoOdooHandler: CommandHandler = {
   },
 };
 
-// DEMO SEED ODOO — seed sample data (admin only)
+// SEED SAMPLE DATA — seed sample data (admin only)
 const demoSeedHandler: CommandHandler = {
-  name: 'commerce-demo-seed',
-  match: (u) => u === 'DEMO SEED ODOO',
+  name: 'commerce-seed-sample-data',
+  match: (u) => u === 'SEED SAMPLE DATA',
   handle: async (ctx) => {
     const { userLanguage, profile } = ctx;
     if (profile.role !== 'admin') {
@@ -218,10 +218,10 @@ const demoSeedHandler: CommandHandler = {
   },
 };
 
-// DEMO REPORT — trigger daily report (async, non-blocking)
+// DAILY REPORT — trigger daily report (async, non-blocking)
 const demoReportHandler: CommandHandler = {
-  name: 'commerce-demo-report',
-  match: (u) => u === 'DEMO REPORT',
+  name: 'commerce-daily-report',
+  match: (u) => u === 'DAILY REPORT',
   handle: async (ctx) => {
     const { userLanguage } = ctx;
     import('../../jobs/daily-report')
@@ -234,10 +234,10 @@ const demoReportHandler: CommandHandler = {
   },
 };
 
-// DEMO SEGMENT — trigger segmentation job
+// SEGMENT CUSTOMERS — trigger segmentation job
 const demoSegmentHandler: CommandHandler = {
-  name: 'commerce-demo-segment',
-  match: (u) => u === 'DEMO SEGMENT',
+  name: 'commerce-segment-customers',
+  match: (u) => u === 'SEGMENT CUSTOMERS',
   handle: async (ctx) => {
     const { userLanguage } = ctx;
     const { runSegmentationJob } = await import('../../jobs/segmentation');

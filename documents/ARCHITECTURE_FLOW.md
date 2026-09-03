@@ -56,7 +56,7 @@ Mermaid diagram
 📦 Workflow 3: Live Order & Quotation Tracking
 Customers track their shipments, quotes, and fulfillment milestones in real-time, drastically reducing support requests.
 
-Trigger: Customer texts "DEMO ORDER SO0023" or asks "Where is my order?"
+Trigger: Customer texts "ORDER STATUS SO0023" or asks "Where is my order?"
 Execution:
 Gemini extracts the order reference (SO0023).
 Odie Server queries Odoo's sale.order model.
@@ -77,7 +77,7 @@ The bot politely tells the customer: "Spoke to an agent. Our team will contact y
 For managers and directors, keeping tabs on business health doesn't require logging into a computer. They receive beautiful, AI-summarized executive reports in their LINE app.
 
 How it works:
-A cron job (or admin command DEMO REPORT) retrieves yesterday's sales orders and product inventory from Odoo.
+A cron job (or admin command DAILY REPORT) retrieves yesterday's sales orders and product inventory from Odoo.
 Odie compiles the raw data and sends it to Vertex AI (Gemini).
 Gemini analyses top-selling items, detects inventory warnings (low stock alerts), and writes a highly polished, professional executive summary in Thai.
 The summary is formatted into a custom Admin Dashboard Flex Message and sent directly to the admin's LINE.

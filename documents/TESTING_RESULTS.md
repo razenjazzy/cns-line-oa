@@ -11,7 +11,7 @@ no live network/Firestore/Odoo calls:
 
 | File | Covers |
 |---|---|
-| `command-validators.test.ts` | Multi-field command payload parsing (USER/SERVICE CREATE/UPDATE, DEMO QUOTE) |
+| `command-validators.test.ts` | Multi-field command payload parsing (USER/SERVICE CREATE/UPDATE, QUOTE CREATE) |
 | `guided-forms.test.ts` | `FORM *` flow specs and field validation |
 | `service-catalog.test.ts` | Command→service mapping, channel gating |
 | `group-buy.test.ts` | `START/JOIN/STATUS/CONFIRM/CANCEL GROUPBUY` parsing, incl. `<hours>` expiry field |
@@ -40,7 +40,7 @@ specific verification runs. If you change routing logic in
 npm run build
 npm run dev &
 npm run cli -- chat "FEATURES"
-npm run cli -- chat "DEMO PRODUCT <something in your Odoo catalog>"
+npm run cli -- chat "PRODUCT FIND <something in your Odoo catalog>"
 ```
 
 against a real `.env` before considering the change done — the Vitest

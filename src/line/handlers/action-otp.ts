@@ -24,7 +24,7 @@ const ACTION_OTP_WINDOW_MINUTES = Number(process.env.ACTION_OTP_WINDOW_MINUTES |
  * USER/SERVICE CRUD or ADMIN ENABLE/DISABLE — see documents/BACKLOG.md.
  */
 const GATED_MUTATION_PREFIXES = [
-  'DEMO QUOTE',
+  'QUOTE CREATE',
   'QUOTE ADD',
   'QUOTE EDIT',
   'QUOTE CANCEL',
@@ -47,7 +47,7 @@ const hasFreshActionOtp = (profile: UserProfile): boolean => {
 // Step-up OTP gate — registered first in the handler registry (see
 // src/line/handlers/index.ts) so it intercepts a gated command before the
 // real handler ever runs. Only applies to already-verified users (an
-// unverified self-service DEMO QUOTE caller has no established identity to
+// unverified self-service QUOTE CREATE caller has no established identity to
 // "step up" from — that path is unchanged, same as before this feature).
 const actionOtpGateHandler: CommandHandler = {
   name: 'action-otp-gate',
