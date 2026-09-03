@@ -53,7 +53,10 @@ const getOrderLinks = async (orderId: number): Promise<{ portalLink?: string; pd
   return { portalLink: portalLink || undefined, pdfLink: pdfLink || undefined };
 };
 
-const parseOrderId = (text: string, prefix: string): number | null => {
+// Exported for direct unit testing (same rationale as command-validators.ts's
+// parsers) — pure functions, no need to exercise them through a full
+// CommandHandler.handle() call with mocked Odoo/Firestore.
+export const parseOrderId = (text: string, prefix: string): number | null => {
   const raw = text.trim().replace(new RegExp(`^${prefix}\\s*`, 'i'), '').trim();
   const id = Number(raw);
   return Number.isFinite(id) && id > 0 ? id : null;
@@ -62,7 +65,7 @@ const parseOrderId = (text: string, prefix: string): number | null => {
 // "<prefix> <orderId> <product>,<qty>" — the orderId is a separate token
 // (not part of the CSV payload) since it comes from the prefilled button
 // text (`QUOTE ADD <id> `), with the product/qty typed in after it.
-const parseOrderIdAndProductQty = (text: string, prefix: string): { orderId: number; productName: string; qty: number } | null => {
+export const parseOrderIdAndProductQty = (text: string, prefix: string): { orderId: number; productName: string; qty: number } | null => {
   const raw = text.trim().replace(new RegExp(`^${prefix}\\s*`, 'i'), '').trim();
   const firstSpace = raw.indexOf(' ');
   if (firstSpace === -1) return null;

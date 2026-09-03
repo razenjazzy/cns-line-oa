@@ -66,8 +66,19 @@ these are the explicitly deferred or not-yet-verified pieces.
 
 ## Test coverage gap
 
-- No automated (Vitest) tests exist for the P0 quote-lifecycle handlers
-  (`QUOTE ADD`/`EDIT`/`CANCEL`/`INVOICE`) or the P2 additions (`QUOTE LIST`,
-  PDF link, payment-term resolution) — verified via live calls against real
-  Odoo instead. Worth adding handler-level tests with a mocked `odoo.ts` if
-  this code needs to be safely refactored later.
+- **Closed for the parsing/validation layer**: `parseOrderId` and
+  `parseOrderIdAndProductQty` (`src/line/handlers/quotation.ts`) are now
+  exported and covered in `tests/quotation-parsers.test.ts`, and
+  `parseDemoQuotePayload`'s 5 new optional trailing fields are covered in
+  `tests/command-validators.test.ts` — matching this codebase's existing
+  test philosophy (pure parser/validator functions, not handler-level
+  mocking; no test file anywhere mocks `odoo.ts`/`firestore.ts`).
+- **Still not covered**: the P0 handlers' actual Odoo side-effects
+  (`QUOTE ADD`/`EDIT`/`CANCEL`/`INVOICE`, `QUOTE LIST`, PDF link,
+  payment-term resolution) — these were verified via live calls against
+  real Odoo instead of unit tests, consistent with how every other
+  Odoo-touching function in this codebase is verified (no `odoo.test.ts`
+  exists at all). Would need a new mocking pattern (e.g. `vi.mock('../../services/odoo')`)
+  introduced deliberately if this code needs to be safely refactored later —
+  not added speculatively here since it's a genuinely new pattern for this
+  codebase, not a reuse of an existing one.

@@ -109,5 +109,54 @@ describe('command validators', () => {
     it('rejects invalid phone', () => {
       expect(parseDemoQuotePayload('App Premium Plan,2,Somchai,abc')).toBeNull();
     });
+
+    it('parses the 5 optional trailing fields when all are provided', () => {
+      const result = parseDemoQuotePayload('App Premium Plan,2,Somchai,0812345678,PO-1001,15,2026-12-31,Rush order,30 Days');
+      expect(result).toEqual({
+        productName: 'App Premium Plan',
+        qty: 2,
+        customerName: 'Somchai',
+        phone: '0812345678',
+        customerReference: 'PO-1001',
+        discountPercent: 15,
+        validityDate: '2026-12-31',
+        note: 'Rush order',
+        paymentTerm: '30 Days',
+      });
+    });
+
+    it('omits optional fields entirely when left blank, same as today\'s behavior', () => {
+      const result = parseDemoQuotePayload('App Premium Plan,2,Somchai,0812345678,,,,,');
+      expect(result).toEqual({
+        productName: 'App Premium Plan',
+        qty: 2,
+        customerName: 'Somchai',
+        phone: '0812345678',
+      });
+    });
+
+    it('omits optional fields entirely when the trailing fields are absent, not just blank', () => {
+      const result = parseDemoQuotePayload('App Premium Plan,2,Somchai,0812345678');
+      expect(result).not.toHaveProperty('customerReference');
+      expect(result).not.toHaveProperty('discountPercent');
+      expect(result).not.toHaveProperty('validityDate');
+      expect(result).not.toHaveProperty('note');
+      expect(result).not.toHaveProperty('paymentTerm');
+    });
+
+    it('rejects an out-of-range discount percent', () => {
+      expect(parseDemoQuotePayload('App Premium Plan,2,Somchai,0812345678,,-1,,,')).toBeNull();
+      expect(parseDemoQuotePayload('App Premium Plan,2,Somchai,0812345678,,101,,,')).toBeNull();
+    });
+
+    it('accepts discount percent boundary values 0 and 100', () => {
+      expect(parseDemoQuotePayload('App Premium Plan,2,Somchai,0812345678,,0,,,')?.discountPercent).toBe(0);
+      expect(parseDemoQuotePayload('App Premium Plan,2,Somchai,0812345678,,100,,,')?.discountPercent).toBe(100);
+    });
+
+    it('rejects a validity date that is not YYYY-MM-DD', () => {
+      expect(parseDemoQuotePayload('App Premium Plan,2,Somchai,0812345678,,,31-12-2026,,')).toBeNull();
+      expect(parseDemoQuotePayload('App Premium Plan,2,Somchai,0812345678,,,not-a-date,,')).toBeNull();
+    });
   });
 });
