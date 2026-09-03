@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.seedOdooSampleSalesData = exports.getDailySalesSnapshot = exports.deleteServiceCatalogItem = exports.updateServiceCatalogItem = exports.createServiceCatalogItem = exports.getServiceByIdentifier = exports.listServiceCatalogItems = exports.deletePartnerFromLine = exports.updatePartnerFromLine = exports.createPartnerFromLine = exports.getPartnerById = exports.getPartnerByPhone = exports.createQuotationFromLine = exports.markSaleOrderSent = exports.confirmSaleOrder = exports.getSaleOrderPortalLink = exports.getSaleOrderById = exports.findOrderByReference = exports.findProductByQuery = exports.verifyOdooAdminAccess = exports.pingOdoo = exports.isOdooConfigured = void 0;
+exports.seedOdooSampleSalesData = exports.getDailySalesSnapshot = exports.deleteServiceCatalogItem = exports.updateServiceCatalogItem = exports.createServiceCatalogItem = exports.getServiceByIdentifier = exports.listServiceCatalogItems = exports.deletePartnerFromLine = exports.updatePartnerFromLine = exports.createPartnerFromLine = exports.getPartnerById = exports.getPartnerByPhone = exports.createQuotationFromLine = exports.createInvoiceForSaleOrder = exports.updateSaleOrderLineQty = exports.addSaleOrderLine = exports.cancelSaleOrder = exports.markSaleOrderSent = exports.confirmSaleOrder = exports.findPaymentTermByName = exports.getSaleOrdersForPartner = exports.getSaleOrderPdfLink = exports.getSaleOrderPortalLink = exports.getSaleOrderById = exports.findOrderByReference = exports.findProductByQuery = exports.verifyOdooAdminAccess = exports.pingOdoo = exports.isOdooConfigured = void 0;
 const ODOO_RPC_TIMEOUT_MS = Number(process.env.ODOO_RPC_TIMEOUT_MS || 7000);
 const ODOO_READ_RETRY_ATTEMPTS = Number(process.env.ODOO_READ_RETRY_ATTEMPTS || 3);
 const ODOO_READ_RETRY_BASE_DELAY_MS = Number(process.env.ODOO_READ_RETRY_BASE_DELAY_MS || 250);
@@ -170,6 +170,8 @@ const parseOrder = (row) => {
         partner_id: partnerTuple,
         date_order: str(row.date_order),
         access_token: typeof row.access_token === 'string' ? row.access_token : undefined,
+        invoice_status: typeof row.invoice_status === 'string' ? row.invoice_status : undefined,
+        note: typeof row.note === 'string' && row.note ? row.note : undefined,
     };
 };
 const parseOrderLine = (row) => {
@@ -293,7 +295,7 @@ const getSaleOrderById = async (orderId) => {
     const uid = await loginRead(config);
     if (!uid)
         return null;
-    const rows = await executeKwRead(config, uid, 'sale.order', 'search_read', [[['id', '=', orderId]]], { fields: ['id', 'name', 'state', 'amount_total', 'partner_id', 'access_token'], limit: 1 });
+    const rows = await executeKwRead(config, uid, 'sale.order', 'search_read', [[['id', '=', orderId]]], { fields: ['id', 'name', 'state', 'amount_total', 'partner_id', 'access_token', 'invoice_status', 'note'], limit: 1 });
     if (!rows.length)
         return null;
     const order = parseOrder(rows[0]);
@@ -329,6 +331,50 @@ const getSaleOrderPortalLink = async (orderId) => {
     }
 };
 exports.getSaleOrderPortalLink = getSaleOrderPortalLink;
+/**
+ * LINE's Messaging API has no file-message type a bot can push (verified —
+ * only text/sticker/image/video/audio/location/imagemap/template/flex), so
+ * this is offered as a link, not an attachment. Reuses the exact same
+ * portal link/access_token as getSaleOrderPortalLink — Odoo's portal route
+ * returns a real PDF directly when `report_type=pdf` is appended, no
+ * separate report call or extra auth needed (confirmed live).
+ */
+const getSaleOrderPdfLink = async (orderId) => {
+    const portalLink = await (0, exports.getSaleOrderPortalLink)(orderId);
+    if (!portalLink)
+        return null;
+    return `${portalLink}${portalLink.includes('?') ? '&' : '?'}report_type=pdf`;
+};
+exports.getSaleOrderPdfLink = getSaleOrderPdfLink;
+/** Powers "my quotations" — most recent orders for a given customer, newest first. */
+const getSaleOrdersForPartner = async (partnerId, limit = 8) => {
+    const config = getConfig();
+    if (!config)
+        return [];
+    const uid = await loginRead(config);
+    if (!uid)
+        return [];
+    const rows = await executeKwRead(config, uid, 'sale.order', 'search_read', [[['partner_id', '=', partnerId]]], { fields: ['id', 'name', 'state', 'amount_total', 'partner_id'], order: 'date_order desc', limit });
+    return rows.map(parseOrder);
+};
+exports.getSaleOrdersForPartner = getSaleOrdersForPartner;
+/** Mirrors findProductByQuery's ilike-first-match convention, applied to account.payment.term. */
+const findPaymentTermByName = async (query) => {
+    const normalizedQuery = normalizeLookupText(query);
+    if (!normalizedQuery)
+        return null;
+    const config = getConfig();
+    if (!config)
+        return null;
+    const uid = await loginRead(config);
+    if (!uid)
+        return null;
+    const rows = await executeKwRead(config, uid, 'account.payment.term', 'search_read', [[['name', 'ilike', normalizedQuery]]], { fields: ['id', 'name'], limit: 1 });
+    if (!rows.length)
+        return null;
+    return { id: num(rows[0].id), name: str(rows[0].name) };
+};
+exports.findPaymentTermByName = findPaymentTermByName;
 /** Quotation -> Sales Order. */
 const confirmSaleOrder = async (orderId) => {
     const config = getConfig();
@@ -378,6 +424,104 @@ const markSaleOrderSent = async (orderId) => {
     }
 };
 exports.markSaleOrderSent = markSaleOrderSent;
+/** Cancels a quotation/order — reversible in Odoo itself (reset to draft), not exposed here since it's not part of the LINE journey. */
+const cancelSaleOrder = async (orderId) => {
+    const config = getConfig();
+    if (!config)
+        return false;
+    try {
+        const uid = await login(config);
+        if (!uid)
+            return false;
+        await executeKw(config, uid, 'sale.order', 'action_cancel', [[orderId]]);
+        return true;
+    }
+    catch (error) {
+        console.error('cancelSaleOrder failed:', error);
+        return false;
+    }
+};
+exports.cancelSaleOrder = cancelSaleOrder;
+/** Appends a new line to an existing (draft/sent) order — QUOTE ADD. */
+const addSaleOrderLine = async (orderId, productId, qty) => {
+    const config = getConfig();
+    if (!config)
+        return false;
+    try {
+        const uid = await login(config);
+        if (!uid)
+            return false;
+        await executeKw(config, uid, 'sale.order.line', 'create', [{
+                order_id: orderId,
+                product_id: productId,
+                product_uom_qty: qty,
+            }]);
+        return true;
+    }
+    catch (error) {
+        console.error('addSaleOrderLine failed:', error);
+        return false;
+    }
+};
+exports.addSaleOrderLine = addSaleOrderLine;
+/**
+ * Updates the quantity of an *existing* line matching this order+product —
+ * QUOTE EDIT is for changing a line already on the quote, not adding a new
+ * one (that's QUOTE ADD). Returns false (not an error) if no matching line
+ * is found, same "not found vs failed" distinction as the rest of this file.
+ */
+const updateSaleOrderLineQty = async (orderId, productId, qty) => {
+    const config = getConfig();
+    if (!config)
+        return false;
+    try {
+        const uid = await login(config);
+        if (!uid)
+            return false;
+        const lines = await executeKw(config, uid, 'sale.order.line', 'search_read', [
+            [['order_id', '=', orderId], ['product_id', '=', productId]],
+        ], { fields: ['id'], limit: 1 });
+        if (!lines.length)
+            return false;
+        await executeKw(config, uid, 'sale.order.line', 'write', [[lines[0].id], { product_uom_qty: qty }]);
+        return true;
+    }
+    catch (error) {
+        console.error('updateSaleOrderLineQty failed:', error);
+        return false;
+    }
+};
+exports.updateSaleOrderLineQty = updateSaleOrderLineQty;
+/**
+ * Mirrors Odoo web's "Create Invoice" button, which is a window action
+ * opening the sale.advance.payment.inv wizard (confirmed live on this
+ * instance: sale.order.form's create_invoice button has type="action",
+ * name="438" — an ir.actions.act_window, not a direct sale.order method).
+ * Reproduced over RPC the same way Odoo's own client does it: create the
+ * wizard record with the sale order in its active_id/active_ids context,
+ * then call its create_invoices() method with that same context. Defaults
+ * to a regular invoice (not the percentage/down-payment variant, which is
+ * a separate button in the UI).
+ */
+const createInvoiceForSaleOrder = async (orderId) => {
+    const config = getConfig();
+    if (!config)
+        return false;
+    try {
+        const uid = await login(config);
+        if (!uid)
+            return false;
+        const wizardContext = { active_model: 'sale.order', active_ids: [orderId], active_id: orderId };
+        const wizardId = await executeKw(config, uid, 'sale.advance.payment.inv', 'create', [{}], { context: wizardContext });
+        await executeKw(config, uid, 'sale.advance.payment.inv', 'create_invoices', [[wizardId]], { context: wizardContext });
+        return true;
+    }
+    catch (error) {
+        console.error('createInvoiceForSaleOrder failed:', error);
+        return false;
+    }
+};
+exports.createInvoiceForSaleOrder = createInvoiceForSaleOrder;
 const findOrCreatePartner = async (config, uid, name, phone) => {
     const normalizedPhone = phone.trim();
     // Only search by phone when we actually have one — matching on an empty
@@ -390,7 +534,14 @@ const findOrCreatePartner = async (config, uid, name, phone) => {
     }
     return executeKw(config, uid, 'res.partner', 'create', [{ name, ...(normalizedPhone ? { phone: normalizedPhone } : {}) }]);
 };
-const createQuotationFromLine = async (customerName, customerPhone, productQuery, qty, explicitPartnerId) => {
+const createQuotationFromLine = async (customerName, customerPhone, productQuery, qty, explicitPartnerId, 
+/**
+ * Optional Odoo fields that are blank/defaulted in Odoo web unless a user
+ * fills them in — same behavior here. Any key left undefined is omitted
+ * from the create payload entirely, so a caller that provides none of
+ * these gets byte-for-byte today's behavior.
+ */
+extra) => {
     const config = getConfig();
     if (!config)
         return null;
@@ -402,13 +553,25 @@ const createQuotationFromLine = async (customerName, customerPhone, productQuery
         if (!product)
             return null;
         const partnerId = explicitPartnerId || await findOrCreatePartner(config, uid, customerName, customerPhone);
+        const orderLine = { product_id: product.id, product_uom_qty: qty };
+        if (extra?.discountPercent !== undefined)
+            orderLine.discount = extra.discountPercent;
+        const orderFields = {
+            partner_id: partnerId,
+            order_line: [[0, 0, orderLine]],
+        };
+        if (extra?.customerRef)
+            orderFields.client_order_ref = extra.customerRef;
+        if (extra?.validityDate)
+            orderFields.validity_date = extra.validityDate;
+        if (extra?.note)
+            orderFields.note = extra.note;
+        if (extra?.paymentTermId !== undefined)
+            orderFields.payment_term_id = extra.paymentTermId;
         // No reliable natural key to reconcile a sale order against before it
         // exists, so unlike partner/service creates this is not retried or
         // reconciled — a failed attempt should be safely re-runnable by the user.
-        const orderId = await executeKw(config, uid, 'sale.order', 'create', [{
-                partner_id: partnerId,
-                order_line: [[0, 0, { product_id: product.id, product_uom_qty: qty }]],
-            }]);
+        const orderId = await executeKw(config, uid, 'sale.order', 'create', [orderFields]);
         const rows = await executeKw(config, uid, 'sale.order', 'read', [[orderId]], { fields: ['name', 'amount_total'] });
         if (!rows.length)
             return null;

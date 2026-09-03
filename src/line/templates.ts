@@ -16,6 +16,8 @@ const BRAND = {
   inkSoft: '#5B6C69',
   surface: '#FFFFFF',
   paper: '#F1F4F2',
+  /** Applied to every background-colored box so cards read as one consistent, rounded design language instead of a mix of square and rounded shapes. */
+  radius: '12px',
 } as const;
 
 /**
@@ -58,7 +60,7 @@ const createMessageActionButton = (
 ): messagingApi.FlexButton => ({
   type: 'button',
   style,
-  height: 'sm',
+  height: 'md',
   color,
   action: { type: 'message', label: buttonLabel(label), text: actionText },
 });
@@ -77,9 +79,37 @@ const createUriActionButton = (
 ): messagingApi.FlexButton => ({
   type: 'button',
   style,
-  height: 'sm',
+  height: 'md',
   color,
   action: { type: 'uri', label: buttonLabel(label), uri },
+});
+
+/**
+ * A button that opens the keyboard prefilled with editable text, instead of
+ * sending a fixed command — for actions that need free-form input (which
+ * product, what quantity) a plain message/uri button can't carry. LINE
+ * handles this entirely client-side (no postback-event handling needed on
+ * our end: src/line/webhook.ts only processes `message` events, so the
+ * accompanying postback is silently ignored — the user's edited text then
+ * arrives as a normal text message through the existing pipeline).
+ */
+const createPrefillButton = (
+  label: string,
+  fillInText: string,
+  style: 'primary' | 'secondary' | 'link' = 'secondary',
+  color: string = BRAND.tealTint
+): messagingApi.FlexButton => ({
+  type: 'button',
+  style,
+  height: 'md',
+  color,
+  action: {
+    type: 'postback',
+    label: buttonLabel(label),
+    data: `action=prefill&text=${encodeURIComponent(fillInText)}`,
+    inputOption: 'openKeyboard',
+    fillInText,
+  } as messagingApi.PostbackAction,
 });
 
 const truncate = (value: string, maxLength: number): string => {
@@ -156,20 +186,13 @@ export const createBotTextFlexMessage = (params: {
             type: 'box',
             layout: 'vertical',
             backgroundColor: tone === 'warning' ? BRAND.goldTint : BRAND.tealTint,
+            cornerRadius: BRAND.radius,
             paddingAll: 'md',
             contents: [
               { type: 'text', text: params.body, color: tone === 'error' ? '#7A271A' : BRAND.ink, size: 'sm', wrap: true },
             ],
           },
-          {
-            type: 'box',
-            layout: 'horizontal',
-            spacing: 'sm',
-            contents: [
-              { type: 'box', layout: 'vertical', width: '8px', backgroundColor: toneColor, contents: [{ type: 'filler' }] },
-              { type: 'text', text: params.language === 'en' ? 'Use the buttons below for the next step.' : 'ใช้ปุ่มด้านล่างเพื่อไปขั้นตอนถัดไป', size: 'xs', color: BRAND.inkSoft, wrap: true },
-            ],
-          },
+          { type: 'text', text: params.language === 'en' ? 'Use the buttons below for the next step.' : 'ใช้ปุ่มด้านล่างเพื่อไปขั้นตอนถัดไป', size: 'xs', color: toneColor, wrap: true },
         ],
       },
       footer: {
@@ -271,7 +294,9 @@ export const createProductCardFlexMessage = (productName: string, price: number,
               {
                 type: 'box',
                 layout: 'vertical',
+                flex: 1,
                 backgroundColor: BRAND.tealTint,
+                cornerRadius: BRAND.radius,
                 paddingAll: 'sm',
                 contents: [
                   { type: 'text', text: language === 'en' ? 'Price' : 'ราคา', size: 'xs', color: BRAND.inkSoft },
@@ -281,7 +306,9 @@ export const createProductCardFlexMessage = (productName: string, price: number,
               {
                 type: 'box',
                 layout: 'vertical',
+                flex: 1,
                 backgroundColor: BRAND.goldTint,
+                cornerRadius: BRAND.radius,
                 paddingAll: 'sm',
                 contents: [
                   { type: 'text', text: language === 'en' ? 'Stock' : 'คงเหลือ', size: 'xs', color: BRAND.inkSoft },
@@ -346,7 +373,7 @@ export const createServiceHomeFlexMessage = (
         contents: services.slice(0, 10).map(service => ({
           type: 'button',
           style: 'primary',
-          height: 'sm',
+          height: 'md',
           color: BRAND.teal,
           action: {
             type: 'message',
@@ -363,14 +390,16 @@ export const createServiceHomeFlexMessage = (
           {
             type: 'button',
             style: 'secondary',
-            height: 'sm',
+            height: 'md',
+            flex: 1,
             color: BRAND.tealTint,
             action: { type: 'message', label: language === 'en' ? 'Language' : 'ภาษา', text: language === 'en' ? 'LANG TH' : 'LANG EN' },
           },
           {
             type: 'button',
             style: 'secondary',
-            height: 'sm',
+            height: 'md',
+            flex: 1,
             color: BRAND.tealTint,
             action: { type: 'message', label: language === 'en' ? 'Guide' : 'คู่มือ', text: 'GUIDE' },
           },
@@ -454,6 +483,7 @@ export const createOrderSummaryFlexMessage = (total: number, language: ReportLan
             type: 'box',
             layout: 'vertical',
             backgroundColor: BRAND.tealTint,
+            cornerRadius: BRAND.radius,
             paddingAll: 'md',
             contents: [
               { type: 'text', text: language === 'en' ? 'Total' : 'ยอดรวม', size: 'xs', color: BRAND.inkSoft },
@@ -523,6 +553,7 @@ export const createFormPromptFlexMessage = (params: {
             type: 'box',
             layout: 'vertical',
             backgroundColor: BRAND.tealTint,
+            cornerRadius: BRAND.radius,
             paddingAll: 'md',
             contents: [
               { type: 'text', text: params.language === 'en' ? 'Please type your answer in the chat box.' : 'กรุณาพิมพ์คำตอบในช่องแชท', size: 'xs', color: BRAND.inkSoft, wrap: true },
@@ -554,7 +585,7 @@ const QUOTATION_STATE_SEQUENCE = ['draft', 'sent', 'sale'] as const;
  */
 export const createQuotationJourneyFlexMessage = (
   order: OdooSaleOrder,
-  options: { role: 'admin' | 'customer'; portalLink?: string },
+  options: { role: 'admin' | 'customer'; portalLink?: string; pdfLink?: string },
   language: Lang
 ): messagingApi.FlexMessage => {
   const customerName = order.partner_id?.[1] || '-';
@@ -570,7 +601,7 @@ export const createQuotationJourneyFlexMessage = (
         type: 'box',
         layout: 'vertical',
         backgroundColor: '#F8D7DA',
-        cornerRadius: 'md',
+        cornerRadius: BRAND.radius,
         paddingAll: 'sm',
         contents: [
           { type: 'text', text: stateLabel('cancel', language), align: 'center', weight: 'bold', size: 'sm', color: '#7A271A' },
@@ -584,7 +615,7 @@ export const createQuotationJourneyFlexMessage = (
           type: 'box',
           layout: 'vertical',
           flex: 1,
-          cornerRadius: 'md',
+          cornerRadius: BRAND.radius,
           paddingAll: 'xs',
           backgroundColor: index === currentIndex ? BRAND.teal : BRAND.tealTint,
           contents: [
@@ -601,26 +632,54 @@ export const createQuotationJourneyFlexMessage = (
         })),
       };
 
-  const footerButtons: messagingApi.FlexButton[] = [];
+  // Organized as rows (rather than one flat button list) so each row stays
+  // simple regardless of how many actions the admin has available for this
+  // state — mirrors Odoo web's own button visibility per state.
+  const footerRows: messagingApi.FlexButton[][] = [];
   const canStillAct = !isCancelled && order.state !== 'sale';
+  // Matches Odoo web's own Create Invoice button condition exactly
+  // (sale.order.form: invisible="invoice_status != 'to invoice'").
+  const canInvoice = !isCancelled && order.state === 'sale' && order.invoice_status === 'to invoice';
 
   if (options.role === 'admin') {
     if (canStillAct) {
-      footerButtons.push(createMessageActionButton(t('confirm', language), `QUOTE CONFIRM ${order.id}`, 'primary', BRAND.teal));
-      footerButtons.push(createMessageActionButton(t('sendToCustomer', language), `QUOTE SEND ${order.id}`, 'secondary', BRAND.tealTint));
+      footerRows.push([
+        createMessageActionButton(t('confirm', language), `QUOTE CONFIRM ${order.id}`, 'primary', BRAND.teal),
+        createMessageActionButton(t('sendToCustomer', language), `QUOTE SEND ${order.id}`, 'secondary', BRAND.tealTint),
+      ]);
+      footerRows.push([
+        createPrefillButton(t('addItem', language), `QUOTE ADD ${order.id} `, 'secondary', BRAND.tealTint),
+        createPrefillButton(t('editItem', language), `QUOTE EDIT ${order.id} `, 'secondary', BRAND.tealTint),
+        createMessageActionButton(t('cancelQuote', language), `QUOTE CANCEL ${order.id}`, 'secondary', BRAND.goldTint),
+      ]);
     }
-    if (options.portalLink) {
-      footerButtons.push(createUriActionButton(t('preview', language), options.portalLink, 'secondary', BRAND.goldTint));
+    if (canInvoice) {
+      footerRows.push([createMessageActionButton(t('createInvoice', language), `QUOTE INVOICE ${order.id}`, 'primary', BRAND.teal)]);
+    }
+    if (options.portalLink || options.pdfLink) {
+      footerRows.push([
+        ...(options.portalLink ? [createUriActionButton(t('preview', language), options.portalLink, 'secondary', BRAND.goldTint)] : []),
+        ...(options.pdfLink ? [createUriActionButton(t('downloadPdf', language), options.pdfLink, 'secondary', BRAND.goldTint)] : []),
+      ]);
     }
   } else {
     if (canStillAct) {
-      footerButtons.push(createMessageActionButton(t('approve', language), `QUOTE APPROVE ${order.id}`, 'primary', BRAND.teal));
+      footerRows.push([createMessageActionButton(t('approve', language), `QUOTE APPROVE ${order.id}`, 'primary', BRAND.teal)]);
     }
-    if (options.portalLink) {
-      footerButtons.push(createUriActionButton(t('viewFullQuotation', language), options.portalLink, 'secondary', BRAND.tealTint));
+    if (options.portalLink || options.pdfLink) {
+      footerRows.push([
+        ...(options.portalLink ? [createUriActionButton(t('viewFullQuotation', language), options.portalLink, 'secondary', BRAND.tealTint)] : []),
+        ...(options.pdfLink ? [createUriActionButton(t('downloadPdf', language), options.pdfLink, 'secondary', BRAND.tealTint)] : []),
+      ]);
     }
   }
-  footerButtons.push(createMessageActionButton(language === 'en' ? 'Home' : 'หน้าหลัก', 'NAV HOME', 'secondary', BRAND.goldTint));
+  footerRows.push([createMessageActionButton(language === 'en' ? 'Home' : 'หน้าหลัก', 'NAV HOME', 'secondary', BRAND.goldTint)]);
+
+  const footerContents: messagingApi.FlexComponent[] = footerRows.map(row =>
+    row.length === 1
+      ? row[0]
+      : { type: 'box', layout: 'horizontal', spacing: 'xs', contents: row.map(button => ({ ...button, flex: 1 })) }
+  );
 
   return {
     type: 'flex',
@@ -654,19 +713,34 @@ export const createQuotationJourneyFlexMessage = (
             contents: [
               { type: 'text' as const, text: t('items', language), size: 'xs' as const, color: BRAND.inkSoft },
               ...visibleLines.map(line => ({
-                type: 'text' as const,
-                text: `${line.productName} × ${line.qty}`,
-                size: 'sm' as const,
-                color: BRAND.ink,
-                wrap: true,
+                type: 'box' as const,
+                layout: 'horizontal' as const,
+                backgroundColor: BRAND.paper,
+                cornerRadius: BRAND.radius,
+                paddingAll: 'sm' as const,
+                contents: [
+                  { type: 'text' as const, text: line.productName, size: 'sm' as const, weight: 'bold' as const, color: BRAND.ink, wrap: true, flex: 3 },
+                  { type: 'text' as const, text: `× ${line.qty}`, size: 'sm' as const, color: BRAND.inkSoft, align: 'end' as const, flex: 1 },
+                ],
               })),
               ...(extraCount > 0 ? [{ type: 'text' as const, text: `+${extraCount} ${t('moreItems', language)}`, size: 'xs' as const, color: BRAND.inkSoft }] : []),
+            ],
+          }] : []),
+          ...(order.note ? [{
+            type: 'box' as const,
+            layout: 'vertical' as const,
+            backgroundColor: BRAND.paper,
+            cornerRadius: BRAND.radius,
+            paddingAll: 'sm' as const,
+            contents: [
+              { type: 'text' as const, text: truncate(order.note, 200), size: 'xs' as const, color: BRAND.inkSoft, wrap: true },
             ],
           }] : []),
           {
             type: 'box',
             layout: 'vertical',
             backgroundColor: BRAND.tealTint,
+            cornerRadius: BRAND.radius,
             paddingAll: 'md',
             contents: [
               { type: 'text', text: t('total', language), size: 'xs', color: BRAND.inkSoft },
@@ -679,7 +753,66 @@ export const createQuotationJourneyFlexMessage = (
         type: 'box',
         layout: 'vertical',
         spacing: 'sm',
-        contents: footerButtons,
+        contents: footerContents,
+      },
+    },
+  };
+};
+
+/**
+ * "My quotations" — one tappable row per order (QUOTE STATUS <id>), capped
+ * at however many the caller passed in (getSaleOrdersForPartner already
+ * caps the query itself). No pagination in this pass — matches the rest of
+ * this feature's "simple UX" scope; a caller with more than that many
+ * orders is told to ask an admin to narrow the search instead.
+ */
+export const createQuotationListFlexMessage = (
+  orders: OdooSaleOrder[],
+  hasMore: boolean,
+  language: Lang
+): messagingApi.FlexMessage => {
+  return {
+    type: 'flex',
+    altText: truncate(t('myQuotations', language), 390),
+    contents: {
+      type: 'bubble',
+      styles: {
+        header: { backgroundColor: BRAND.teal },
+        body: { backgroundColor: BRAND.surface },
+        footer: { backgroundColor: BRAND.surface },
+      },
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: 'md',
+        contents: [
+          { type: 'text', text: t('myQuotations', language), weight: 'bold', size: 'md', color: '#FFFFFF', wrap: true },
+        ],
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        contents: orders.length
+          ? [
+              // Button labels are hard-capped at 20 chars by LINE itself
+              // (see buttonLabel) — order name + total is the most useful
+              // pair to fit; state is visible once QUOTE STATUS is opened.
+              ...orders.map(order => createMessageActionButton(
+                `${order.name} · ${formatMoney(order.amount_total, language)}`,
+                `QUOTE STATUS ${order.id}`,
+                'secondary',
+                BRAND.tealTint,
+              )),
+              ...(hasMore ? [{ type: 'text' as const, text: t('moreQuotations', language), size: 'xs' as const, color: BRAND.inkSoft, wrap: true }] : []),
+            ]
+          : [{ type: 'text', text: t('noQuotations', language), size: 'sm', color: BRAND.inkSoft, wrap: true }],
+      },
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        contents: [createMessageActionButton(language === 'en' ? 'Home' : 'หน้าหลัก', 'NAV HOME', 'secondary', BRAND.goldTint)],
       },
     },
   };

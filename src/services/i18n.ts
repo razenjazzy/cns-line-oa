@@ -56,6 +56,14 @@ export const UI_STRINGS = {
   },
   quoteApproved: { en: 'Quotation approved. Thank you!', th: 'อนุมัติใบเสนอราคาแล้ว ขอบคุณค่ะ' },
   quoteNotFound: { en: 'Quotation not found.', th: 'ไม่พบใบเสนอราคานี้' },
+  addItem: { en: 'Add item', th: 'เพิ่มรายการ' },
+  editItem: { en: 'Edit item', th: 'แก้ไขรายการ' },
+  cancelQuote: { en: 'Cancel', th: 'ยกเลิก' },
+  createInvoice: { en: 'Create invoice', th: 'สร้างใบแจ้งหนี้' },
+  downloadPdf: { en: 'Download PDF', th: 'ดาวน์โหลด PDF' },
+  myQuotations: { en: 'My quotations', th: 'ใบเสนอราคาของฉัน' },
+  noQuotations: { en: "No quotations found.", th: 'ไม่พบใบเสนอราคา' },
+  moreQuotations: { en: 'More quotations exist — ask an admin to narrow the search.', th: 'มีใบเสนอราคาเพิ่มเติม — กรุณาแจ้งแอดมินให้ช่วยค้นหาแบบเจาะจงมากขึ้น' },
 } as const;
 
 export type UiStringKey = keyof typeof UI_STRINGS;

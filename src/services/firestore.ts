@@ -1335,7 +1335,12 @@ export type AuditAction =
     | 'channel_config_update'
     | 'audit_rotate'
     | 'quote_confirm'
-    | 'quote_send';
+    | 'quote_send'
+    | 'verification_success'
+    | 'quote_cancel'
+    | 'quote_add_line'
+    | 'quote_edit_line'
+    | 'quote_invoice';
 
 export type AuditOutcome = 'success' | 'failure';
 

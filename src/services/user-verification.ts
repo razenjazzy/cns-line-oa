@@ -4,6 +4,7 @@ import {
   consumeOdooVerificationByToken,
   createOdooVerificationChallenge,
   getUserLanguage,
+  recordAuditEvent,
   setUserOdooPartner,
   setUserOdooVerificationStatus,
   UserLanguage,
@@ -28,6 +29,36 @@ const generateOtp = (): string => {
 };
 
 const generateLinkToken = (): string => crypto.randomBytes(24).toString('hex');
+
+// Fired on every successful verification completion (OTP-typed or
+// magic-link), regardless of which path got there — the sales/admin side
+// wants to know a customer just came online, same "notify the other party
+// on success" pattern already used by quote-approve. Best-effort: a push
+// or audit-write failure here must never turn a completed verification
+// into a reported failure for the customer.
+const notifyAdminOfVerification = async (params: { userId: string; phone: string; partnerId: number; channelId?: string }): Promise<void> => {
+  recordAuditEvent({
+    action: 'verification_success',
+    outcome: 'success',
+    actorUserId: params.userId,
+    channelId: params.channelId,
+    targetId: String(params.partnerId),
+    detail: `phone=${params.phone}`,
+  });
+
+  const adminUserId = process.env.ADMIN_USER_ID?.trim();
+  if (!adminUserId) return;
+  try {
+    const adminLanguage = await getUserLanguage(adminUserId);
+    await sendTargetedMessage(
+      [adminUserId],
+      tr(adminLanguage, `ลูกค้ายืนยันบัญชี Odoo แล้ว (เบอร์ ${params.phone})`, `A customer just verified their Odoo account (phone ${params.phone}).`),
+      params.channelId,
+    );
+  } catch (err) {
+    console.warn('notifyAdminOfVerification: admin notify failed (non-fatal):', err);
+  }
+};
 
 type StartVerificationInput = {
   userId: string;
@@ -160,6 +191,9 @@ export const verifyOdooUserByOtp = async (input: VerifyOtpInput): Promise<string
     return tr(input.language, `${input.agentName} ยืนยันสำเร็จ แต่บันทึกสถานะยืนยันไม่สำเร็จ`, `${input.agentName} verification succeeded but failed to persist verification status.`);
   }
 
+  notifyAdminOfVerification({ userId: input.userId, phone: consumed.data.phone, partnerId: consumed.data.partnerId, channelId: consumed.data.channelId })
+    .catch(err => console.warn('verifyOdooUserByOtp: post-verify notify failed (non-fatal):', err));
+
   return tr(
     input.language,
     `${input.agentName} ยืนยันตัวตน Odoo สำเร็จแล้ว`,
@@ -200,6 +234,9 @@ export const verifyOdooUserByToken = async (token: string): Promise<{ ok: boolea
     tr(language, '✅ ยืนยันบัญชี Odoo สำเร็จแล้ว พิมพ์ NAV HOME เพื่อกลับไปที่เมนู', '✅ Your Odoo account is now verified. Type NAV HOME to return to the menu.'),
     consumed.data.channelId,
   );
+
+  notifyAdminOfVerification({ userId: consumed.data.userId, phone: consumed.data.phone, partnerId: consumed.data.partnerId, channelId: consumed.data.channelId })
+    .catch(err => console.warn('verifyOdooUserByToken: post-verify notify failed (non-fatal):', err));
 
   return { ok: true, message: 'Odoo user verification completed successfully. You can return to LINE now.' };
 };

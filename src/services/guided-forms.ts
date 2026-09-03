@@ -34,6 +34,11 @@ const isNonEmpty = (value: string): boolean => value.trim().length > 0;
 const isPhoneLike = (value: string): boolean => /^[0-9+\-\s]{6,20}$/.test(value.trim());
 const isPositiveNumber = (value: string): boolean => Number.isFinite(Number(value)) && Number(value) > 0;
 const isEmailLike = (value: string): boolean => value.trim() === '' || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+// A comma would break the CSV-based buildFinalCommand reconstruction, so
+// free-text optional fields reject it rather than silently mangling later fields.
+const isCommaFreeText = (value: string): boolean => isNonEmpty(value) && !value.includes(',');
+const isPercent = (value: string): boolean => { const n = Number(value); return Number.isFinite(n) && n >= 0 && n <= 100; };
+const isIsoDate = (value: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
 
 /**
  * Each flow's buildFinalCommand reconstructs the exact single-line command
@@ -184,8 +189,15 @@ export const FLOW_SPECS: Record<FlowKey, FlowSpec> = {
       { key: 'qty', promptTh: 'จำนวน?', promptEn: 'Quantity?', validate: isPositiveNumber },
       { key: 'customerName', promptTh: 'ชื่อลูกค้า?', promptEn: "Customer's name?", validate: isNonEmpty },
       { key: 'phone', promptTh: 'เบอร์โทรลูกค้า?', promptEn: "Customer's phone?", validate: isPhoneLike },
+      // Optional, exactly like Odoo web — blank/SKIP leaves the field
+      // entirely unset in Odoo rather than writing an empty value.
+      { key: 'customerReference', promptTh: 'เลขอ้างอิงลูกค้า (ถ้ามี)?', promptEn: "Customer reference, if any?", optional: true, validate: isCommaFreeText },
+      { key: 'discountPercent', promptTh: 'ส่วนลด % (ถ้ามี)?', promptEn: 'Discount %, if any?', optional: true, validate: isPercent },
+      { key: 'validityDate', promptTh: 'วันหมดอายุใบเสนอราคา (YYYY-MM-DD, ถ้ามี)?', promptEn: 'Quotation expiration date (YYYY-MM-DD), if any?', optional: true, validate: isIsoDate },
+      { key: 'note', promptTh: 'หมายเหตุ (ถ้ามี)?', promptEn: 'Note, if any?', optional: true, validate: isCommaFreeText },
+      { key: 'paymentTerm', promptTh: 'เงื่อนไขการชำระเงิน (เช่น 30 Days, ถ้ามี)?', promptEn: 'Payment term (e.g. 30 Days), if any?', optional: true, validate: isCommaFreeText },
     ],
-    buildFinalCommand: (c) => `DEMO QUOTE ${c.productName},${c.qty},${c.customerName},${c.phone}`,
+    buildFinalCommand: (c) => `DEMO QUOTE ${c.productName},${c.qty},${c.customerName},${c.phone},${c.customerReference || ''},${c.discountPercent || ''},${c.validityDate || ''},${c.note || ''},${c.paymentTerm || ''}`,
   },
 };
 

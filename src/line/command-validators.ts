@@ -108,10 +108,26 @@ export type DemoQuoteInput = {
   qty: number;
   customerName: string;
   phone: string;
+  /** Optional, exactly like Odoo web — blank/absent means "not provided", not "provided as empty". */
+  customerReference?: string;
+  discountPercent?: number;
+  validityDate?: string;
+  note?: string;
+  /** Free text, resolved to an id via findPaymentTermByName by the caller — this validator only checks shape. */
+  paymentTerm?: string;
 };
 
+const isIsoDateLike = (value: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+// The 4 mandatory fields, plus 5 optional trailing ones (blank if skipped)
+// appended by the guided form's buildFinalCommand — a manually-typed
+// single-line command may omit the trailing fields entirely, same as
+// leaving them blank. Like customerReference, note/paymentTerm are plain
+// comma-split segments — a comma inside either would misalign the fields
+// after it (parseCsv has no quoting support); accepted as a pre-existing
+// limitation of this CSV-shaped command form, not new to this change.
 export const parseDemoQuotePayload = (payload: string): DemoQuoteInput | null => {
-  const [productNameRaw, qtyRaw, customerNameRaw, phoneRaw] = parseCsv(payload);
+  const [productNameRaw, qtyRaw, customerNameRaw, phoneRaw, customerRefRaw, discountRaw, validityRaw, noteRaw, paymentTermRaw] = parseCsv(payload);
   const productName = normalize(productNameRaw || '');
   const customerName = normalize(customerNameRaw || '');
   const phone = normalize(phoneRaw || '', 24);
@@ -120,10 +136,23 @@ export const parseDemoQuotePayload = (payload: string): DemoQuoteInput | null =>
   if (!productName || !customerName || !phone || !isValidPhone(phone)) return null;
   if (Number.isNaN(qty) || qty <= 0 || qty > 10000) return null;
 
+  const customerReference = normalize(customerRefRaw || '', 64);
+  const discountPercent = discountRaw ? Number(discountRaw) : undefined;
+  if (discountPercent !== undefined && (Number.isNaN(discountPercent) || discountPercent < 0 || discountPercent > 100)) return null;
+  const validityDate = normalize(validityRaw || '', 10);
+  if (validityDate && !isIsoDateLike(validityDate)) return null;
+  const note = normalize(noteRaw || '', 500);
+  const paymentTerm = normalize(paymentTermRaw || '', 64);
+
   return {
     productName,
     qty,
     customerName,
     phone,
+    ...(customerReference ? { customerReference } : {}),
+    ...(discountPercent !== undefined ? { discountPercent } : {}),
+    ...(validityDate ? { validityDate } : {}),
+    ...(note ? { note } : {}),
+    ...(paymentTerm ? { paymentTerm } : {}),
   };
 };

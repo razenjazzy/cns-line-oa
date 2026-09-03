@@ -139,8 +139,17 @@ describe('DEMO_QUOTE flow', () => {
     expect(spec.requiresAdmin).toBe(false);
   });
 
-  it('builds the final command', () => {
+  it('builds the final command with skipped optional fields left blank', () => {
     const cmd = spec.buildFinalCommand({ productName: 'App Premium Plan', qty: '1', customerName: 'Somchai', phone: '0812345678' });
-    expect(cmd).toBe('DEMO QUOTE App Premium Plan,1,Somchai,0812345678');
+    expect(cmd).toBe('DEMO QUOTE App Premium Plan,1,Somchai,0812345678,,,,,');
+  });
+
+  it('builds the final command with optional fields filled in', () => {
+    const cmd = spec.buildFinalCommand({
+      productName: 'App Premium Plan', qty: '1', customerName: 'Somchai', phone: '0812345678',
+      customerReference: 'PO-1001', discountPercent: '10', validityDate: '2026-12-31',
+      note: 'Rush order', paymentTerm: '30 Days',
+    });
+    expect(cmd).toBe('DEMO QUOTE App Premium Plan,1,Somchai,0812345678,PO-1001,10,2026-12-31,Rush order,30 Days');
   });
 });

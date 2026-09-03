@@ -9,10 +9,12 @@ import { parseDemoQuotePayload } from '../command-validators';
 import {
   createQuotationFromLine,
   findOrderByReference,
+  findPaymentTermByName,
   findProductByQuery,
   getPartnerByPhone,
   getSaleOrderById,
   getSaleOrderPortalLink,
+  getSaleOrderPdfLink,
   pingOdoo,
   seedOdooSampleSalesData,
 } from '../../services/odoo';
@@ -90,7 +92,7 @@ const demoQuoteHandler: CommandHandler = {
       return resolveCommandReply({ ...ctx, text: 'FORM DEMO QUOTE' });
     }
 
-    const { productName, qty, customerName, phone } = parsed;
+    const { productName, qty, customerName, phone, customerReference, discountPercent, validityDate, note, paymentTerm } = parsed;
 
     // createQuotationFromLine collapses every failure (no product match, a
     // genuine Odoo error, anything) into a single null, so a real error was
@@ -112,7 +114,25 @@ const demoQuoteHandler: CommandHandler = {
     // bystander contact by name+phone. Unverified/new customers (the
     // common case) fall through to today's behavior unchanged.
     const existingPartner = profile.role === 'admin' ? await getPartnerByPhone(phone) : null;
-    const quotation = await createQuotationFromLine(customerName, phone, productName, qty, existingPartner?.id);
+
+    // Optional field, resolved (not just validated) here — a miss never
+    // blocks the quote, it just proceeds without a payment term set
+    // (Odoo's own default applies, same as leaving it blank in Odoo web).
+    let paymentTermId: number | undefined;
+    let paymentTermNotFound = false;
+    if (paymentTerm) {
+      const term = await findPaymentTermByName(paymentTerm);
+      if (term) paymentTermId = term.id;
+      else paymentTermNotFound = true;
+    }
+
+    const quotation = await createQuotationFromLine(customerName, phone, productName, qty, existingPartner?.id, {
+      customerRef: customerReference,
+      discountPercent,
+      validityDate,
+      note,
+      paymentTermId,
+    });
     if (!quotation) {
       // Product genuinely exists, so this is a real failure (partner
       // creation, sale.order create, etc.) — logged server-side by
@@ -133,9 +153,24 @@ const demoQuoteHandler: CommandHandler = {
       ), userLanguage)];
     }
 
-    const portalLink = (await getSaleOrderPortalLink(quotation.orderId)) || undefined;
+    const [portalLink, pdfLink] = await Promise.all([
+      getSaleOrderPortalLink(quotation.orderId).then(v => v || undefined),
+      getSaleOrderPdfLink(quotation.orderId).then(v => v || undefined),
+    ]);
     const role = profile.role === 'admin' ? 'admin' : 'customer';
-    return [createQuotationJourneyFlexMessage(order, { role, portalLink }, userLanguage)];
+    const card = createQuotationJourneyFlexMessage(order, { role, portalLink, pdfLink }, userLanguage);
+
+    if (paymentTermNotFound) {
+      return [
+        botText(tr(userLanguage,
+          `ไม่พบเงื่อนไขการชำระเงิน "${paymentTerm}" สร้างใบเสนอราคาแล้วโดยใช้เงื่อนไขเริ่มต้น`,
+          `Payment term "${paymentTerm}" not found — created the quote with Odoo's default payment term instead.`,
+        ), userLanguage),
+        card,
+      ];
+    }
+
+    return [card];
   },
 };
 

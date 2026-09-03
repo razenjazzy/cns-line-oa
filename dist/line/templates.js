@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.createQuotationJourneyFlexMessage = exports.createFormPromptFlexMessage = exports.createOrderSummaryFlexMessage = exports.createServiceActionFlexMessage = exports.createServiceHomeFlexMessage = exports.createProductCardFlexMessage = exports.createDailyReportFlexMessage = exports.createBotTextFlexMessage = exports.formatMoney = void 0;
+exports.createQuotationListFlexMessage = exports.createQuotationJourneyFlexMessage = exports.createFormPromptFlexMessage = exports.createOrderSummaryFlexMessage = exports.createServiceActionFlexMessage = exports.createServiceHomeFlexMessage = exports.createProductCardFlexMessage = exports.createDailyReportFlexMessage = exports.createBotTextFlexMessage = exports.formatMoney = void 0;
 const channels_1 = require("./channels");
 const i18n_1 = require("../services/i18n");
 // Cloudnex brand palette — kept consistent across every Flex message.
@@ -14,6 +14,8 @@ const BRAND = {
     inkSoft: '#5B6C69',
     surface: '#FFFFFF',
     paper: '#F1F4F2',
+    /** Applied to every background-colored box so cards read as one consistent, rounded design language instead of a mix of square and rounded shapes. */
+    radius: '12px',
 };
 /**
  * Fallback only for callers that genuinely have no per-user language to pass
@@ -48,7 +50,7 @@ exports.formatMoney = formatMoney;
 const createMessageActionButton = (label, actionText, style = 'primary', color = BRAND.teal) => ({
     type: 'button',
     style,
-    height: 'sm',
+    height: 'md',
     color,
     action: { type: 'message', label: buttonLabel(label), text: actionText },
 });
@@ -61,9 +63,31 @@ const createMessageActionButton = (label, actionText, style = 'primary', color =
 const createUriActionButton = (label, uri, style = 'primary', color = BRAND.teal) => ({
     type: 'button',
     style,
-    height: 'sm',
+    height: 'md',
     color,
     action: { type: 'uri', label: buttonLabel(label), uri },
+});
+/**
+ * A button that opens the keyboard prefilled with editable text, instead of
+ * sending a fixed command — for actions that need free-form input (which
+ * product, what quantity) a plain message/uri button can't carry. LINE
+ * handles this entirely client-side (no postback-event handling needed on
+ * our end: src/line/webhook.ts only processes `message` events, so the
+ * accompanying postback is silently ignored — the user's edited text then
+ * arrives as a normal text message through the existing pipeline).
+ */
+const createPrefillButton = (label, fillInText, style = 'secondary', color = BRAND.tealTint) => ({
+    type: 'button',
+    style,
+    height: 'md',
+    color,
+    action: {
+        type: 'postback',
+        label: buttonLabel(label),
+        data: `action=prefill&text=${encodeURIComponent(fillInText)}`,
+        inputOption: 'openKeyboard',
+        fillInText,
+    },
 });
 const truncate = (value, maxLength) => {
     const chars = Array.from(value.trim());
@@ -121,20 +145,13 @@ const createBotTextFlexMessage = (params) => {
                         type: 'box',
                         layout: 'vertical',
                         backgroundColor: tone === 'warning' ? BRAND.goldTint : BRAND.tealTint,
+                        cornerRadius: BRAND.radius,
                         paddingAll: 'md',
                         contents: [
                             { type: 'text', text: params.body, color: tone === 'error' ? '#7A271A' : BRAND.ink, size: 'sm', wrap: true },
                         ],
                     },
-                    {
-                        type: 'box',
-                        layout: 'horizontal',
-                        spacing: 'sm',
-                        contents: [
-                            { type: 'box', layout: 'vertical', width: '8px', backgroundColor: toneColor, contents: [{ type: 'filler' }] },
-                            { type: 'text', text: params.language === 'en' ? 'Use the buttons below for the next step.' : 'ใช้ปุ่มด้านล่างเพื่อไปขั้นตอนถัดไป', size: 'xs', color: BRAND.inkSoft, wrap: true },
-                        ],
-                    },
+                    { type: 'text', text: params.language === 'en' ? 'Use the buttons below for the next step.' : 'ใช้ปุ่มด้านล่างเพื่อไปขั้นตอนถัดไป', size: 'xs', color: toneColor, wrap: true },
                 ],
             },
             footer: {
@@ -231,7 +248,9 @@ const createProductCardFlexMessage = (productName, price, stock, language = defa
                             {
                                 type: 'box',
                                 layout: 'vertical',
+                                flex: 1,
                                 backgroundColor: BRAND.tealTint,
+                                cornerRadius: BRAND.radius,
                                 paddingAll: 'sm',
                                 contents: [
                                     { type: 'text', text: language === 'en' ? 'Price' : 'ราคา', size: 'xs', color: BRAND.inkSoft },
@@ -241,7 +260,9 @@ const createProductCardFlexMessage = (productName, price, stock, language = defa
                             {
                                 type: 'box',
                                 layout: 'vertical',
+                                flex: 1,
                                 backgroundColor: BRAND.goldTint,
+                                cornerRadius: BRAND.radius,
                                 paddingAll: 'sm',
                                 contents: [
                                     { type: 'text', text: language === 'en' ? 'Stock' : 'คงเหลือ', size: 'xs', color: BRAND.inkSoft },
@@ -301,7 +322,7 @@ const createServiceHomeFlexMessage = (services, language, agentName) => {
                 contents: services.slice(0, 10).map(service => ({
                     type: 'button',
                     style: 'primary',
-                    height: 'sm',
+                    height: 'md',
                     color: BRAND.teal,
                     action: {
                         type: 'message',
@@ -318,14 +339,16 @@ const createServiceHomeFlexMessage = (services, language, agentName) => {
                     {
                         type: 'button',
                         style: 'secondary',
-                        height: 'sm',
+                        height: 'md',
+                        flex: 1,
                         color: BRAND.tealTint,
                         action: { type: 'message', label: language === 'en' ? 'Language' : 'ภาษา', text: language === 'en' ? 'LANG TH' : 'LANG EN' },
                     },
                     {
                         type: 'button',
                         style: 'secondary',
-                        height: 'sm',
+                        height: 'md',
+                        flex: 1,
                         color: BRAND.tealTint,
                         action: { type: 'message', label: language === 'en' ? 'Guide' : 'คู่มือ', text: 'GUIDE' },
                     },
@@ -405,6 +428,7 @@ const createOrderSummaryFlexMessage = (total, language = defaultUiLanguage()) =>
                         type: 'box',
                         layout: 'vertical',
                         backgroundColor: BRAND.tealTint,
+                        cornerRadius: BRAND.radius,
                         paddingAll: 'md',
                         contents: [
                             { type: 'text', text: language === 'en' ? 'Total' : 'ยอดรวม', size: 'xs', color: BRAND.inkSoft },
@@ -466,6 +490,7 @@ const createFormPromptFlexMessage = (params) => {
                         type: 'box',
                         layout: 'vertical',
                         backgroundColor: BRAND.tealTint,
+                        cornerRadius: BRAND.radius,
                         paddingAll: 'md',
                         contents: [
                             { type: 'text', text: params.language === 'en' ? 'Please type your answer in the chat box.' : 'กรุณาพิมพ์คำตอบในช่องแชท', size: 'xs', color: BRAND.inkSoft, wrap: true },
@@ -506,7 +531,7 @@ const createQuotationJourneyFlexMessage = (order, options, language) => {
             type: 'box',
             layout: 'vertical',
             backgroundColor: '#F8D7DA',
-            cornerRadius: 'md',
+            cornerRadius: BRAND.radius,
             paddingAll: 'sm',
             contents: [
                 { type: 'text', text: (0, i18n_1.stateLabel)('cancel', language), align: 'center', weight: 'bold', size: 'sm', color: '#7A271A' },
@@ -520,7 +545,7 @@ const createQuotationJourneyFlexMessage = (order, options, language) => {
                 type: 'box',
                 layout: 'vertical',
                 flex: 1,
-                cornerRadius: 'md',
+                cornerRadius: BRAND.radius,
                 paddingAll: 'xs',
                 backgroundColor: index === currentIndex ? BRAND.teal : BRAND.tealTint,
                 contents: [
@@ -536,26 +561,51 @@ const createQuotationJourneyFlexMessage = (order, options, language) => {
                 ],
             })),
         };
-    const footerButtons = [];
+    // Organized as rows (rather than one flat button list) so each row stays
+    // simple regardless of how many actions the admin has available for this
+    // state — mirrors Odoo web's own button visibility per state.
+    const footerRows = [];
     const canStillAct = !isCancelled && order.state !== 'sale';
+    // Matches Odoo web's own Create Invoice button condition exactly
+    // (sale.order.form: invisible="invoice_status != 'to invoice'").
+    const canInvoice = !isCancelled && order.state === 'sale' && order.invoice_status === 'to invoice';
     if (options.role === 'admin') {
         if (canStillAct) {
-            footerButtons.push(createMessageActionButton((0, i18n_1.t)('confirm', language), `QUOTE CONFIRM ${order.id}`, 'primary', BRAND.teal));
-            footerButtons.push(createMessageActionButton((0, i18n_1.t)('sendToCustomer', language), `QUOTE SEND ${order.id}`, 'secondary', BRAND.tealTint));
+            footerRows.push([
+                createMessageActionButton((0, i18n_1.t)('confirm', language), `QUOTE CONFIRM ${order.id}`, 'primary', BRAND.teal),
+                createMessageActionButton((0, i18n_1.t)('sendToCustomer', language), `QUOTE SEND ${order.id}`, 'secondary', BRAND.tealTint),
+            ]);
+            footerRows.push([
+                createPrefillButton((0, i18n_1.t)('addItem', language), `QUOTE ADD ${order.id} `, 'secondary', BRAND.tealTint),
+                createPrefillButton((0, i18n_1.t)('editItem', language), `QUOTE EDIT ${order.id} `, 'secondary', BRAND.tealTint),
+                createMessageActionButton((0, i18n_1.t)('cancelQuote', language), `QUOTE CANCEL ${order.id}`, 'secondary', BRAND.goldTint),
+            ]);
         }
-        if (options.portalLink) {
-            footerButtons.push(createUriActionButton((0, i18n_1.t)('preview', language), options.portalLink, 'secondary', BRAND.goldTint));
+        if (canInvoice) {
+            footerRows.push([createMessageActionButton((0, i18n_1.t)('createInvoice', language), `QUOTE INVOICE ${order.id}`, 'primary', BRAND.teal)]);
+        }
+        if (options.portalLink || options.pdfLink) {
+            footerRows.push([
+                ...(options.portalLink ? [createUriActionButton((0, i18n_1.t)('preview', language), options.portalLink, 'secondary', BRAND.goldTint)] : []),
+                ...(options.pdfLink ? [createUriActionButton((0, i18n_1.t)('downloadPdf', language), options.pdfLink, 'secondary', BRAND.goldTint)] : []),
+            ]);
         }
     }
     else {
         if (canStillAct) {
-            footerButtons.push(createMessageActionButton((0, i18n_1.t)('approve', language), `QUOTE APPROVE ${order.id}`, 'primary', BRAND.teal));
+            footerRows.push([createMessageActionButton((0, i18n_1.t)('approve', language), `QUOTE APPROVE ${order.id}`, 'primary', BRAND.teal)]);
         }
-        if (options.portalLink) {
-            footerButtons.push(createUriActionButton((0, i18n_1.t)('viewFullQuotation', language), options.portalLink, 'secondary', BRAND.tealTint));
+        if (options.portalLink || options.pdfLink) {
+            footerRows.push([
+                ...(options.portalLink ? [createUriActionButton((0, i18n_1.t)('viewFullQuotation', language), options.portalLink, 'secondary', BRAND.tealTint)] : []),
+                ...(options.pdfLink ? [createUriActionButton((0, i18n_1.t)('downloadPdf', language), options.pdfLink, 'secondary', BRAND.tealTint)] : []),
+            ]);
         }
     }
-    footerButtons.push(createMessageActionButton(language === 'en' ? 'Home' : 'หน้าหลัก', 'NAV HOME', 'secondary', BRAND.goldTint));
+    footerRows.push([createMessageActionButton(language === 'en' ? 'Home' : 'หน้าหลัก', 'NAV HOME', 'secondary', BRAND.goldTint)]);
+    const footerContents = footerRows.map(row => row.length === 1
+        ? row[0]
+        : { type: 'box', layout: 'horizontal', spacing: 'xs', contents: row.map(button => ({ ...button, flex: 1 })) });
     return {
         type: 'flex',
         altText: truncate(`${(0, i18n_1.t)('quotation', language)} ${order.name} — ${customerName} — ${(0, exports.formatMoney)(order.amount_total, language)}`, 390),
@@ -588,19 +638,34 @@ const createQuotationJourneyFlexMessage = (order, options, language) => {
                             contents: [
                                 { type: 'text', text: (0, i18n_1.t)('items', language), size: 'xs', color: BRAND.inkSoft },
                                 ...visibleLines.map(line => ({
-                                    type: 'text',
-                                    text: `${line.productName} × ${line.qty}`,
-                                    size: 'sm',
-                                    color: BRAND.ink,
-                                    wrap: true,
+                                    type: 'box',
+                                    layout: 'horizontal',
+                                    backgroundColor: BRAND.paper,
+                                    cornerRadius: BRAND.radius,
+                                    paddingAll: 'sm',
+                                    contents: [
+                                        { type: 'text', text: line.productName, size: 'sm', weight: 'bold', color: BRAND.ink, wrap: true, flex: 3 },
+                                        { type: 'text', text: `× ${line.qty}`, size: 'sm', color: BRAND.inkSoft, align: 'end', flex: 1 },
+                                    ],
                                 })),
                                 ...(extraCount > 0 ? [{ type: 'text', text: `+${extraCount} ${(0, i18n_1.t)('moreItems', language)}`, size: 'xs', color: BRAND.inkSoft }] : []),
+                            ],
+                        }] : []),
+                    ...(order.note ? [{
+                            type: 'box',
+                            layout: 'vertical',
+                            backgroundColor: BRAND.paper,
+                            cornerRadius: BRAND.radius,
+                            paddingAll: 'sm',
+                            contents: [
+                                { type: 'text', text: truncate(order.note, 200), size: 'xs', color: BRAND.inkSoft, wrap: true },
                             ],
                         }] : []),
                     {
                         type: 'box',
                         layout: 'vertical',
                         backgroundColor: BRAND.tealTint,
+                        cornerRadius: BRAND.radius,
                         paddingAll: 'md',
                         contents: [
                             { type: 'text', text: (0, i18n_1.t)('total', language), size: 'xs', color: BRAND.inkSoft },
@@ -613,9 +678,59 @@ const createQuotationJourneyFlexMessage = (order, options, language) => {
                 type: 'box',
                 layout: 'vertical',
                 spacing: 'sm',
-                contents: footerButtons,
+                contents: footerContents,
             },
         },
     };
 };
 exports.createQuotationJourneyFlexMessage = createQuotationJourneyFlexMessage;
+/**
+ * "My quotations" — one tappable row per order (QUOTE STATUS <id>), capped
+ * at however many the caller passed in (getSaleOrdersForPartner already
+ * caps the query itself). No pagination in this pass — matches the rest of
+ * this feature's "simple UX" scope; a caller with more than that many
+ * orders is told to ask an admin to narrow the search instead.
+ */
+const createQuotationListFlexMessage = (orders, hasMore, language) => {
+    return {
+        type: 'flex',
+        altText: truncate((0, i18n_1.t)('myQuotations', language), 390),
+        contents: {
+            type: 'bubble',
+            styles: {
+                header: { backgroundColor: BRAND.teal },
+                body: { backgroundColor: BRAND.surface },
+                footer: { backgroundColor: BRAND.surface },
+            },
+            header: {
+                type: 'box',
+                layout: 'vertical',
+                paddingAll: 'md',
+                contents: [
+                    { type: 'text', text: (0, i18n_1.t)('myQuotations', language), weight: 'bold', size: 'md', color: '#FFFFFF', wrap: true },
+                ],
+            },
+            body: {
+                type: 'box',
+                layout: 'vertical',
+                spacing: 'sm',
+                contents: orders.length
+                    ? [
+                        // Button labels are hard-capped at 20 chars by LINE itself
+                        // (see buttonLabel) — order name + total is the most useful
+                        // pair to fit; state is visible once QUOTE STATUS is opened.
+                        ...orders.map(order => createMessageActionButton(`${order.name} · ${(0, exports.formatMoney)(order.amount_total, language)}`, `QUOTE STATUS ${order.id}`, 'secondary', BRAND.tealTint)),
+                        ...(hasMore ? [{ type: 'text', text: (0, i18n_1.t)('moreQuotations', language), size: 'xs', color: BRAND.inkSoft, wrap: true }] : []),
+                    ]
+                    : [{ type: 'text', text: (0, i18n_1.t)('noQuotations', language), size: 'sm', color: BRAND.inkSoft, wrap: true }],
+            },
+            footer: {
+                type: 'box',
+                layout: 'vertical',
+                spacing: 'sm',
+                contents: [createMessageActionButton(language === 'en' ? 'Home' : 'หน้าหลัก', 'NAV HOME', 'secondary', BRAND.goldTint)],
+            },
+        },
+    };
+};
+exports.createQuotationListFlexMessage = createQuotationListFlexMessage;

@@ -46,6 +46,10 @@ export type OdooSaleOrder = {
   access_token?: string;
   /** Only populated by getSaleOrderById, which does the extra sale.order.line read; findOrderByReference leaves this undefined. */
   lines?: OdooSaleOrderLine[];
+  /** Odoo's own invoicing-state selection ('no' | 'to invoice' | 'invoiced' | 'upselling'). Only populated by getSaleOrderById. */
+  invoice_status?: string;
+  /** Plain string as returned by Odoo (an HTML field, but shown as-is in a chat card — no rendering needed). Only populated by getSaleOrderById. */
+  note?: string;
 };
 
 export type OdooDailySalesItem = {
@@ -267,6 +271,8 @@ const parseOrder = (row: Record<string, unknown>): OdooSaleOrder => {
     partner_id: partnerTuple,
     date_order: str(row.date_order),
     access_token: typeof row.access_token === 'string' ? row.access_token : undefined,
+    invoice_status: typeof row.invoice_status === 'string' ? row.invoice_status : undefined,
+    note: typeof row.note === 'string' && row.note ? row.note : undefined,
   };
 };
 
@@ -427,7 +433,7 @@ export const getSaleOrderById = async (orderId: number): Promise<OdooSaleOrder |
     'sale.order',
     'search_read',
     [[['id', '=', orderId]]],
-    { fields: ['id', 'name', 'state', 'amount_total', 'partner_id', 'access_token'], limit: 1 }
+    { fields: ['id', 'name', 'state', 'amount_total', 'partner_id', 'access_token', 'invoice_status', 'note'], limit: 1 }
   );
   if (!rows.length) return null;
   const order = parseOrder(rows[0]);
@@ -468,6 +474,62 @@ export const getSaleOrderPortalLink = async (orderId: number): Promise<string | 
     console.error('getSaleOrderPortalLink failed:', error);
     return null;
   }
+};
+
+/**
+ * LINE's Messaging API has no file-message type a bot can push (verified —
+ * only text/sticker/image/video/audio/location/imagemap/template/flex), so
+ * this is offered as a link, not an attachment. Reuses the exact same
+ * portal link/access_token as getSaleOrderPortalLink — Odoo's portal route
+ * returns a real PDF directly when `report_type=pdf` is appended, no
+ * separate report call or extra auth needed (confirmed live).
+ */
+export const getSaleOrderPdfLink = async (orderId: number): Promise<string | null> => {
+  const portalLink = await getSaleOrderPortalLink(orderId);
+  if (!portalLink) return null;
+  return `${portalLink}${portalLink.includes('?') ? '&' : '?'}report_type=pdf`;
+};
+
+/** Powers "my quotations" — most recent orders for a given customer, newest first. */
+export const getSaleOrdersForPartner = async (partnerId: number, limit = 8): Promise<OdooSaleOrder[]> => {
+  const config = getConfig();
+  if (!config) return [];
+
+  const uid = await loginRead(config);
+  if (!uid) return [];
+
+  const rows = await executeKwRead<Record<string, unknown>[]>(
+    config,
+    uid,
+    'sale.order',
+    'search_read',
+    [[['partner_id', '=', partnerId]]],
+    { fields: ['id', 'name', 'state', 'amount_total', 'partner_id'], order: 'date_order desc', limit }
+  );
+  return rows.map(parseOrder);
+};
+
+/** Mirrors findProductByQuery's ilike-first-match convention, applied to account.payment.term. */
+export const findPaymentTermByName = async (query: string): Promise<{ id: number; name: string } | null> => {
+  const normalizedQuery = normalizeLookupText(query);
+  if (!normalizedQuery) return null;
+
+  const config = getConfig();
+  if (!config) return null;
+
+  const uid = await loginRead(config);
+  if (!uid) return null;
+
+  const rows = await executeKwRead<Record<string, unknown>[]>(
+    config,
+    uid,
+    'account.payment.term',
+    'search_read',
+    [[['name', 'ilike', normalizedQuery]]],
+    { fields: ['id', 'name'], limit: 1 }
+  );
+  if (!rows.length) return null;
+  return { id: num(rows[0].id), name: str(rows[0].name) };
 };
 
 /** Quotation -> Sales Order. */
@@ -516,6 +578,102 @@ export const markSaleOrderSent = async (orderId: number): Promise<boolean> => {
   }
 };
 
+/** Cancels a quotation/order — reversible in Odoo itself (reset to draft), not exposed here since it's not part of the LINE journey. */
+export const cancelSaleOrder = async (orderId: number): Promise<boolean> => {
+  const config = getConfig();
+  if (!config) return false;
+
+  try {
+    const uid = await login(config);
+    if (!uid) return false;
+    await executeKw<boolean>(config, uid, 'sale.order', 'action_cancel', [[orderId]]);
+    return true;
+  } catch (error) {
+    console.error('cancelSaleOrder failed:', error);
+    return false;
+  }
+};
+
+/** Appends a new line to an existing (draft/sent) order — QUOTE ADD. */
+export const addSaleOrderLine = async (orderId: number, productId: number, qty: number): Promise<boolean> => {
+  const config = getConfig();
+  if (!config) return false;
+
+  try {
+    const uid = await login(config);
+    if (!uid) return false;
+    await executeKw<number>(config, uid, 'sale.order.line', 'create', [{
+      order_id: orderId,
+      product_id: productId,
+      product_uom_qty: qty,
+    }]);
+    return true;
+  } catch (error) {
+    console.error('addSaleOrderLine failed:', error);
+    return false;
+  }
+};
+
+/**
+ * Updates the quantity of an *existing* line matching this order+product —
+ * QUOTE EDIT is for changing a line already on the quote, not adding a new
+ * one (that's QUOTE ADD). Returns false (not an error) if no matching line
+ * is found, same "not found vs failed" distinction as the rest of this file.
+ */
+export const updateSaleOrderLineQty = async (orderId: number, productId: number, qty: number): Promise<boolean> => {
+  const config = getConfig();
+  if (!config) return false;
+
+  try {
+    const uid = await login(config);
+    if (!uid) return false;
+
+    const lines = await executeKw<{ id: number }[]>(config, uid, 'sale.order.line', 'search_read', [
+      [['order_id', '=', orderId], ['product_id', '=', productId]],
+    ], { fields: ['id'], limit: 1 });
+    if (!lines.length) return false;
+
+    await executeKw<boolean>(config, uid, 'sale.order.line', 'write', [[lines[0].id], { product_uom_qty: qty }]);
+    return true;
+  } catch (error) {
+    console.error('updateSaleOrderLineQty failed:', error);
+    return false;
+  }
+};
+
+/**
+ * Mirrors Odoo web's "Create Invoice" button, which is a window action
+ * opening the sale.advance.payment.inv wizard (confirmed live on this
+ * instance: sale.order.form's create_invoice button has type="action",
+ * name="438" — an ir.actions.act_window, not a direct sale.order method).
+ * Reproduced over RPC the same way Odoo's own client does it: create the
+ * wizard record with the sale order in its active_id/active_ids context,
+ * then call its create_invoices() method with that same context. Defaults
+ * to a regular invoice (not the percentage/down-payment variant, which is
+ * a separate button in the UI).
+ */
+export const createInvoiceForSaleOrder = async (orderId: number): Promise<boolean> => {
+  const config = getConfig();
+  if (!config) return false;
+
+  try {
+    const uid = await login(config);
+    if (!uid) return false;
+
+    const wizardContext = { active_model: 'sale.order', active_ids: [orderId], active_id: orderId };
+    const wizardId = await executeKw<number>(
+      config, uid, 'sale.advance.payment.inv', 'create', [{}], { context: wizardContext }
+    );
+    await executeKw<unknown>(
+      config, uid, 'sale.advance.payment.inv', 'create_invoices', [[wizardId]], { context: wizardContext }
+    );
+    return true;
+  } catch (error) {
+    console.error('createInvoiceForSaleOrder failed:', error);
+    return false;
+  }
+};
+
 const findOrCreatePartner = async (config: OdooConfig, uid: number, name: string, phone: string): Promise<number> => {
   const normalizedPhone = phone.trim();
 
@@ -550,7 +708,14 @@ export const createQuotationFromLine = async (
   customerPhone: string,
   productQuery: string,
   qty: number,
-  explicitPartnerId?: number
+  explicitPartnerId?: number,
+  /**
+   * Optional Odoo fields that are blank/defaulted in Odoo web unless a user
+   * fills them in — same behavior here. Any key left undefined is omitted
+   * from the create payload entirely, so a caller that provides none of
+   * these gets byte-for-byte today's behavior.
+   */
+  extra?: { customerRef?: string; discountPercent?: number; validityDate?: string; note?: string; paymentTermId?: number }
 ): Promise<{ orderName: string; total: number; orderId: number } | null> => {
   const config = getConfig();
   if (!config) return null;
@@ -564,6 +729,18 @@ export const createQuotationFromLine = async (
 
     const partnerId = explicitPartnerId || await findOrCreatePartner(config, uid, customerName, customerPhone);
 
+    const orderLine: Record<string, unknown> = { product_id: product.id, product_uom_qty: qty };
+    if (extra?.discountPercent !== undefined) orderLine.discount = extra.discountPercent;
+
+    const orderFields: Record<string, unknown> = {
+      partner_id: partnerId,
+      order_line: [[0, 0, orderLine]],
+    };
+    if (extra?.customerRef) orderFields.client_order_ref = extra.customerRef;
+    if (extra?.validityDate) orderFields.validity_date = extra.validityDate;
+    if (extra?.note) orderFields.note = extra.note;
+    if (extra?.paymentTermId !== undefined) orderFields.payment_term_id = extra.paymentTermId;
+
     // No reliable natural key to reconcile a sale order against before it
     // exists, so unlike partner/service creates this is not retried or
     // reconciled — a failed attempt should be safely re-runnable by the user.
@@ -572,10 +749,7 @@ export const createQuotationFromLine = async (
       uid,
       'sale.order',
       'create',
-      [{
-        partner_id: partnerId,
-        order_line: [[0, 0, { product_id: product.id, product_uom_qty: qty }]],
-      }]
+      [orderFields]
     );
 
     const rows = await executeKw<Record<string, unknown>[]>(
