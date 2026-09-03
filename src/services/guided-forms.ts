@@ -1,7 +1,11 @@
 import { listProducts, listServiceCatalogItems } from './odoo';
 
-const loadProductOptions = async (): Promise<string[]> => (await listProducts(10)).map(p => p.name);
-const loadServiceOptions = async (): Promise<string[]> => (await listServiceCatalogItems(10)).map(s => s.name);
+// Dedupe by name — Odoo can have multiple product.product records sharing a
+// display name (variants of the same template), which would otherwise show
+// the same tappable chip label twice with no way to tell them apart.
+const dedupeNames = (names: string[]): string[] => Array.from(new Set(names));
+const loadProductOptions = async (): Promise<string[]> => dedupeNames((await listProducts(10)).map(p => p.name));
+const loadServiceOptions = async (): Promise<string[]> => dedupeNames((await listServiceCatalogItems(10)).map(s => s.name));
 
 export type FlowKey =
   | 'USER_CREATE'

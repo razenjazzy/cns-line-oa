@@ -67,15 +67,23 @@ const demoOrderHandler: CommandHandler = {
       const { resolveCommandReply } = await import('../command-router');
       return resolveCommandReply({ ...ctx, text: 'FORM DEMO ORDER' });
     }
-    const order = await findOrderByReference(orderRef);
-    if (!order) {
+    const found = await findOrderByReference(orderRef);
+    if (!found) {
       return [botText(tr(userLanguage, `ไม่พบออเดอร์เลขที่ ${orderRef} กรุณาตรวจสอบเลขที่อ้างอิงอีกครั้งค่ะ`, `We couldn't find an order with reference ${orderRef}. Please double-check the reference number.`), userLanguage)];
     }
-    return [botText(tr(
-      userLanguage,
-      `สถานะออเดอร์\n- เลขที่: ${order.name}\n- สถานะ: ${order.state}\n- ยอดรวม: ${formatMoney(order.amount_total, 'th')}`,
-      `Order status\n- Reference: ${order.name}\n- Status: ${order.state}\n- Total: ${formatMoney(order.amount_total, 'en')}`,
-    ), userLanguage)];
+
+    // Re-fetch by id for the full card (line items, invoice status, note) —
+    // findOrderByReference only resolves the reference to an id, same as
+    // every other "look up then render the rich card" path in this app
+    // (quoteStatusHandler etc.) — one consistent card design, not a
+    // separate plain-text summary for this one entry point.
+    const order = (await getSaleOrderById(found.id)) || found;
+    const [portalLink, pdfLink] = await Promise.all([
+      getSaleOrderPortalLink(order.id).then(v => v || undefined),
+      getSaleOrderPdfLink(order.id).then(v => v || undefined),
+    ]);
+    const role = ctx.profile.role === 'admin' ? 'admin' : 'customer';
+    return [createQuotationJourneyFlexMessage(order, { role, portalLink, pdfLink }, userLanguage)];
   },
 };
 

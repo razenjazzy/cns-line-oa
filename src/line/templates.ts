@@ -816,15 +816,39 @@ export const createQuotationListFlexMessage = (
         spacing: 'sm',
         contents: orders.length
           ? [
-              // Button labels are hard-capped at 20 chars by LINE itself
-              // (see buttonLabel) — order name + total is the most useful
-              // pair to fit; state is visible once QUOTE STATUS is opened.
-              ...orders.map(order => createMessageActionButton(
-                `${order.name} · ${formatMoney(order.amount_total, language)}`,
-                `QUOTE STATUS ${order.id}`,
-                'secondary',
-                BRAND.tealTint,
-              )),
+              // A tappable box (not a button — LINE buttons cap labels at
+              // 20 chars, which forced "S00023 · 1,851 THB" with no status
+              // or date, unreadable for a sales user). A box's own action
+              // makes the whole row tappable with no label-length limit at
+              // all, so status + date + total can all be shown plainly.
+              ...orders.map(order => ({
+                type: 'box' as const,
+                layout: 'horizontal' as const,
+                backgroundColor: BRAND.paper,
+                cornerRadius: BRAND.radius,
+                paddingAll: 'sm' as const,
+                action: { type: 'message' as const, text: `QUOTE STATUS ${order.id}` },
+                contents: [
+                  {
+                    type: 'box' as const,
+                    layout: 'vertical' as const,
+                    flex: 3,
+                    contents: [
+                      { type: 'text' as const, text: order.name, size: 'sm' as const, weight: 'bold' as const, color: BRAND.ink, wrap: true },
+                      {
+                        type: 'text' as const,
+                        text: `${stateLabel(order.state, language)}${order.date_order ? ` · ${order.date_order.split(' ')[0]}` : ''}`,
+                        size: 'xs' as const, color: BRAND.inkSoft, wrap: true,
+                      },
+                    ],
+                  },
+                  {
+                    type: 'text' as const,
+                    text: formatMoney(order.amount_total, language),
+                    size: 'sm' as const, weight: 'bold' as const, color: BRAND.tealStrong, align: 'end' as const, flex: 2, gravity: 'center' as const,
+                  },
+                ],
+              })),
               ...(hasMore ? [{ type: 'text' as const, text: t('moreQuotations', language), size: 'xs' as const, color: BRAND.inkSoft, wrap: true }] : []),
             ]
           : [{ type: 'text', text: t('noQuotations', language), size: 'sm', color: BRAND.inkSoft, wrap: true }],

@@ -532,7 +532,7 @@ export const getSaleOrdersForPartner = async (partnerId: number, limit = 8): Pro
     'sale.order',
     'search_read',
     [[['partner_id', '=', partnerId]]],
-    { fields: ['id', 'name', 'state', 'amount_total', 'partner_id'], order: 'date_order desc', limit }
+    { fields: ['id', 'name', 'state', 'amount_total', 'partner_id', 'date_order'], order: 'date_order desc', limit }
   );
   return rows.map(parseOrder);
 };
@@ -648,6 +648,26 @@ export const addSaleOrderLine = async (orderId: number, productId: number, qty: 
  * one (that's QUOTE ADD). Returns false (not an error) if no matching line
  * is found, same "not found vs failed" distinction as the rest of this file.
  */
+/**
+ * Shared by updateSaleOrderLineQty (which line to edit) and QUOTE ADD's
+ * duplicate-product check (whether to reject in favor of QUOTE EDIT).
+ * Returns null on both "not found" and "not configured" — same
+ * not-an-error convention as the rest of this file's finder functions.
+ */
+export const findSaleOrderLineByProduct = async (orderId: number, productId: number): Promise<{ id: number; qty: number } | null> => {
+  const config = getConfig();
+  if (!config) return null;
+
+  const uid = await loginRead(config);
+  if (!uid) return null;
+
+  const lines = await executeKwRead<{ id: number; product_uom_qty: number }[]>(config, uid, 'sale.order.line', 'search_read', [
+    [['order_id', '=', orderId], ['product_id', '=', productId]],
+  ], { fields: ['id', 'product_uom_qty'], limit: 1 });
+
+  return lines.length ? { id: lines[0].id, qty: lines[0].product_uom_qty } : null;
+};
+
 export const updateSaleOrderLineQty = async (orderId: number, productId: number, qty: number): Promise<boolean> => {
   const config = getConfig();
   if (!config) return false;
@@ -656,12 +676,10 @@ export const updateSaleOrderLineQty = async (orderId: number, productId: number,
     const uid = await login(config);
     if (!uid) return false;
 
-    const lines = await executeKw<{ id: number }[]>(config, uid, 'sale.order.line', 'search_read', [
-      [['order_id', '=', orderId], ['product_id', '=', productId]],
-    ], { fields: ['id'], limit: 1 });
-    if (!lines.length) return false;
+    const existing = await findSaleOrderLineByProduct(orderId, productId);
+    if (!existing) return false;
 
-    await executeKw<boolean>(config, uid, 'sale.order.line', 'write', [[lines[0].id], { product_uom_qty: qty }]);
+    await executeKw<boolean>(config, uid, 'sale.order.line', 'write', [[existing.id], { product_uom_qty: qty }]);
     return true;
   } catch (error) {
     console.error('updateSaleOrderLineQty failed:', error);

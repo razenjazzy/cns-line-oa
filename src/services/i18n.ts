@@ -44,7 +44,10 @@ export const UI_STRINGS = {
   sendToCustomer: { en: 'Send to customer', th: 'ส่งให้ลูกค้า' },
   confirm: { en: 'Confirm', th: 'ยืนยันคำสั่งซื้อ' },
   approve: { en: 'Approve', th: 'อนุมัติ' },
-  viewFullQuotation: { en: 'View full quotation', th: 'ดูใบเสนอราคาฉบับเต็ม' },
+  // Kept short deliberately — this button often sits half-width next to
+  // "Download PDF", and a longer label gets visually clipped by the LINE
+  // client itself (its width-based clipping, not the 20-char cap below).
+  viewFullQuotation: { en: 'View Quote', th: 'ดูใบเสนอราคา' },
   quoteSentToAdmin: { en: 'Sent to the customer for approval.', th: 'ส่งให้ลูกค้าเพื่ออนุมัติแล้ว' },
   quoteNotLinked: {
     en: 'This customer has not verified with the bot yet, so LINE cannot message them. Ask them to message the bot and complete VERIFY first.',

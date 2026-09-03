@@ -10,6 +10,7 @@ import {
   cancelSaleOrder,
   addSaleOrderLine,
   updateSaleOrderLineQty,
+  findSaleOrderLineByProduct,
   createInvoiceForSaleOrder,
   findProductByQuery,
   getPartnerById,
@@ -255,6 +256,20 @@ const quoteAddHandler: CommandHandler = {
     const product = await findProductByQuery(parsed.productName);
     if (!product) {
       return [botText(tr(userLanguage, `ไม่พบสินค้าที่ตรงกับ "${parsed.productName}"`, `No product matched "${parsed.productName}".`), userLanguage)];
+    }
+
+    // Odoo web itself doesn't merge a re-added product into its existing
+    // line either, but a second, separate line for the same product on
+    // one quote is confusing for a sales user (and easy to create by
+    // accident via QUOTE ADD) — point at QUOTE EDIT instead, which already
+    // exists specifically for changing an existing line's quantity.
+    const existingLine = await findSaleOrderLineByProduct(parsed.orderId, product.id);
+    if (existingLine) {
+      return [botText(tr(
+        userLanguage,
+        `"${product.name}" มีอยู่ในใบเสนอราคานี้แล้ว (จำนวน ${existingLine.qty}) ใช้ QUOTE EDIT เพื่อแก้ไขจำนวนแทน`,
+        `"${product.name}" is already on this quote (qty ${existingLine.qty}). Use QUOTE EDIT to change its quantity instead.`,
+      ), userLanguage)];
     }
 
     const ok = await addSaleOrderLine(parsed.orderId, product.id, parsed.qty);

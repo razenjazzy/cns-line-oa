@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.seedOdooSampleSalesData = exports.getDailySalesSnapshot = exports.deleteServiceCatalogItem = exports.updateServiceCatalogItem = exports.createServiceCatalogItem = exports.getServiceByIdentifier = exports.listServiceCatalogItems = exports.deletePartnerFromLine = exports.updatePartnerFromLine = exports.createPartnerFromLine = exports.getPartnerById = exports.getPartnerByPhone = exports.createQuotationFromLine = exports.createInvoiceForSaleOrder = exports.updateSaleOrderLineQty = exports.addSaleOrderLine = exports.cancelSaleOrder = exports.markSaleOrderSent = exports.confirmSaleOrder = exports.findPaymentTermByName = exports.getSaleOrdersForPartner = exports.getSaleOrderPdfLink = exports.getSaleOrderPortalLink = exports.getSaleOrderById = exports.findOrderByReference = exports.listProducts = exports.findProductByQuery = exports.verifyOdooAdminAccess = exports.pingOdoo = exports.isOdooConfigured = void 0;
+exports.seedOdooSampleSalesData = exports.getDailySalesSnapshot = exports.deleteServiceCatalogItem = exports.updateServiceCatalogItem = exports.createServiceCatalogItem = exports.getServiceByIdentifier = exports.listServiceCatalogItems = exports.deletePartnerFromLine = exports.updatePartnerFromLine = exports.createPartnerFromLine = exports.getPartnerById = exports.getPartnerByPhone = exports.createQuotationFromLine = exports.createInvoiceForSaleOrder = exports.updateSaleOrderLineQty = exports.findSaleOrderLineByProduct = exports.addSaleOrderLine = exports.cancelSaleOrder = exports.markSaleOrderSent = exports.confirmSaleOrder = exports.findPaymentTermByName = exports.getSaleOrdersForPartner = exports.getSaleOrderPdfLink = exports.getSaleOrderPortalLink = exports.getSaleOrderById = exports.findOrderByReference = exports.listProducts = exports.findProductByQuery = exports.verifyOdooAdminAccess = exports.pingOdoo = exports.isOdooConfigured = void 0;
 const ODOO_RPC_TIMEOUT_MS = Number(process.env.ODOO_RPC_TIMEOUT_MS || 7000);
 const ODOO_READ_RETRY_ATTEMPTS = Number(process.env.ODOO_READ_RETRY_ATTEMPTS || 3);
 const ODOO_READ_RETRY_BASE_DELAY_MS = Number(process.env.ODOO_READ_RETRY_BASE_DELAY_MS || 250);
@@ -374,7 +374,7 @@ const getSaleOrdersForPartner = async (partnerId, limit = 8) => {
     const uid = await loginRead(config);
     if (!uid)
         return [];
-    const rows = await executeKwRead(config, uid, 'sale.order', 'search_read', [[['partner_id', '=', partnerId]]], { fields: ['id', 'name', 'state', 'amount_total', 'partner_id'], order: 'date_order desc', limit });
+    const rows = await executeKwRead(config, uid, 'sale.order', 'search_read', [[['partner_id', '=', partnerId]]], { fields: ['id', 'name', 'state', 'amount_total', 'partner_id', 'date_order'], order: 'date_order desc', limit });
     return rows.map(parseOrder);
 };
 exports.getSaleOrdersForPartner = getSaleOrdersForPartner;
@@ -490,6 +490,25 @@ exports.addSaleOrderLine = addSaleOrderLine;
  * one (that's QUOTE ADD). Returns false (not an error) if no matching line
  * is found, same "not found vs failed" distinction as the rest of this file.
  */
+/**
+ * Shared by updateSaleOrderLineQty (which line to edit) and QUOTE ADD's
+ * duplicate-product check (whether to reject in favor of QUOTE EDIT).
+ * Returns null on both "not found" and "not configured" — same
+ * not-an-error convention as the rest of this file's finder functions.
+ */
+const findSaleOrderLineByProduct = async (orderId, productId) => {
+    const config = getConfig();
+    if (!config)
+        return null;
+    const uid = await loginRead(config);
+    if (!uid)
+        return null;
+    const lines = await executeKwRead(config, uid, 'sale.order.line', 'search_read', [
+        [['order_id', '=', orderId], ['product_id', '=', productId]],
+    ], { fields: ['id', 'product_uom_qty'], limit: 1 });
+    return lines.length ? { id: lines[0].id, qty: lines[0].product_uom_qty } : null;
+};
+exports.findSaleOrderLineByProduct = findSaleOrderLineByProduct;
 const updateSaleOrderLineQty = async (orderId, productId, qty) => {
     const config = getConfig();
     if (!config)
@@ -498,12 +517,10 @@ const updateSaleOrderLineQty = async (orderId, productId, qty) => {
         const uid = await login(config);
         if (!uid)
             return false;
-        const lines = await executeKw(config, uid, 'sale.order.line', 'search_read', [
-            [['order_id', '=', orderId], ['product_id', '=', productId]],
-        ], { fields: ['id'], limit: 1 });
-        if (!lines.length)
+        const existing = await (0, exports.findSaleOrderLineByProduct)(orderId, productId);
+        if (!existing)
             return false;
-        await executeKw(config, uid, 'sale.order.line', 'write', [[lines[0].id], { product_uom_qty: qty }]);
+        await executeKw(config, uid, 'sale.order.line', 'write', [[existing.id], { product_uom_qty: qty }]);
         return true;
     }
     catch (error) {
