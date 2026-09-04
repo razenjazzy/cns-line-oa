@@ -14,9 +14,17 @@ This repo should follow a staged, enterprise-safe path:
 ## Status as of 2026-09-04
 
 The current architecture review is recorded in
-`documents/ARCHITECTURE_REVIEW_2026-09-04.md`. The verified baseline is 21
-Vitest files and 158 passing tests; the next code priorities are durable
-approval persistence, audit correlation, and the barrel-preserving refactors.
+`documents/ARCHITECTURE_REVIEW_V2.md` (corrected — an earlier version of
+this note pointed at a `ARCHITECTURE_REVIEW_2026-09-04.md` that never
+existed). The enterprise-hardening pass (ERP adapter, modular Firestore/
+Odoo services, approval policy, audit query, structured logging — see
+`documents/STAGED_IMPLEMENTATION_BACKLOG.md` Track A/B1/B2) has been
+merged and verified: the baseline is now 38 Vitest files and 201 passing
+tests (up from the earlier 21/158), plus a clean `npm run build` and
+`npm run lint`. Next code priorities per the staged backlog: A3 (broader
+privileged-write audit review), B3/B4 (further file splits), C2/C3 (menu
+projection off the command registry, a future-ERP-provider spike) — none
+of those are started.
 
 Follow-up items after the quotation-journey P0/P1/P2 pass and the step-up
 OTP / grouped optional-fields / sales messaging pass that followed it.
