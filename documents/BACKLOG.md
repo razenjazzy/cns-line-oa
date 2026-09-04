@@ -1,6 +1,22 @@
 # Backlog
 
+## Standard implementation sequence for this repo
+
+This repo should follow a staged, enterprise-safe path:
+
+1. Keep only runtime files in staging deployment commits.
+2. Keep reference/vendor frameworks in backup, not in active runtime.
+3. Standardize the app around a clear ERP adapter layer.
+4. Standardize LINE commands via a registry-driven config model.
+5. Lock security and approval policy before broad production rollout.
+6. Validate in staging, then promote to production only after signoff.
+
 ## Status as of 2026-09-04
+
+The current architecture review is recorded in
+`documents/ARCHITECTURE_REVIEW_2026-09-04.md`. The verified baseline is 21
+Vitest files and 158 passing tests; the next code priorities are durable
+approval persistence, audit correlation, and the barrel-preserving refactors.
 
 Follow-up items after the quotation-journey P0/P1/P2 pass and the step-up
 OTP / grouped optional-fields / sales messaging pass that followed it.
@@ -40,6 +56,22 @@ deferred or not-yet-verified pieces.
 
 ## Infra / ops follow-up
 
+- **Staging deploy hygiene is already enforced — no separate mechanism
+  needed.** Railway builds via `railway.json`'s `"builder": "DOCKERFILE"`,
+  which runs `Dockerfile` against the build context `.dockerignore` defines.
+  `.dockerignore` already excludes `.backup`, `clawframework`, `documents`,
+  `tests`, `skills`, `ansible`, `.github`, `.vscode`, `.idea`, `.git`,
+  `deploy.env.*`, `.mcp.json`, and `.env*` from ever reaching the build
+  context, and the Dockerfile's stage 2 copies only `dist/` + production
+  `node_modules` into the final runtime image. A `scripts/prepare-staging-deploy.sh`
+  + `documents/STAGING_DEPLOY_POLICY.md` pair was added and then removed in
+  this pass — it built a parallel worktree/branch mechanism that never
+  actually plugged into Railway's real build path (Railway watches `main`
+  and builds via Dockerfile directly), and would have reintroduced a
+  permanently-diverging branch, the exact git-hygiene problem already
+  cleaned up earlier this project. If the runtime-safe file list ever needs
+  to change, edit `.dockerignore`/`Dockerfile` directly — that's the one
+  enforced boundary, not a second script.
 - **Re-enable the org policy** `constraints/iam.disableServiceAccountKeyCreation`
   on the `cns-line-oa` GCP project. It was disabled to mint the Firestore
   service-account key for Railway and never re-locked:
