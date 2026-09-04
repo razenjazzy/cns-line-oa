@@ -108,6 +108,15 @@ When adding Sales, HR, or future Odoo services:
 - Keep Odoo module logic in the existing service layer.
 - Add new Odoo-specific files only when the current `odoo.ts` would otherwise become unreasonably large.
 
+All ERP-specific calls go through `src/erp/registry.ts`'s `getErpAdapter()`
+(backed today by `src/erp/odoo-adapter.ts`, which itself delegates to
+`src/services/odoo/*`) — a handler file must never call Odoo RPC or
+`odoo.ts` directly. This is the one seam a future second ERP provider would
+implement against; `ERP_PROVIDER` fails closed for any value other than
+`odoo` until a second adapter actually exists. Do not build a general
+multi-ERP abstraction beyond this seam without a concrete second-provider
+requirement to validate it against.
+
 ## Context and Cost Efficiency
 
 Before changing code:

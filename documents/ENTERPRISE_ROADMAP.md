@@ -117,14 +117,13 @@ exact capability already exists, just not exposed as a friendly admin UI.
   it reads as a grid, not a flat list — same rounded-row treatment as
   every other card this session.
 
-### Step-by-step to-dos
+### Step-by-step to-dos — done, shipped in the enterprise-hardening pass
 
-- [ ] New `createAdminConfigFlexMessage` in `templates.ts` (reuse existing
-  row/toggle visual patterns, no new component type needed).
-- [ ] New `ADMIN CONFIG [channelId]` handler rendering it, admin-only.
-- [ ] Confirm tapping a toggle round-trips through the *existing*
-  `ADMIN CHANNEL` command rather than a new one — should need zero backend
-  changes, this is a pure UI addition.
+- [x] `createAdminConfigFlexMessage` in `templates.ts`.
+- [x] `ADMIN CONFIG [channelId]` handler (`src/line/handlers/admin.ts`),
+  admin-only, rendering the toggle grid.
+- [x] Tapping a toggle round-trips through the existing `ADMIN CHANNEL`
+  command — no new backend surface.
 
 ---
 
@@ -154,29 +153,40 @@ discipline explicitly, so it doesn't erode as more Odoo functions get
 added — not a new interface/class hierarchy with no second implementation
 to validate it against.
 
-### Step-by-step to-dos (deliberately small)
+### Step-by-step to-dos
 
-- [ ] Add one paragraph to `CLAUDE.md`'s Odoo Services section: "all
-  ERP-specific calls go through `src/services/odoo.ts`'s exported
-  functions; a handler file must never call Odoo RPC directly" — codifying
-  the boundary that already exists as a rule, not a refactor.
-- [ ] Defer any actual `ErpAdapter` interface/second-implementation work
-  until a real second ERP is in scope — revisit this section then.
+- [x] The boundary is now stronger than originally proposed: rather than
+  just documenting the `odoo.ts`-as-boundary discipline, an actual
+  `ErpAdapter` interface + registry now exists (`src/erp/`), with
+  `odoo-adapter.ts` as the one real implementation and `ERP_PROVIDER`
+  failing closed for anything else. `CLAUDE.md`'s Odoo Services section
+  now documents this seam.
+- [ ] Still deferred, correctly: no second provider implementation, no
+  live credentials/network calls for a hypothetical SAP/QuickBooks/Oracle
+  adapter. Revisit only when a real second ERP is in scope (tracked as
+  `STAGED_IMPLEMENTATION_BACKLOG.md`'s Track C3 spike).
 
 ---
 
 ## 4. Enterprise-grade scorecard (10/10 target)
 
+**Updated after the enterprise-hardening merge** (`git ab3ae358`/`af439d7d`:
+ERP adapter, modular Firestore/Odoo, approval policy, audit query,
+structured logging, `ADMIN CONFIG` UI, ansible secret hardening — see
+`documents/STAGED_IMPLEMENTATION_BACKLOG.md` Track A/B1/B2, now merged and
+verified: `npm run build`/`lint`/`test` clean, 38 files / 201 tests).
+
 | Dimension | Score | Why | To close the gap |
 |---|---|---|---|
-| **Feature completeness** (core Sales journey) | 8/10 | Full Quotation → Sales Order → Invoice lifecycle built & verified (`STORYBOARD.md`). Gaps: delivery (Odoo-blocked), pricelist/salesperson (no data yet), line removal (qty-edit only, no delete-a-line). | [ ] Add `QUOTE REMOVE <id> <product>` (delete a line entirely). [ ] Revisit pricelist/salesperson once Odoo has data. |
-| **Security** | 7/10 | Full fail-closed admin chain, step-up OTP on every quote mutation, audit trail + BigQuery archive, ops-token-protected endpoints. Gaps: `USER`/`SERVICE` CRUD not step-up-gated; permissions are LINE-flag-based, not Odoo-role-based (this doc, section 1); no automated tests for the Odoo-touching handlers (verified live instead). | [ ] Extend step-up OTP's `GATED_MUTATION_PREFIXES` to `USER`/`SERVICE` CRUD. [ ] Section 1 above. [ ] Add `vi.mock('../../services/odoo')`-based handler tests if this code needs safe refactoring later. |
-| **Configurability** | 6/10 | Per-channel service enable/disable already exists and is Firestore-backed (runtime-toggleable, no redeploy needed) — but has no admin-friendly UI (section 2), and language/copy is bilingual-hardcoded rather than a configurable string table beyond the quotation feature's own `i18n.ts`. | [ ] Section 2 above. [ ] Consider extending `i18n.ts`'s pattern to the rest of the app's inline `tr()` calls — large, flagged as low-value churn in `i18n.ts`'s own comments; revisit only if a third language is ever actually needed. |
-| **Overall architecture / design quality** | 8/10 | Clean handler-registry plugin pattern, single source of truth for service gating, consistent Flex design system, dual Firestore/in-memory store pattern applied consistently, ops/CLI/MCP all sharing one HTTP surface. Gaps: the ERP boundary is implicit rather than documented (section 3); no per-tier permission model yet (section 1). | [ ] Section 3's one-paragraph `CLAUDE.md` addition. [ ] Section 1, once you've confirmed the design. |
+| **Feature completeness** (core Sales journey) | 8/10 | Unchanged by this pass — full Quotation → Sales Order → Invoice lifecycle built & verified (`STORYBOARD.md`). Gaps: delivery (Odoo-blocked), pricelist/salesperson (no data yet), line removal (qty-edit only, no delete-a-line). | [ ] Add `QUOTE REMOVE <id> <product>` (delete a line entirely). [ ] Revisit pricelist/salesperson once Odoo has data. |
+| **Security** | 8/10 (was 7) | Gains this pass: `QUOTE CREATE`'s missing audit trail closed (every privileged write now audits success/failure); ansible's hardcoded fallback secrets (`staging-webhook-token`, `staging-ops-token`) removed and replaced with a fail-closed pre-deploy assert; `tests/http-auth.test.ts` adds regression coverage for admin/ops HTTP auth; `ERP_PROVIDER` fails closed. Remaining gaps: `USER`/`SERVICE` CRUD still not step-up-OTP-gated; permissions are still LINE-flag-based, not Odoo-role-based (section 1, not started — blocked on your answer about whether the test account should have a real Odoo login). | [ ] Extend step-up OTP's `GATED_MUTATION_PREFIXES` to `USER`/`SERVICE` CRUD. [ ] Section 1, pending your input. |
+| **Configurability** | 8/10 (was 6) | `ADMIN CONFIG` (section 2) is now shipped — a Flex toggle grid over the existing per-channel service flags, admin-only. `ERP_PROVIDER`/`ENABLED_SERVICES`/`DEFAULT_LANGUAGE`/`LOG_LEVEL` are now documented env-configurable knobs. Remaining gap: language/copy is still bilingual-hardcoded rather than a configurable string table beyond the quotation feature's own `i18n.ts`. | [ ] Extend `i18n.ts`'s pattern app-wide only if a third language is ever actually needed — deliberately not done speculatively. |
+| **Overall architecture / design quality** | 9/10 (was 8) | The ERP boundary is no longer just a documented convention — `src/erp/` is a real adapter+registry, fail-closed for unimplemented providers, wired into every commerce/directory/catalog/reporting handler; `CLAUDE.md` now documents it. Firestore/Odoo are barrel-split into domain modules with an import-compatible facade. Remaining gap: no per-tier permission model yet (section 1); a completed-but-unwired command-registry/policy foundation (`src/ux/`, `command-policy.ts`) exists for a future menu-projection feature (Track C2) and is intentionally not live yet. | [ ] Section 1, once you've confirmed the design. [ ] Track C2 (registry-to-menu projection), only after Track A3 (broader privileged-write audit review). |
 
-**Nothing above is started** — this is the plan, laid out so you can pick
-what to greenlight rather than me guessing at your priority order across
-four genuinely separate initiatives.
+**Total: ~33/40 → 8.25/10.** The remaining 1.75 points are concentrated
+almost entirely in Section 1 (Odoo-role-based permissions) — every other
+gap either has a small, scoped to-do or is deliberately deferred pending
+a real second-ERP requirement.
 
 ---
 

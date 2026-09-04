@@ -1,5 +1,15 @@
 name: release
 
+# NOTE on "Context access might be invalid" warnings from the GitHub Actions
+# VS Code extension on the `secrets.*`/`vars.*` references below: these are
+# not YAML defects. The extension checks each reference against the repo's
+# *actual* configured GitHub Environment secrets/variables via a live API
+# call, and flags any it can't confirm exist. Every secret named in this
+# file is genuinely still unconfigured — see the (all-unchecked) "GitHub
+# Environment Configuration" section of documents/PRODUCTION_READINESS_CHECKLIST.md.
+# Configuring them in GitHub → Settings → Environments → staging/production
+# is what clears the warning; no workflow-file change can.
+
 on:
   push:
     branches:
