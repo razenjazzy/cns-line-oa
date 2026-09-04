@@ -1,7 +1,7 @@
 ---
-node_env: staging
+node_env: production
 enable_webhook_test: true
-webhook_test_token: "staging-webhook-token"
+webhook_test_token: "{{ vault_webhook_test_token | default('') }}"
 
 line_channel_id: "{{ vault_line_channel_id | default('') }}"
 line_channel_secret: "{{ vault_line_channel_secret | default('') }}"
@@ -15,7 +15,7 @@ odoo_username: "{{ vault_odoo_username | default('') }}"
 odoo_api_key: "{{ vault_odoo_api_key | default('') }}"
 odoo_rpc_timeout_ms: 7000
 
-ops_api_token: "{{ vault_ops_api_token | default('staging-ops-token') }}"
+ops_api_token: "{{ vault_ops_api_token | default('') }}"
 
 public_base_url: "https://staging.your-domain.com"
 
@@ -27,3 +27,6 @@ ai_off: false
 groupbuy_enabled: true
 groupbuy_rollout_percent: 100
 enable_demo_control_panel: true
+demo_control_token: "{{ vault_demo_control_token | default('') }}"
+demo_session_secret: "{{ vault_demo_session_secret | default('') }}"
+allow_demo_header_token_fallback: false

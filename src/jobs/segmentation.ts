@@ -1,6 +1,7 @@
 import { getCohortData } from '../services/bigquery';
 import { sendTargetedMessage } from '../line/messaging';
 import { filterMarketingOptedInUserIds, getUserLanguage } from '../services/firestore';
+import { appLogger, createExecutionId } from '../services/logger';
 
 // This is a placeholder. In reality, we'd use Gemini 3.1 Pro to generate personalized copy
 // based on the specific segments that the user falls into.
@@ -24,12 +25,13 @@ const generateMessageForSegment = (segment: string, language: 'th' | 'en'): stri
 }
 
 export const runSegmentationJob = async () => {
-    console.log('Starting nightly segmentation job...');
+    const executionId = createExecutionId('segmentation');
+    appLogger.info('job_started', { job: 'segmentation', executionId });
     
     // 1. Fetch cohort data from BigQuery
     const cohorts = await getCohortData();
     if (!cohorts.length) {
-        console.log('No real cohort data found. Segmentation job skipped.');
+        appLogger.info('job_skipped', { job: 'segmentation', executionId, reason: 'no_cohort_data' });
         return;
     }
     
@@ -80,5 +82,5 @@ export const runSegmentationJob = async () => {
         }
     }
 
-    console.log('Segmentation job complete.');
+    appLogger.info('job_completed', { job: 'segmentation', executionId });
 };

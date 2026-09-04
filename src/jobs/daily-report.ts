@@ -2,7 +2,9 @@ import { messagingApi } from '@line/bot-sdk';
 import { generateInsights, InsightLanguage } from '../services/vertexai';
 import { createDailyReportFlexMessage } from '../line/templates';
 import { getUserLanguage, saveReportLog } from '../services/firestore';
-import { getDailySalesSnapshot, isOdooConfigured } from '../services/odoo';
+import { isOdooConfigured } from '../services/odoo';
+import { getErpAdapter } from '../erp/registry';
+import { appLogger, createExecutionId } from '../services/logger';
 
 // Lazy: read env vars at call time so dotenv.config() has already run
 const getClient = (): messagingApi.MessagingApiClient | null => {
@@ -14,13 +16,14 @@ const getClient = (): messagingApi.MessagingApiClient | null => {
 const isValidLineUserId = (value: string): boolean => /^U[a-f0-9]{32}$/i.test(value);
 
 export const runDailyReport = async (language?: InsightLanguage) => {
-  console.log('Starting daily report job...');
+  const executionId = createExecutionId('daily-report');
+  appLogger.info('job_started', { job: 'daily_report', executionId });
 
   if (!isOdooConfigured()) {
     throw new Error('Odoo is not configured. Please set ODOO_URL/ODOO_DB/ODOO_USERNAME/ODOO_API_KEY.');
   }
 
-  const snapshot = await getDailySalesSnapshot();
+  const snapshot = await getErpAdapter().getDailySnapshot();
   if (!snapshot.length) {
     throw new Error('No sales data was found in Odoo for the selected time windows.');
   }
@@ -55,5 +58,5 @@ export const runDailyReport = async (language?: InsightLanguage) => {
   }
 
   await saveReportLog(new Date().toISOString().split('T')[0], { insights });
-  console.log('Daily report job complete.');
+  appLogger.info('job_completed', { job: 'daily_report', executionId });
 };

@@ -1,6 +1,6 @@
 import { messagingApi } from '@line/bot-sdk';
 import { getAgentName } from './channels';
-import type { OdooSaleOrder } from '../services/odoo';
+import type { OdooSaleOrder } from '../services/odoo/types';
 import { t, stateLabel, type Lang } from '../services/i18n';
 
 type ReportLanguage = 'th' | 'en';
@@ -453,6 +453,36 @@ export const createServiceActionFlexMessage = (
     },
   };
 };
+
+export const createAdminConfigFlexMessage = (
+  channelId: string,
+  services: { key: string; label: string; enabled: boolean; nextCommand: string }[],
+  language: ReportLanguage,
+): messagingApi.FlexMessage => ({
+  type: 'flex',
+  altText: language === 'en' ? `Service configuration: ${channelId}` : `ตั้งค่าบริการ: ${channelId}`,
+  contents: {
+    type: 'bubble',
+    styles: { header: { backgroundColor: BRAND.tealStrong }, body: { backgroundColor: BRAND.surface }, footer: { backgroundColor: BRAND.surface } },
+    header: {
+      type: 'box', layout: 'vertical', paddingAll: 'md',
+      contents: [
+        { type: 'text', text: language === 'en' ? 'Service configuration' : 'ตั้งค่าบริการ', color: '#FFFFFF', weight: 'bold', size: 'md' },
+        { type: 'text', text: channelId, color: '#DDEBE9', size: 'xs', margin: 'xs' },
+      ],
+    },
+    body: {
+      type: 'box', layout: 'vertical', spacing: 'sm',
+      contents: services.map(service => ({
+        type: 'button', style: service.enabled ? 'primary' : 'secondary', height: 'md', color: service.enabled ? BRAND.teal : BRAND.goldTint,
+        action: { type: 'message', label: buttonLabel(`${service.enabled ? 'ON' : 'OFF'} ${service.label}`), text: service.nextCommand },
+      })),
+    },
+    footer: {
+      type: 'box', layout: 'vertical', contents: [createMessageActionButton(language === 'en' ? 'Back' : 'ย้อนกลับ', 'NAV HOME', 'secondary', BRAND.gold)],
+    },
+  },
+});
 
 export const createOrderSummaryFlexMessage = (total: number, language: ReportLanguage = defaultUiLanguage()): messagingApi.FlexMessage => {
   return {

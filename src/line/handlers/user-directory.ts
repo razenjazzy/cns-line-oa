@@ -1,12 +1,8 @@
 import type { CommandHandler } from './index';
 import { createBotTextFlexMessage } from '../templates';
 import { parseUserCreatePayload, parseUserUpdatePayload } from '../command-validators';
-import {
-  createPartnerFromLine,
-  deletePartnerFromLine,
-  getPartnerByPhone,
-  updatePartnerFromLine,
-} from '../../services/odoo';
+import { getPartnerByPhone } from '../../services/odoo/partners';
+import { getErpAdapter } from '../../erp/registry';
 import { recordAuditEvent, setUserOdooPartner } from '../../services/firestore';
 import type { UserLanguage } from '../../services/firestore';
 
@@ -35,7 +31,7 @@ const userCreateHandler: CommandHandler = {
   name: 'user-create',
   match: (u) => u.startsWith('USER CREATE'),
   handle: async (ctx) => {
-    const { userLanguage, userId, profile, channel, text } = ctx;
+    const { userLanguage, userId, profile, channel, requestId, text } = ctx;
     if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
 
     const payload = text.trim().replace(/^USER CREATE\s*/i, '').trim();
@@ -45,14 +41,14 @@ const userCreateHandler: CommandHandler = {
     }
 
     const { name, phone, email } = parsed;
-    const partner = await createPartnerFromLine(name, phone, email);
+    const partner = await getErpAdapter().createCustomer(name, phone, email);
     if (!partner) {
-      recordAuditEvent({ action: 'user_create', outcome: 'failure', actorUserId: userId, channelId: channel?.channelId, detail: `phone=${phone}` });
+      recordAuditEvent({ action: 'user_create', outcome: 'failure', actorUserId: userId, channelId: channel?.channelId, requestId, detail: 'odoo_create_failed' });
       return [botText(tr(userLanguage, 'สร้างผู้ใช้ใน Odoo ไม่สำเร็จ', 'Failed to create user in Odoo.'), userLanguage)];
     }
 
     const partnerResult = await setUserOdooPartner(userId, partner.id, partner.name, partner.phone);
-    recordAuditEvent({ action: 'user_create', outcome: 'success', actorUserId: userId, channelId: channel?.channelId, targetId: String(partner.id) });
+    recordAuditEvent({ action: 'user_create', outcome: 'success', actorUserId: userId, channelId: channel?.channelId, requestId, targetId: String(partner.id) });
     if (!partnerResult.ok) {
       return [botText(tr(userLanguage, 'สร้างผู้ใช้ใน Odoo สำเร็จ แต่บันทึกสถานะผู้ใช้ในระบบไม่สำเร็จ กรุณาลองใหม่', 'Created Odoo user, but failed to persist user state. Please try again.'), userLanguage)];
     }
@@ -93,7 +89,7 @@ const userUpdateHandler: CommandHandler = {
   name: 'user-update',
   match: (u) => u.startsWith('USER UPDATE'),
   handle: async (ctx) => {
-    const { userLanguage, userId, profile, channel, text } = ctx;
+    const { userLanguage, userId, profile, channel, requestId, text } = ctx;
     if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
 
     const payload = text.trim().replace(/^USER UPDATE\s*/i, '').trim();
@@ -112,12 +108,12 @@ const userUpdateHandler: CommandHandler = {
       return [botText(tr(userLanguage, `ไม่พบผู้ใช้ Odoo ที่เบอร์ ${phone}`, `No Odoo user found with phone ${phone}`), userLanguage)];
     }
 
-    const updated = await updatePartnerFromLine(existing.id, name, newPhone, email);
+    const updated = await getErpAdapter().updateCustomer(existing.id, { name, phone: newPhone, email });
     if (!updated) {
-      recordAuditEvent({ action: 'user_update', outcome: 'failure', actorUserId: userId, channelId: channel?.channelId, targetId: String(existing.id) });
+      recordAuditEvent({ action: 'user_update', outcome: 'failure', actorUserId: userId, channelId: channel?.channelId, requestId, targetId: String(existing.id) });
       return [botText(tr(userLanguage, 'อัปเดตผู้ใช้ Odoo ไม่สำเร็จ', 'Failed to update Odoo user.'), userLanguage)];
     }
-    recordAuditEvent({ action: 'user_update', outcome: 'success', actorUserId: userId, channelId: channel?.channelId, targetId: String(existing.id) });
+    recordAuditEvent({ action: 'user_update', outcome: 'success', actorUserId: userId, channelId: channel?.channelId, requestId, targetId: String(existing.id) });
     return [botText(tr(userLanguage,
       `อัปเดตผู้ใช้ Odoo สำเร็จ\n- ID: ${updated.id}\n- ชื่อ: ${updated.name}\n- เบอร์: ${updated.phone || '-'}\n- อีเมล: ${updated.email || '-'}`,
       `Odoo user updated\n- ID: ${updated.id}\n- Name: ${updated.name}\n- Phone: ${updated.phone || '-'}\n- Email: ${updated.email || '-'}`,
@@ -130,7 +126,7 @@ const userDeleteHandler: CommandHandler = {
   name: 'user-delete',
   match: (u) => u.startsWith('USER DELETE'),
   handle: async (ctx) => {
-    const { userLanguage, userId, profile, channel, text } = ctx;
+    const { userLanguage, userId, profile, channel, requestId, text } = ctx;
     if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
 
     const phone = text.trim().replace(/^USER DELETE\s*/i, '').trim();
@@ -144,8 +140,8 @@ const userDeleteHandler: CommandHandler = {
       return [botText(tr(userLanguage, `ไม่พบผู้ใช้ Odoo ที่เบอร์ ${phone}`, `No Odoo user found with phone ${phone}`), userLanguage)];
     }
 
-    const ok = await deletePartnerFromLine(existing.id);
-    recordAuditEvent({ action: 'user_delete', outcome: ok ? 'success' : 'failure', actorUserId: userId, channelId: channel?.channelId, targetId: String(existing.id) });
+    const ok = await getErpAdapter().deleteCustomer(existing.id);
+    recordAuditEvent({ action: 'user_delete', outcome: ok ? 'success' : 'failure', actorUserId: userId, channelId: channel?.channelId, requestId, targetId: String(existing.id) });
     return [botText(ok
       ? tr(userLanguage, `ลบผู้ใช้ Odoo สำเร็จ (ID ${existing.id})`, `Odoo user deleted (ID ${existing.id})`)
       : tr(userLanguage, 'ลบผู้ใช้ Odoo ไม่สำเร็จ', 'Failed to delete Odoo user.'),

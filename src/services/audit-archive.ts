@@ -67,6 +67,7 @@ const toArchiveRow = (entry: AuditLogEntry, archivedAt: string): AuditArchiveRow
   outcome: entry.outcome,
   actorUserId: entry.actorUserId,
   channelId: entry.channelId,
+  requestId: entry.requestId,
   targetId: entry.targetId,
   detail: entry.detail,
   createdAt: entry.createdAt,

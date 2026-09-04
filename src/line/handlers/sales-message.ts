@@ -1,6 +1,6 @@
 import type { CommandHandler } from './index';
 import { createBotTextFlexMessage } from '../templates';
-import { getPartnerByPhone } from '../../services/odoo';
+import { getPartnerByPhone } from '../../services/odoo/partners';
 import {
   findVerifiedUserIdByPhone,
   getUserLanguage,
@@ -48,7 +48,7 @@ const messageCustomerHandler: CommandHandler = {
   name: 'sales-message-customer',
   match: (u) => u.startsWith('MESSAGE CUSTOMER'),
   handle: async (ctx) => {
-    const { userLanguage, userId, profile, channel, text } = ctx;
+    const { userLanguage, userId, profile, channel, requestId, text } = ctx;
     if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
 
     const parsed = parsePhoneAndMessage(text, 'MESSAGE CUSTOMER');
@@ -62,7 +62,7 @@ const messageCustomerHandler: CommandHandler = {
     const partner = await getPartnerByPhone(parsed.phone);
     const customerUserId = partner?.phone ? await findVerifiedUserIdByPhone(partner.phone) : null;
     if (!customerUserId) {
-      recordAuditEvent({ action: 'sales_message', outcome: 'failure', actorUserId: userId, channelId: channel?.channelId, targetId: parsed.phone, detail: 'customer_not_linked' });
+      recordAuditEvent({ action: 'sales_message', outcome: 'failure', actorUserId: userId, channelId: channel?.channelId, requestId, detail: 'customer_not_linked' });
       return [botText(tr(userLanguage,
         'ไม่พบลูกค้าที่ยืนยันตัวตนด้วยเบอร์นี้ ลูกค้าต้องทักบอทและทำการ VERIFY ก่อน',
         'No verified customer found for that phone — they need to message the bot and complete VERIFY first.',
@@ -71,7 +71,7 @@ const messageCustomerHandler: CommandHandler = {
 
     const customerProfile = await getUserProfile(customerUserId);
     if (!customerProfile.marketingOptIn) {
-      recordAuditEvent({ action: 'sales_message', outcome: 'failure', actorUserId: userId, channelId: channel?.channelId, targetId: parsed.phone, detail: 'not_opted_in' });
+      recordAuditEvent({ action: 'sales_message', outcome: 'failure', actorUserId: userId, channelId: channel?.channelId, requestId, targetId: customerUserId, detail: 'not_opted_in' });
       return [botText(tr(userLanguage,
         'ลูกค้ารายนี้ยังไม่ได้เปิดรับข้อความทางการตลาด (PROMO ON) จึงยังส่งข้อความนี้ไม่ได้ หากเป็นเรื่องใบเสนอราคาที่มีอยู่แล้ว ใช้ QUOTE MESSAGE แทนได้',
         "This customer hasn't opted in to marketing messages (PROMO ON), so this can't be sent. If it's about an existing quote, use QUOTE MESSAGE instead — that doesn't need marketing consent.",
@@ -81,7 +81,7 @@ const messageCustomerHandler: CommandHandler = {
     const customerLanguage = await getUserLanguage(customerUserId);
     await sendTargetedFlexMessage([customerUserId], botText(parsed.message, customerLanguage), channel?.channelId || DEFAULT_CHANNEL_ID);
 
-    recordAuditEvent({ action: 'sales_message', outcome: 'success', actorUserId: userId, channelId: channel?.channelId, targetId: parsed.phone });
+    recordAuditEvent({ action: 'sales_message', outcome: 'success', actorUserId: userId, channelId: channel?.channelId, requestId, targetId: customerUserId });
     return [botText(tr(userLanguage, 'ส่งข้อความแล้ว', 'Message sent.'), userLanguage, 'success')];
   },
 };

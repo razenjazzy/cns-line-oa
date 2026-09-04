@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.runDemoJourney = exports.getDemoOverview = void 0;
 const firestore_1 = require("./firestore");
+const app_config_1 = require("./app-config");
 const channels_1 = require("../line/channels");
 const odoo_1 = require("./odoo");
 const isLineConfigured = () => {
@@ -95,7 +96,7 @@ const getDemoOverview = async (baseUrl) => {
 exports.getDemoOverview = getDemoOverview;
 const runDemoJourney = async (input) => {
     const userId = input.userId?.trim() || 'demo_line_user';
-    const language = input.language === 'en' ? 'en' : 'th';
+    const language = input.language ? (input.language === 'en' ? 'en' : 'th') : (0, app_config_1.getDefaultLanguage)();
     const productQuery = input.productQuery?.trim() || 'App Premium Plan';
     const qty = typeof input.qty === 'number' && input.qty > 0 ? input.qty : 1;
     const customerName = input.customerName?.trim() || 'LINE Demo Customer';

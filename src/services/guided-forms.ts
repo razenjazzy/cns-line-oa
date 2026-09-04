@@ -1,4 +1,4 @@
-import { listProducts, listServiceCatalogItems } from './odoo';
+import { listProducts, listServiceCatalogItems } from './odoo/catalog';
 
 // Dedupe by name — Odoo can have multiple product.product records sharing a
 // display name (variants of the same template), which would otherwise show

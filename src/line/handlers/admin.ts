@@ -1,8 +1,8 @@
 import type { CommandHandler } from './index';
 import { isAuthorizedForAdminRole } from '../../services/admin-authorization';
-import { verifyOdooAdminAccess } from '../../services/odoo';
+import { verifyOdooAdminAccess } from '../../services/odoo/admin';
 import { recordAuditEvent, setUserRole } from '../../services/firestore';
-import { createBotTextFlexMessage } from '../templates';
+import { createAdminConfigFlexMessage, createBotTextFlexMessage } from '../templates';
 import type { UserLanguage } from '../../services/firestore';
 import { getChannelServiceOverride, resolveChannelConfig, setChannelServiceOverride } from '../channels';
 import { SERVICE_CATALOG } from '../../services/service-catalog';
@@ -43,12 +43,34 @@ const adminVerifyHandler: CommandHandler = {
   },
 };
 
+const adminConfigHandler: CommandHandler = {
+  name: 'admin-config',
+  match: u => u === 'ADMIN CONFIG' || u.startsWith('ADMIN CONFIG '),
+  handle: async ctx => {
+    const { userLanguage, profile, channel: actingChannel, text } = ctx;
+    if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
+    const targetChannelId = text.trim().replace(/^ADMIN CONFIG\s*/i, '').trim() || actingChannel?.channelId || 'default';
+    const config = resolveChannelConfig(targetChannelId);
+    if (!config) return [botText(tr(userLanguage, `ไม่พบช่องทาง "${targetChannelId}"`, `Unknown or unconfigured channel "${targetChannelId}".`), userLanguage)];
+    const override = await getChannelServiceOverride(targetChannelId);
+    const current = override !== undefined ? override : config.enabledServices;
+    const allKeys = SERVICE_CATALOG.map(service => service.key);
+    const enabled = current === null ? new Set(allKeys) : new Set(current);
+    const rows = SERVICE_CATALOG.map(service => {
+      const isEnabled = enabled.has(service.key);
+      const next = isEnabled ? allKeys.filter(key => key !== service.key && enabled.has(key)) : [...enabled, service.key];
+      return { key: service.key, label: userLanguage === 'en' ? service.labelEn : service.labelTh, enabled: isEnabled, nextCommand: `ADMIN CHANNEL ${targetChannelId} SERVICES ${next.length === allKeys.length ? 'ALL' : next.join(',')}` };
+    });
+    return [createAdminConfigFlexMessage(targetChannelId, rows, userLanguage)];
+  },
+};
+
 // ADMIN ENABLE — elevate requesting user to admin role
 const adminEnableHandler: CommandHandler = {
   name: 'admin-enable',
   match: (u) => u === 'ADMIN ENABLE',
   handle: async (ctx) => {
-    const { userLanguage, userId, profile, channel } = ctx;
+    const { userLanguage, userId, profile, channel, requestId } = ctx;
     const authorization = isAuthorizedForAdminRole(userId, profile);
     if (!authorization.ok) return [adminOnlyReply(userLanguage)];
 
@@ -62,7 +84,7 @@ const adminEnableHandler: CommandHandler = {
       return [botText(tr(userLanguage, 'เปิดสิทธิ์แอดมินไม่สำเร็จจากระบบข้อมูล กรุณาลองอีกครั้ง', 'Admin enable failed due to data-store issue. Please try again.'), userLanguage)];
     }
 
-    recordAuditEvent({ action: 'role_grant', outcome: 'success', actorUserId: userId, channelId: channel?.channelId, targetId: userId });
+    recordAuditEvent({ action: 'role_grant', outcome: 'success', actorUserId: userId, channelId: channel?.channelId, requestId, targetId: userId });
     return [botText(tr(userLanguage, 'เปิดสิทธิ์แอดมินแล้ว สามารถใช้คำสั่งแอดมินได้', 'Admin role enabled. You can now run admin commands.'), userLanguage)];
   },
 };
@@ -72,7 +94,7 @@ const adminDisableHandler: CommandHandler = {
   name: 'admin-disable',
   match: (u) => u === 'ADMIN DISABLE' || u === 'ADMIN REVOKE',
   handle: async (ctx) => {
-    const { userLanguage, userId, profile, channel } = ctx;
+    const { userLanguage, userId, profile, channel, requestId } = ctx;
     if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
 
     const roleResult = await setUserRole(userId, 'user');
@@ -80,7 +102,7 @@ const adminDisableHandler: CommandHandler = {
       return [botText(tr(userLanguage, 'ปิดสิทธิ์แอดมินไม่สำเร็จจากระบบข้อมูล กรุณาลองอีกครั้ง', 'Admin disable failed due to a data-store issue. Please try again.'), userLanguage)];
     }
 
-    recordAuditEvent({ action: 'role_revoke', outcome: 'success', actorUserId: userId, channelId: channel?.channelId, targetId: userId });
+    recordAuditEvent({ action: 'role_revoke', outcome: 'success', actorUserId: userId, channelId: channel?.channelId, requestId, targetId: userId });
     return [botText(tr(userLanguage, 'ปิดสิทธิ์แอดมินสำหรับบัญชีนี้แล้ว', 'Admin role disabled for this account.'), userLanguage)];
   },
 };
@@ -114,7 +136,7 @@ const adminChannelHandler: CommandHandler = {
   name: 'admin-channel',
   match: (u) => u.startsWith('ADMIN CHANNEL '),
   handle: async (ctx) => {
-    const { userLanguage, userId, profile, channel: actingChannel, text } = ctx;
+    const { userLanguage, userId, profile, channel: actingChannel, requestId, text } = ctx;
     if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
 
     const parts = text.trim().replace(/^ADMIN CHANNEL\s*/i, '').trim().split(/\s+/);
@@ -149,7 +171,7 @@ const adminChannelHandler: CommandHandler = {
       if (listRaw.toUpperCase() === 'ALL') {
         const result = await setChannelServiceOverride(targetChannelId, null);
         if (!result.ok) return [botText(tr(userLanguage, 'บันทึกการตั้งค่าไม่สำเร็จ กรุณาลองใหม่', 'Failed to save the override. Please try again.'), userLanguage)];
-        recordAuditEvent({ action: 'channel_config_update', outcome: 'success', actorUserId: userId, channelId: actingChannel?.channelId, targetId: targetChannelId, detail: 'ALL' });
+        recordAuditEvent({ action: 'channel_config_update', outcome: 'success', actorUserId: userId, channelId: actingChannel?.channelId, requestId, targetId: targetChannelId, detail: 'ALL' });
         return [botText(tr(userLanguage, `เปิดใช้งานทุกโมดูลสำหรับช่องทาง "${targetChannelId}" แล้ว`, `All modules enabled for channel "${targetChannelId}".`), userLanguage)];
       }
 
@@ -161,7 +183,7 @@ const adminChannelHandler: CommandHandler = {
 
       const result = await setChannelServiceOverride(targetChannelId, requested);
       if (!result.ok) return [botText(tr(userLanguage, 'บันทึกการตั้งค่าไม่สำเร็จ กรุณาลองใหม่', 'Failed to save the override. Please try again.'), userLanguage)];
-      recordAuditEvent({ action: 'channel_config_update', outcome: 'success', actorUserId: userId, channelId: actingChannel?.channelId, targetId: targetChannelId, detail: requested.join(',') });
+      recordAuditEvent({ action: 'channel_config_update', outcome: 'success', actorUserId: userId, channelId: actingChannel?.channelId, requestId, targetId: targetChannelId, detail: requested.join(',') });
       return [botText(tr(userLanguage,
         `อัปเดตโมดูลของช่องทาง "${targetChannelId}" แล้ว: ${requested.join(', ')}`,
         `Updated channel "${targetChannelId}" modules: ${requested.join(', ')}`,
@@ -209,6 +231,7 @@ const adminAuditRotateHandler: CommandHandler = {
 };
 
 export const adminHandlers: CommandHandler[] = [
+  adminConfigHandler,
   adminVerifyHandler,
   adminEnableHandler,
   adminDisableHandler,

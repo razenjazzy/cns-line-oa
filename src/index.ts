@@ -10,7 +10,7 @@ import { runAuditRotationJob } from './jobs/audit-rotation';
 import { pingOdoo, seedOdooSampleSalesData } from './services/odoo';
 import { getDemoOverview, runDemoJourney } from './services/demo';
 import { getKpiSnapshot, recordHttpRequest } from './services/kpi';
-import { checkFirestoreReady, getPlatformConfig, getUserLanguage, getUserProfile, listRecentAuditEvents, setPlatformConfig } from './services/firestore';
+import { checkFirestoreReady, getPlatformConfig, getUserLanguage, getUserProfile, listRecentAuditEventsPage, setPlatformConfig } from './services/firestore';
 import { createDemoSessionToken, parseCookieValue, safeTokenMatch, verifyDemoSessionTokenWithSecrets } from './services/demo-session';
 import { getPricingModel, runPricingSimulation, updatePricingModel } from './services/pricing-control';
 import { createRateLimitStoreFromEnv, getRateLimitRuntimeStatus, InMemoryRateLimitStore, type RateLimitStore } from './services/rate-limit-store';
@@ -20,6 +20,8 @@ import { runRuntimeProbes, collectProbeFailures } from './services/runtime-probe
 
 import { adminOnly } from './services/admin-token-auth';
 import { requireOpsToken } from './services/ops-token-auth';
+import { appLogger } from './services/logger';
+import { decodeAuditCursor, parseAuditLogFilters } from './services/audit-query';
 dotenv.config();
 
 const app = express();
@@ -266,11 +268,11 @@ app.use((req, res, next) => {
         };
 
         if (res.statusCode >= 500) {
-            console.error('[http_access]', summary);
+            appLogger.error('http_access', summary);
         } else if (res.statusCode >= 400) {
-            console.warn('[http_access]', summary);
+            appLogger.warn('http_access', summary);
         } else {
-            console.log('[http_access]', summary);
+            appLogger.info('http_access', summary);
         }
     });
 
@@ -352,8 +354,12 @@ app.get('/ops/kpi', requireOpsToken, (_req, res) => {
 
 app.get('/ops/audit-log', requireOpsToken, async (req, res) => {
     const limit = Number(req.query.limit) || 50;
-    const events = await listRecentAuditEvents(limit);
-    res.status(200).json({ events, count: events.length });
+    const page = await listRecentAuditEventsPage(
+        limit,
+        parseAuditLogFilters(req.query as Record<string, unknown>),
+        decodeAuditCursor(req.query.cursor),
+    );
+    res.status(200).json({ ...page, count: page.events.length });
 });
 
 // Archives audit events past the retention window to BigQuery, then deletes
@@ -619,6 +625,7 @@ app.post('/demo/chat', requireDemoControlAccess, jsonParser, async (req, res) =>
             profile,
             agentName,
             baseUrl,
+            requestId: String(res.getHeader('x-request-id') || '') || undefined,
         });
 
         // Flatten the LINE messages into a minimal chat transcript the widget
@@ -777,6 +784,7 @@ app.post('/webhook-test', jsonParser, webhookTestLimiter, async (req, res) => {
             profile,
             agentName,
             baseUrl,
+            requestId: String(res.getHeader('x-request-id') || '') || undefined,
             channel,
         });
         return res.json(botMessages);

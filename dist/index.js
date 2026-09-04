@@ -57,6 +57,8 @@ const html_1 = require("./utils/html");
 const runtime_probes_1 = require("./services/runtime-probes");
 const admin_token_auth_1 = require("./services/admin-token-auth");
 const ops_token_auth_1 = require("./services/ops-token-auth");
+const logger_1 = require("./services/logger");
+const audit_query_1 = require("./services/audit-query");
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 const port = process.env.PORT || 8080;
@@ -275,13 +277,13 @@ app.use((req, res, next) => {
             durationMs,
         };
         if (res.statusCode >= 500) {
-            console.error('[http_access]', summary);
+            logger_1.appLogger.error('http_access', summary);
         }
         else if (res.statusCode >= 400) {
-            console.warn('[http_access]', summary);
+            logger_1.appLogger.warn('http_access', summary);
         }
         else {
-            console.log('[http_access]', summary);
+            logger_1.appLogger.info('http_access', summary);
         }
     });
     return next();
@@ -345,8 +347,8 @@ app.get('/ops/kpi', ops_token_auth_1.requireOpsToken, (_req, res) => {
 });
 app.get('/ops/audit-log', ops_token_auth_1.requireOpsToken, async (req, res) => {
     const limit = Number(req.query.limit) || 50;
-    const events = await (0, firestore_1.listRecentAuditEvents)(limit);
-    res.status(200).json({ events, count: events.length });
+    const page = await (0, firestore_1.listRecentAuditEventsPage)(limit, (0, audit_query_1.parseAuditLogFilters)(req.query), (0, audit_query_1.decodeAuditCursor)(req.query.cursor));
+    res.status(200).json({ ...page, count: page.events.length });
 });
 // Archives audit events past the retention window to BigQuery, then deletes
 // them from Firestore — see documents/AUDIT_LOG_POLICY.md. Safe to call on a
@@ -584,6 +586,7 @@ app.post('/demo/chat', requireDemoControlAccess, jsonParser, async (req, res) =>
             profile,
             agentName,
             baseUrl,
+            requestId: String(res.getHeader('x-request-id') || '') || undefined,
         });
         // Flatten the LINE messages into a minimal chat transcript the widget
         // can render: text messages keep their text, Flex messages surface a
@@ -729,6 +732,7 @@ app.post('/webhook-test', jsonParser, webhookTestLimiter, async (req, res) => {
             profile,
             agentName,
             baseUrl,
+            requestId: String(res.getHeader('x-request-id') || '') || undefined,
             channel,
         });
         return res.json(botMessages);

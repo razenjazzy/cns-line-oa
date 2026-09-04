@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.createOptionalSummaryFlexMessage = exports.createQuotationListFlexMessage = exports.createQuotationJourneyFlexMessage = exports.createFormPromptFlexMessage = exports.createOrderSummaryFlexMessage = exports.createServiceActionFlexMessage = exports.createServiceHomeFlexMessage = exports.createProductCardFlexMessage = exports.createDailyReportFlexMessage = exports.createBotTextFlexMessage = exports.formatMoney = void 0;
+exports.createOptionalSummaryFlexMessage = exports.createQuotationListFlexMessage = exports.createQuotationJourneyFlexMessage = exports.createFormPromptFlexMessage = exports.createOrderSummaryFlexMessage = exports.createAdminConfigFlexMessage = exports.createServiceActionFlexMessage = exports.createServiceHomeFlexMessage = exports.createProductCardFlexMessage = exports.createDailyReportFlexMessage = exports.createBotTextFlexMessage = exports.formatMoney = void 0;
 const channels_1 = require("./channels");
 const i18n_1 = require("../services/i18n");
 // Cloudnex brand palette — kept consistent across every Flex message.
@@ -399,6 +399,32 @@ const createServiceActionFlexMessage = (serviceLabel, actions, language) => {
     };
 };
 exports.createServiceActionFlexMessage = createServiceActionFlexMessage;
+const createAdminConfigFlexMessage = (channelId, services, language) => ({
+    type: 'flex',
+    altText: language === 'en' ? `Service configuration: ${channelId}` : `ตั้งค่าบริการ: ${channelId}`,
+    contents: {
+        type: 'bubble',
+        styles: { header: { backgroundColor: BRAND.tealStrong }, body: { backgroundColor: BRAND.surface }, footer: { backgroundColor: BRAND.surface } },
+        header: {
+            type: 'box', layout: 'vertical', paddingAll: 'md',
+            contents: [
+                { type: 'text', text: language === 'en' ? 'Service configuration' : 'ตั้งค่าบริการ', color: '#FFFFFF', weight: 'bold', size: 'md' },
+                { type: 'text', text: channelId, color: '#DDEBE9', size: 'xs', margin: 'xs' },
+            ],
+        },
+        body: {
+            type: 'box', layout: 'vertical', spacing: 'sm',
+            contents: services.map(service => ({
+                type: 'button', style: service.enabled ? 'primary' : 'secondary', height: 'md', color: service.enabled ? BRAND.teal : BRAND.goldTint,
+                action: { type: 'message', label: buttonLabel(`${service.enabled ? 'ON' : 'OFF'} ${service.label}`), text: service.nextCommand },
+            })),
+        },
+        footer: {
+            type: 'box', layout: 'vertical', contents: [createMessageActionButton(language === 'en' ? 'Back' : 'ย้อนกลับ', 'NAV HOME', 'secondary', BRAND.gold)],
+        },
+    },
+});
+exports.createAdminConfigFlexMessage = createAdminConfigFlexMessage;
 const createOrderSummaryFlexMessage = (total, language = defaultUiLanguage()) => {
     return {
         type: 'flex',

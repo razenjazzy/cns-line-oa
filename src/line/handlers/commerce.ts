@@ -7,8 +7,6 @@ import {
 } from '../templates';
 import { parseDemoQuotePayload } from '../command-validators';
 import {
-  createQuotationFromLine,
-  findOrderByReference,
   findPaymentTermByName,
   findProductByQuery,
   getPartnerByPhone,
@@ -18,7 +16,9 @@ import {
   pingOdoo,
   seedOdooSampleSalesData,
 } from '../../services/odoo';
+import { recordAuditEvent } from '../../services/firestore';
 import type { UserLanguage } from '../../services/firestore';
+import { getErpAdapter } from '../../erp/registry';
 
 const tr = (language: UserLanguage, th: string, en: string): string => (language === 'en' ? en : th);
 
@@ -48,11 +48,11 @@ const demoProductHandler: CommandHandler = {
       const { resolveCommandReply } = await import('../command-router');
       return resolveCommandReply({ ...ctx, text: 'FORM PRODUCT FIND' });
     }
-    const product = await findProductByQuery(query);
+    const product = (await getErpAdapter().searchProducts(query, 1))[0];
     if (!product) {
       return [botText(tr(userLanguage, `ไม่พบสินค้าที่ตรงกับ "${query}" ลองใช้ชื่อสินค้าอื่นดูนะคะ`, `No product matched "${query}". Try a different product name?`), userLanguage)];
     }
-    return [createProductCardFlexMessage(product.name, product.list_price, product.qty_available, userLanguage)];
+    return [createProductCardFlexMessage(product.name, product.price || 0, product.quantity || 0, userLanguage)];
   },
 };
 
@@ -67,7 +67,7 @@ const demoOrderHandler: CommandHandler = {
       const { resolveCommandReply } = await import('../command-router');
       return resolveCommandReply({ ...ctx, text: 'FORM ORDER STATUS' });
     }
-    const found = await findOrderByReference(orderRef);
+    const found = await getErpAdapter().getOrderStatus(orderRef);
     if (!found) {
       return [botText(tr(userLanguage, `ไม่พบออเดอร์เลขที่ ${orderRef} กรุณาตรวจสอบเลขที่อ้างอิงอีกครั้งค่ะ`, `We couldn't find an order with reference ${orderRef}. Please double-check the reference number.`), userLanguage)];
     }
@@ -77,7 +77,12 @@ const demoOrderHandler: CommandHandler = {
     // every other "look up then render the rich card" path in this app
     // (quoteStatusHandler etc.) — one consistent card design, not a
     // separate plain-text summary for this one entry point.
-    const order = (await getSaleOrderById(found.id)) || found;
+    const order = (await getSaleOrderById(found.id)) || {
+      id: found.id,
+      name: found.name,
+      state: found.state,
+      amount_total: found.amountTotal || 0,
+    };
     const [portalLink, pdfLink] = await Promise.all([
       getSaleOrderPortalLink(order.id).then(v => v || undefined),
       getSaleOrderPdfLink(order.id).then(v => v || undefined),
@@ -92,7 +97,7 @@ const demoQuoteHandler: CommandHandler = {
   name: 'commerce-quote-create',
   match: (u) => u === 'QUOTE CREATE' || u.startsWith('QUOTE CREATE '),
   handle: async (ctx) => {
-    const { userLanguage, profile, text } = ctx;
+    const { userLanguage, profile, text, userId, channel, requestId } = ctx;
     const payload = text.trim().replace(/^QUOTE CREATE\s*/i, '').trim();
     const parsed = parseDemoQuotePayload(payload);
     if (!parsed) {
@@ -134,7 +139,8 @@ const demoQuoteHandler: CommandHandler = {
       else paymentTermNotFound = true;
     }
 
-    const quotation = await createQuotationFromLine(customerName, phone, productName, qty, existingPartner?.id, {
+    const quotation = await getErpAdapter().createQuotation(customerName, phone, productName, qty, {
+      partnerId: existingPartner?.id,
       customerRef: customerReference,
       discountPercent,
       validityDate,
@@ -145,25 +151,28 @@ const demoQuoteHandler: CommandHandler = {
       // Product genuinely exists, so this is a real failure (partner
       // creation, sale.order create, etc.) — logged server-side by
       // createQuotationFromLine itself; tell the user it's not their input.
+      recordAuditEvent({ action: 'quote_create', outcome: 'failure', actorUserId: userId, channelId: channel?.channelId, requestId, detail: `product=${product.id}` });
       return [botText(tr(userLanguage,
         'พบสินค้าแล้ว แต่สร้างใบเสนอราคาไม่สำเร็จเนื่องจากข้อผิดพลาดของระบบ กรุณาลองใหม่ หรือแจ้งแอดมินหากยังไม่สำเร็จ',
         "Found the product, but couldn't create the quote due to a system error. Please try again, or contact an admin if it keeps happening.",
       ), userLanguage)];
     }
 
-    const order = await getSaleOrderById(quotation.orderId);
+    recordAuditEvent({ action: 'quote_create', outcome: 'success', actorUserId: userId, channelId: channel?.channelId, requestId, targetId: quotation.name });
+
+    const order = await getSaleOrderById(quotation.id);
     if (!order) {
       // Created successfully but the immediate re-read failed — extremely
       // unlikely, but don't leave the requester without any confirmation.
       return [botText(tr(userLanguage,
-        `สร้างใบเสนอราคา ${quotation.orderName} สำเร็จแล้ว (${formatMoney(quotation.total, 'th')})`,
-        `Created quotation ${quotation.orderName} (${formatMoney(quotation.total, 'en')}).`,
+        `สร้างใบเสนอราคา ${quotation.name} สำเร็จแล้ว (${formatMoney(quotation.total, 'th')})`,
+        `Created quotation ${quotation.name} (${formatMoney(quotation.total, 'en')}).`,
       ), userLanguage)];
     }
 
     const [portalLink, pdfLink] = await Promise.all([
-      getSaleOrderPortalLink(quotation.orderId).then(v => v || undefined),
-      getSaleOrderPdfLink(quotation.orderId).then(v => v || undefined),
+      getSaleOrderPortalLink(quotation.id).then(v => v || undefined),
+      getSaleOrderPdfLink(quotation.id).then(v => v || undefined),
     ]);
     const role = profile.role === 'admin' ? 'admin' : 'customer';
     const card = createQuotationJourneyFlexMessage(order, { role, portalLink, pdfLink }, userLanguage);

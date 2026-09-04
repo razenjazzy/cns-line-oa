@@ -29,7 +29,8 @@ exports.processChatMessage = void 0;
 const genai_1 = require("@google/genai");
 const firestore_1 = require("./firestore");
 const templates_1 = require("../line/templates");
-const odoo_1 = require("./odoo");
+const sales_1 = require("./odoo/sales");
+const catalog_1 = require("./odoo/catalog");
 const ai_circuit_breaker_1 = require("./ai-circuit-breaker");
 const child_process_1 = require("child_process");
 const path_1 = __importDefault(require("path"));
@@ -190,7 +191,7 @@ const functionDeclarations = [
 // Heuristic fallback (Tier 3 — Odoo only, no AI)
 // ---------------------------------------------------------------------------
 const heuristicFallback = async (userText, isThai, agentName) => {
-    const product = await (0, odoo_1.findProductByQuery)(userText.trim());
+    const product = await (0, catalog_1.findProductByQuery)(userText.trim());
     if (product) {
         return {
             handled: true,
@@ -224,7 +225,7 @@ const processGeminiResponse = async (response, userId, isThai, agentName) => {
             const args = call.args;
             if (call.name === 'lookupProduct') {
                 const query = args?.query;
-                const odooProduct = await (0, odoo_1.findProductByQuery)(query);
+                const odooProduct = await (0, catalog_1.findProductByQuery)(query);
                 if (odooProduct) {
                     aiTextResponse += `[Product card: ${odooProduct.name}]`;
                     messages.push((0, templates_1.createProductCardFlexMessage)(odooProduct.name, odooProduct.list_price, odooProduct.qty_available, isThai ? 'th' : 'en'));
@@ -238,12 +239,12 @@ const processGeminiResponse = async (response, userId, isThai, agentName) => {
                 }
             }
             else if (call.name === 'createOrder') {
-                const odooProduct = await (0, odoo_1.findProductByQuery)(String(args?.productName || ''));
+                const odooProduct = await (0, catalog_1.findProductByQuery)(String(args?.productName || ''));
                 const qty = args?.quantity || 1;
                 if (odooProduct && odooProduct.qty_available >= qty) {
                     const profile = await (0, firestore_1.getUserProfile)(userId);
                     const partnerName = profile.displayName || `LINE Customer ${userId.slice(-6)}`;
-                    const quotation = await (0, odoo_1.createQuotationFromLine)(partnerName, profile.phone || '', odooProduct.name, qty, profile.odooPartnerId);
+                    const quotation = await (0, sales_1.createQuotationFromLine)(partnerName, profile.phone || '', odooProduct.name, qty, profile.odooPartnerId);
                     const total = quotation?.total ?? (odooProduct.list_price * qty);
                     aiTextResponse += quotation
                         ? `[Quotation ${quotation.orderName} for ${qty}x ${odooProduct.name}]`

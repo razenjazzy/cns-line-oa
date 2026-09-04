@@ -52,6 +52,7 @@ const AUDIT_ARCHIVE_SCHEMA = [
     { name: 'outcome', type: 'STRING', mode: 'REQUIRED' },
     { name: 'actorUserId', type: 'STRING', mode: 'NULLABLE' },
     { name: 'channelId', type: 'STRING', mode: 'NULLABLE' },
+    { name: 'requestId', type: 'STRING', mode: 'NULLABLE' },
     { name: 'targetId', type: 'STRING', mode: 'NULLABLE' },
     { name: 'detail', type: 'STRING', mode: 'NULLABLE' },
     { name: 'createdAt', type: 'TIMESTAMP', mode: 'REQUIRED' },

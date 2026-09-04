@@ -6,6 +6,8 @@ const vertexai_1 = require("../services/vertexai");
 const templates_1 = require("../line/templates");
 const firestore_1 = require("../services/firestore");
 const odoo_1 = require("../services/odoo");
+const registry_1 = require("../erp/registry");
+const logger_1 = require("../services/logger");
 // Lazy: read env vars at call time so dotenv.config() has already run
 const getClient = () => {
     const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
@@ -15,11 +17,12 @@ const getClient = () => {
 };
 const isValidLineUserId = (value) => /^U[a-f0-9]{32}$/i.test(value);
 const runDailyReport = async (language) => {
-    console.log('Starting daily report job...');
+    const executionId = (0, logger_1.createExecutionId)('daily-report');
+    logger_1.appLogger.info('job_started', { job: 'daily_report', executionId });
     if (!(0, odoo_1.isOdooConfigured)()) {
         throw new Error('Odoo is not configured. Please set ODOO_URL/ODOO_DB/ODOO_USERNAME/ODOO_API_KEY.');
     }
-    const snapshot = await (0, odoo_1.getDailySalesSnapshot)();
+    const snapshot = await (0, registry_1.getErpAdapter)().getDailySnapshot();
     if (!snapshot.length) {
         throw new Error('No sales data was found in Odoo for the selected time windows.');
     }
@@ -53,6 +56,6 @@ const runDailyReport = async (language) => {
         }
     }
     await (0, firestore_1.saveReportLog)(new Date().toISOString().split('T')[0], { insights });
-    console.log('Daily report job complete.');
+    logger_1.appLogger.info('job_completed', { job: 'daily_report', executionId });
 };
 exports.runDailyReport = runDailyReport;

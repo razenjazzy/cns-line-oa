@@ -1,143 +1,23 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __exportStar = (this && this.__exportStar) || function(m, exports) {
+    for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.seedOdooSampleSalesData = exports.getDailySalesSnapshot = exports.deleteServiceCatalogItem = exports.updateServiceCatalogItem = exports.createServiceCatalogItem = exports.getServiceByIdentifier = exports.listServiceCatalogItems = exports.deletePartnerFromLine = exports.updatePartnerFromLine = exports.createPartnerFromLine = exports.getPartnerById = exports.getPartnerByPhone = exports.createQuotationFromLine = exports.createInvoiceForSaleOrder = exports.updateSaleOrderLineQty = exports.findSaleOrderLineByProduct = exports.addSaleOrderLine = exports.cancelSaleOrder = exports.markSaleOrderSent = exports.confirmSaleOrder = exports.findPaymentTermByName = exports.getSaleOrdersForPartner = exports.getSaleOrderPdfLink = exports.getSaleOrderPortalLink = exports.getSaleOrderById = exports.findOrderByReference = exports.listProducts = exports.findProductByQuery = exports.verifyOdooAdminAccess = exports.pingOdoo = exports.isOdooConfigured = void 0;
-const ODOO_RPC_TIMEOUT_MS = Number(process.env.ODOO_RPC_TIMEOUT_MS || 7000);
-const ODOO_READ_RETRY_ATTEMPTS = Number(process.env.ODOO_READ_RETRY_ATTEMPTS || 3);
-const ODOO_READ_RETRY_BASE_DELAY_MS = Number(process.env.ODOO_READ_RETRY_BASE_DELAY_MS || 250);
-const getConfig = () => {
-    const url = process.env.ODOO_URL?.trim() || '';
-    const db = process.env.ODOO_DB?.trim() || '';
-    const username = process.env.ODOO_USERNAME?.trim() || '';
-    const apiKey = process.env.ODOO_API_KEY?.trim() || '';
-    if (!url || !db || !username || !apiKey)
-        return null;
-    return { url, db, username, apiKey };
-};
-const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-const isTransientOdooError = (error) => {
-    const message = String(error || '');
-    if (/timed out/i.test(message))
-        return true;
-    if (/fetch failed|network|ECONNRESET|ENOTFOUND|EAI_AGAIN|ETIMEDOUT/i.test(message))
-        return true;
-    const httpMatch = message.match(/Odoo HTTP\s+(\d{3})/i);
-    if (!httpMatch)
-        return false;
-    const status = Number(httpMatch[1]);
-    return status === 429 || status >= 500;
-};
-const withReadRetry = async (label, operation) => {
-    const maxAttempts = Math.max(1, ODOO_READ_RETRY_ATTEMPTS);
-    let lastError;
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-        try {
-            return await operation();
-        }
-        catch (error) {
-            lastError = error;
-            const shouldRetry = attempt < maxAttempts && isTransientOdooError(error);
-            if (!shouldRetry)
-                break;
-            const backoffMs = ODOO_READ_RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
-            console.warn(`Odoo read retry ${attempt}/${maxAttempts} for ${label} after error: ${String(error)}`);
-            await delay(backoffMs);
-        }
-    }
-    throw lastError;
-};
-const ODOO_WRITE_RETRY_ATTEMPTS = Number(process.env.ODOO_WRITE_RETRY_ATTEMPTS || 2);
-/**
- * Only safe for idempotent mutations (write/unlink on a known id) — never
- * wrap `create` in this, since retrying a create after an ambiguous
- * (timeout-like) failure risks creating a duplicate record.
- */
-const withIdempotentWriteRetry = async (label, operation) => {
-    const maxAttempts = Math.max(1, ODOO_WRITE_RETRY_ATTEMPTS);
-    let lastError;
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-        try {
-            return await operation();
-        }
-        catch (error) {
-            lastError = error;
-            const shouldRetry = attempt < maxAttempts && isTransientOdooError(error);
-            if (!shouldRetry)
-                break;
-            const backoffMs = ODOO_READ_RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
-            console.warn(`Odoo write retry ${attempt}/${maxAttempts} for ${label} after error: ${String(error)}`);
-            await delay(backoffMs);
-        }
-    }
-    throw lastError;
-};
-const jsonRpc = async (config, service, method, args) => {
-    const endpoint = `${config.url.replace(/\/$/, '')}/jsonrpc`;
-    const body = {
-        jsonrpc: '2.0',
-        method: 'call',
-        params: {
-            service,
-            method,
-            args,
-        },
-        id: Date.now(),
-    };
-    const controller = new AbortController();
-    const timeoutHandle = setTimeout(() => controller.abort(), ODOO_RPC_TIMEOUT_MS);
-    let response;
-    try {
-        response = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-            signal: controller.signal,
-        });
-    }
-    catch (error) {
-        if (error instanceof Error && error.name === 'AbortError') {
-            throw new Error(`Odoo RPC timed out after ${ODOO_RPC_TIMEOUT_MS}ms`);
-        }
-        throw error;
-    }
-    finally {
-        clearTimeout(timeoutHandle);
-    }
-    if (!response.ok) {
-        throw new Error(`Odoo HTTP ${response.status}`);
-    }
-    const data = (await response.json());
-    if (data.error) {
-        throw new Error(`Odoo RPC error: ${data.error.message}`);
-    }
-    if (data.result === undefined) {
-        throw new Error('Odoo RPC returned no result');
-    }
-    return data.result;
-};
-const login = async (config) => {
-    return jsonRpc(config, 'common', 'login', [
-        config.db,
-        config.username,
-        config.apiKey,
-    ]);
-};
-const executeKw = async (config, uid, model, method, positionalArgs, keywordArgs = {}) => {
-    return jsonRpc(config, 'object', 'execute_kw', [
-        config.db,
-        uid,
-        config.apiKey,
-        model,
-        method,
-        positionalArgs,
-        keywordArgs,
-    ]);
-};
-const loginRead = async (config) => {
-    return withReadRetry('login', async () => login(config));
-};
-const executeKwRead = async (config, uid, model, method, positionalArgs, keywordArgs = {}) => {
-    return withReadRetry(`${model}.${method}`, async () => executeKw(config, uid, model, method, positionalArgs, keywordArgs));
-};
+const client_1 = require("./odoo/client");
+__exportStar(require("./odoo/types"), exports);
+const getConfig = client_1.getOdooConfig;
 const num = (value) => {
     if (typeof value === 'number')
         return value;
@@ -215,34 +95,10 @@ const toOdooDateTime = (date) => {
     const ss = pad(date.getUTCSeconds());
     return `${y}-${m}-${d} ${hh}:${mm}:${ss}`;
 };
-const isOdooConfigured = () => getConfig() !== null;
-exports.isOdooConfigured = isOdooConfigured;
-const pingOdoo = async () => {
-    const config = getConfig();
-    if (!config)
-        return 'Odoo is not configured (missing ODOO_URL/ODOO_DB/ODOO_USERNAME/ODOO_API_KEY).';
-    const uid = await loginRead(config);
-    if (!uid)
-        return 'Odoo login failed. Check ODOO_USERNAME and ODOO_API_KEY.';
-    return `Odoo connected successfully (uid=${uid}).`;
-};
-exports.pingOdoo = pingOdoo;
-const verifyOdooAdminAccess = async () => {
-    const config = getConfig();
-    if (!config) {
-        return { ok: false, message: 'Odoo is not configured.' };
-    }
-    const uid = await loginRead(config);
-    if (!uid) {
-        return { ok: false, message: 'Odoo login failed.' };
-    }
-    const canWritePartners = await executeKwRead(config, uid, 'res.partner', 'check_access_rights', ['write'], { raise_exception: false });
-    if (!canWritePartners) {
-        return { ok: false, message: 'Odoo user lacks admin-level write rights on res.partner.' };
-    }
-    return { ok: true, message: `Odoo admin verified (uid=${uid}).` };
-};
-exports.verifyOdooAdminAccess = verifyOdooAdminAccess;
+var admin_1 = require("./odoo/admin");
+Object.defineProperty(exports, "isOdooConfigured", { enumerable: true, get: function () { return admin_1.isOdooConfigured; } });
+Object.defineProperty(exports, "pingOdoo", { enumerable: true, get: function () { return admin_1.pingOdoo; } });
+Object.defineProperty(exports, "verifyOdooAdminAccess", { enumerable: true, get: function () { return admin_1.verifyOdooAdminAccess; } });
 const findProductByQuery = async (query) => {
     const normalizedQuery = normalizeLookupText(query);
     if (!normalizedQuery)
@@ -250,10 +106,10 @@ const findProductByQuery = async (query) => {
     const config = getConfig();
     if (!config)
         return null;
-    const uid = await loginRead(config);
+    const uid = await (0, client_1.loginRead)(config);
     if (!uid)
         return null;
-    const rows = await executeKwRead(config, uid, 'product.product', 'search_read', [[['name', 'ilike', normalizedQuery]]], {
+    const rows = await (0, client_1.executeKwRead)(config, uid, 'product.product', 'search_read', [[['name', 'ilike', normalizedQuery]]], {
         fields: ['id', 'name', 'list_price', 'qty_available', 'default_code'],
         limit: 1,
     });
@@ -271,10 +127,10 @@ const listProducts = async (limit = 10) => {
     const config = getConfig();
     if (!config)
         return [];
-    const uid = await loginRead(config);
+    const uid = await (0, client_1.loginRead)(config);
     if (!uid)
         return [];
-    const rows = await executeKwRead(config, uid, 'product.product', 'search_read', [[]], {
+    const rows = await (0, client_1.executeKwRead)(config, uid, 'product.product', 'search_read', [[]], {
         fields: ['id', 'name', 'list_price', 'qty_available', 'default_code'],
         limit,
         order: 'write_date desc',
@@ -289,10 +145,10 @@ const findOrderByReference = async (reference) => {
     const config = getConfig();
     if (!config)
         return null;
-    const uid = await loginRead(config);
+    const uid = await (0, client_1.loginRead)(config);
     if (!uid)
         return null;
-    const rows = await executeKwRead(config, uid, 'sale.order', 'search_read', [[['name', '=', normalizedReference]]], {
+    const rows = await (0, client_1.executeKwRead)(config, uid, 'sale.order', 'search_read', [[['name', '=', normalizedReference]]], {
         fields: ['id', 'name', 'state', 'amount_total', 'partner_id', 'access_token'],
         limit: 1,
     });
@@ -312,14 +168,14 @@ const getSaleOrderById = async (orderId) => {
     const config = getConfig();
     if (!config)
         return null;
-    const uid = await loginRead(config);
+    const uid = await (0, client_1.loginRead)(config);
     if (!uid)
         return null;
-    const rows = await executeKwRead(config, uid, 'sale.order', 'search_read', [[['id', '=', orderId]]], { fields: ['id', 'name', 'state', 'amount_total', 'partner_id', 'access_token', 'invoice_status', 'note'], limit: 1 });
+    const rows = await (0, client_1.executeKwRead)(config, uid, 'sale.order', 'search_read', [[['id', '=', orderId]]], { fields: ['id', 'name', 'state', 'amount_total', 'partner_id', 'access_token', 'invoice_status', 'note'], limit: 1 });
     if (!rows.length)
         return null;
     const order = parseOrder(rows[0]);
-    const lineRows = await executeKwRead(config, uid, 'sale.order.line', 'search_read', [[['order_id', '=', orderId], ['display_type', '=', false]]], { fields: ['product_id', 'product_uom_qty', 'price_unit', 'price_subtotal'] });
+    const lineRows = await (0, client_1.executeKwRead)(config, uid, 'sale.order.line', 'search_read', [[['order_id', '=', orderId], ['display_type', '=', false]]], { fields: ['product_id', 'product_uom_qty', 'price_unit', 'price_subtotal'] });
     order.lines = lineRows.map(parseOrderLine);
     return order;
 };
@@ -337,10 +193,10 @@ const getSaleOrderPortalLink = async (orderId) => {
     if (!config)
         return null;
     try {
-        const uid = await login(config);
+        const uid = await (0, client_1.login)(config);
         if (!uid)
             return null;
-        const relativePath = await executeKw(config, uid, 'sale.order', 'get_portal_url', [[orderId]]);
+        const relativePath = await (0, client_1.executeKw)(config, uid, 'sale.order', 'get_portal_url', [[orderId]]);
         if (!relativePath)
             return null;
         return `${config.url.replace(/\/$/, '')}${relativePath}`;
@@ -371,10 +227,10 @@ const getSaleOrdersForPartner = async (partnerId, limit = 8) => {
     const config = getConfig();
     if (!config)
         return [];
-    const uid = await loginRead(config);
+    const uid = await (0, client_1.loginRead)(config);
     if (!uid)
         return [];
-    const rows = await executeKwRead(config, uid, 'sale.order', 'search_read', [[['partner_id', '=', partnerId]]], { fields: ['id', 'name', 'state', 'amount_total', 'partner_id', 'date_order'], order: 'date_order desc', limit });
+    const rows = await (0, client_1.executeKwRead)(config, uid, 'sale.order', 'search_read', [[['partner_id', '=', partnerId]]], { fields: ['id', 'name', 'state', 'amount_total', 'partner_id', 'date_order'], order: 'date_order desc', limit });
     return rows.map(parseOrder);
 };
 exports.getSaleOrdersForPartner = getSaleOrdersForPartner;
@@ -386,10 +242,10 @@ const findPaymentTermByName = async (query) => {
     const config = getConfig();
     if (!config)
         return null;
-    const uid = await loginRead(config);
+    const uid = await (0, client_1.loginRead)(config);
     if (!uid)
         return null;
-    const rows = await executeKwRead(config, uid, 'account.payment.term', 'search_read', [[['name', 'ilike', normalizedQuery]]], { fields: ['id', 'name'], limit: 1 });
+    const rows = await (0, client_1.executeKwRead)(config, uid, 'account.payment.term', 'search_read', [[['name', 'ilike', normalizedQuery]]], { fields: ['id', 'name'], limit: 1 });
     if (!rows.length)
         return null;
     return { id: num(rows[0].id), name: str(rows[0].name) };
@@ -401,10 +257,10 @@ const confirmSaleOrder = async (orderId) => {
     if (!config)
         return false;
     try {
-        const uid = await login(config);
+        const uid = await (0, client_1.login)(config);
         if (!uid)
             return false;
-        await executeKw(config, uid, 'sale.order', 'action_confirm', [[orderId]]);
+        await (0, client_1.executeKw)(config, uid, 'sale.order', 'action_confirm', [[orderId]]);
         return true;
     }
     catch (error) {
@@ -424,12 +280,12 @@ const markSaleOrderSent = async (orderId) => {
     if (!config)
         return false;
     try {
-        const uid = await login(config);
+        const uid = await (0, client_1.login)(config);
         if (!uid)
             return false;
-        await executeKw(config, uid, 'sale.order', 'write', [[orderId], { state: 'sent' }]);
+        await (0, client_1.executeKw)(config, uid, 'sale.order', 'write', [[orderId], { state: 'sent' }]);
         try {
-            await executeKw(config, uid, 'sale.order', 'message_post', [[orderId]], {
+            await (0, client_1.executeKw)(config, uid, 'sale.order', 'message_post', [[orderId]], {
                 body: 'Sent to customer via LINE OA.',
             });
         }
@@ -450,10 +306,10 @@ const cancelSaleOrder = async (orderId) => {
     if (!config)
         return false;
     try {
-        const uid = await login(config);
+        const uid = await (0, client_1.login)(config);
         if (!uid)
             return false;
-        await executeKw(config, uid, 'sale.order', 'action_cancel', [[orderId]]);
+        await (0, client_1.executeKw)(config, uid, 'sale.order', 'action_cancel', [[orderId]]);
         return true;
     }
     catch (error) {
@@ -468,10 +324,10 @@ const addSaleOrderLine = async (orderId, productId, qty) => {
     if (!config)
         return false;
     try {
-        const uid = await login(config);
+        const uid = await (0, client_1.login)(config);
         if (!uid)
             return false;
-        await executeKw(config, uid, 'sale.order.line', 'create', [{
+        await (0, client_1.executeKw)(config, uid, 'sale.order.line', 'create', [{
                 order_id: orderId,
                 product_id: productId,
                 product_uom_qty: qty,
@@ -500,10 +356,10 @@ const findSaleOrderLineByProduct = async (orderId, productId) => {
     const config = getConfig();
     if (!config)
         return null;
-    const uid = await loginRead(config);
+    const uid = await (0, client_1.loginRead)(config);
     if (!uid)
         return null;
-    const lines = await executeKwRead(config, uid, 'sale.order.line', 'search_read', [
+    const lines = await (0, client_1.executeKwRead)(config, uid, 'sale.order.line', 'search_read', [
         [['order_id', '=', orderId], ['product_id', '=', productId]],
     ], { fields: ['id', 'product_uom_qty'], limit: 1 });
     return lines.length ? { id: lines[0].id, qty: lines[0].product_uom_qty } : null;
@@ -514,13 +370,13 @@ const updateSaleOrderLineQty = async (orderId, productId, qty) => {
     if (!config)
         return false;
     try {
-        const uid = await login(config);
+        const uid = await (0, client_1.login)(config);
         if (!uid)
             return false;
         const existing = await (0, exports.findSaleOrderLineByProduct)(orderId, productId);
         if (!existing)
             return false;
-        await executeKw(config, uid, 'sale.order.line', 'write', [[existing.id], { product_uom_qty: qty }]);
+        await (0, client_1.executeKw)(config, uid, 'sale.order.line', 'write', [[existing.id], { product_uom_qty: qty }]);
         return true;
     }
     catch (error) {
@@ -545,12 +401,12 @@ const createInvoiceForSaleOrder = async (orderId) => {
     if (!config)
         return false;
     try {
-        const uid = await login(config);
+        const uid = await (0, client_1.login)(config);
         if (!uid)
             return false;
         const wizardContext = { active_model: 'sale.order', active_ids: [orderId], active_id: orderId };
-        const wizardId = await executeKw(config, uid, 'sale.advance.payment.inv', 'create', [{}], { context: wizardContext });
-        await executeKw(config, uid, 'sale.advance.payment.inv', 'create_invoices', [[wizardId]], { context: wizardContext });
+        const wizardId = await (0, client_1.executeKw)(config, uid, 'sale.advance.payment.inv', 'create', [{}], { context: wizardContext });
+        await (0, client_1.executeKw)(config, uid, 'sale.advance.payment.inv', 'create_invoices', [[wizardId]], { context: wizardContext });
         return true;
     }
     catch (error) {
@@ -564,12 +420,12 @@ const findOrCreatePartner = async (config, uid, name, phone) => {
     // Only search by phone when we actually have one — matching on an empty
     // string can return an unrelated partner that also has no phone on file.
     if (normalizedPhone) {
-        const found = await executeKwRead(config, uid, 'res.partner', 'search_read', [[['phone', '=', normalizedPhone]]], { fields: ['id'], limit: 1 });
+        const found = await (0, client_1.executeKwRead)(config, uid, 'res.partner', 'search_read', [[['phone', '=', normalizedPhone]]], { fields: ['id'], limit: 1 });
         if (found.length > 0) {
             return num(found[0].id);
         }
     }
-    return executeKw(config, uid, 'res.partner', 'create', [{ name, ...(normalizedPhone ? { phone: normalizedPhone } : {}) }]);
+    return (0, client_1.executeKw)(config, uid, 'res.partner', 'create', [{ name, ...(normalizedPhone ? { phone: normalizedPhone } : {}) }]);
 };
 const createQuotationFromLine = async (customerName, customerPhone, productQuery, qty, explicitPartnerId, 
 /**
@@ -583,7 +439,7 @@ extra) => {
     if (!config)
         return null;
     try {
-        const uid = await login(config);
+        const uid = await (0, client_1.login)(config);
         if (!uid)
             return null;
         const product = await (0, exports.findProductByQuery)(productQuery);
@@ -608,8 +464,8 @@ extra) => {
         // No reliable natural key to reconcile a sale order against before it
         // exists, so unlike partner/service creates this is not retried or
         // reconciled — a failed attempt should be safely re-runnable by the user.
-        const orderId = await executeKw(config, uid, 'sale.order', 'create', [orderFields]);
-        const rows = await executeKw(config, uid, 'sale.order', 'read', [[orderId]], { fields: ['name', 'amount_total'] });
+        const orderId = await (0, client_1.executeKw)(config, uid, 'sale.order', 'create', [orderFields]);
+        const rows = await (0, client_1.executeKw)(config, uid, 'sale.order', 'read', [[orderId]], { fields: ['name', 'amount_total'] });
         if (!rows.length)
             return null;
         return {
@@ -664,7 +520,7 @@ const getPartnerPhoneFields = async (config, uid) => {
         return cachedPartnerPhoneFields;
     let fields = ['phone'];
     try {
-        const fieldsInfo = await executeKwRead(config, uid, 'res.partner', 'fields_get', [['phone', 'mobile']], { attributes: [] });
+        const fieldsInfo = await (0, client_1.executeKwRead)(config, uid, 'res.partner', 'fields_get', [['phone', 'mobile']], { attributes: [] });
         const available = Object.keys(fieldsInfo || {});
         const discovered = ['phone', 'mobile'].filter(f => available.includes(f));
         if (discovered.length)
@@ -680,7 +536,7 @@ const getPartnerByPhone = async (phone) => {
     const config = getConfig();
     if (!config)
         return null;
-    const uid = await loginRead(config);
+    const uid = await (0, client_1.loginRead)(config);
     if (!uid)
         return null;
     const variants = buildPhoneMatchVariants(phone);
@@ -689,7 +545,7 @@ const getPartnerByPhone = async (phone) => {
     const phoneFields = await getPartnerPhoneFields(config, uid);
     const fieldMatches = variants.flatMap(v => phoneFields.map(f => [f, '=', v]));
     const domain = [...Array(fieldMatches.length - 1).fill('|'), ...fieldMatches];
-    const rows = await executeKwRead(config, uid, 'res.partner', 'search_read', [domain], { fields: ['id', 'name', 'phone', 'email'], limit: 1 });
+    const rows = await (0, client_1.executeKwRead)(config, uid, 'res.partner', 'search_read', [domain], { fields: ['id', 'name', 'phone', 'email'], limit: 1 });
     if (!rows.length)
         return null;
     return parsePartner(rows[0]);
@@ -700,10 +556,10 @@ const getPartnerById = async (partnerId) => {
     const config = getConfig();
     if (!config)
         return null;
-    const uid = await loginRead(config);
+    const uid = await (0, client_1.loginRead)(config);
     if (!uid)
         return null;
-    const rows = await executeKwRead(config, uid, 'res.partner', 'search_read', [[['id', '=', partnerId]]], { fields: ['id', 'name', 'phone', 'email'], limit: 1 });
+    const rows = await (0, client_1.executeKwRead)(config, uid, 'res.partner', 'search_read', [[['id', '=', partnerId]]], { fields: ['id', 'name', 'phone', 'email'], limit: 1 });
     if (!rows.length)
         return null;
     return parsePartner(rows[0]);
@@ -714,11 +570,11 @@ const createPartnerFromLine = async (name, phone, email) => {
     if (!config)
         return null;
     try {
-        const uid = await login(config);
+        const uid = await (0, client_1.login)(config);
         if (!uid)
             return null;
-        const partnerId = await executeKw(config, uid, 'res.partner', 'create', [{ name, phone, ...(email ? { email } : {}) }]);
-        const rows = await executeKw(config, uid, 'res.partner', 'read', [[partnerId]], { fields: ['id', 'name', 'phone', 'email'] });
+        const partnerId = await (0, client_1.executeKw)(config, uid, 'res.partner', 'create', [{ name, phone, ...(email ? { email } : {}) }]);
+        const rows = await (0, client_1.executeKw)(config, uid, 'res.partner', 'read', [[partnerId]], { fields: ['id', 'name', 'phone', 'email'] });
         if (!rows.length)
             return null;
         return parsePartner(rows[0]);
@@ -728,7 +584,7 @@ const createPartnerFromLine = async (name, phone, email) => {
         // Never blindly retry a create (risks a duplicate partner). Instead,
         // reconcile: check whether it actually landed despite the client-side
         // error before reporting failure.
-        if (isTransientOdooError(error)) {
+        if ((0, client_1.isTransientOdooError)(error)) {
             try {
                 const reconciled = await (0, exports.getPartnerByPhone)(phone);
                 if (reconciled)
@@ -756,12 +612,12 @@ const updatePartnerFromLine = async (partnerId, name, phone, email) => {
     if (!Object.keys(values).length)
         return null;
     try {
-        const uid = await login(config);
+        const uid = await (0, client_1.login)(config);
         if (!uid)
             return null;
         // write/read on a known id is idempotent, safe to retry on transient errors.
-        await withIdempotentWriteRetry('updatePartner', () => executeKw(config, uid, 'res.partner', 'write', [[partnerId], values]));
-        const rows = await executeKw(config, uid, 'res.partner', 'read', [[partnerId]], { fields: ['id', 'name', 'phone', 'email'] });
+        await (0, client_1.withIdempotentWriteRetry)('updatePartner', () => (0, client_1.executeKw)(config, uid, 'res.partner', 'write', [[partnerId], values]));
+        const rows = await (0, client_1.executeKw)(config, uid, 'res.partner', 'read', [[partnerId]], { fields: ['id', 'name', 'phone', 'email'] });
         if (!rows.length)
             return null;
         return parsePartner(rows[0]);
@@ -777,10 +633,10 @@ const deletePartnerFromLine = async (partnerId) => {
     if (!config)
         return false;
     try {
-        const uid = await login(config);
+        const uid = await (0, client_1.login)(config);
         if (!uid)
             return false;
-        return await withIdempotentWriteRetry('deletePartner', () => executeKw(config, uid, 'res.partner', 'unlink', [[partnerId]]));
+        return await (0, client_1.withIdempotentWriteRetry)('deletePartner', () => (0, client_1.executeKw)(config, uid, 'res.partner', 'unlink', [[partnerId]]));
     }
     catch (error) {
         console.error('deletePartnerFromLine failed:', error);
@@ -789,13 +645,13 @@ const deletePartnerFromLine = async (partnerId) => {
 };
 exports.deletePartnerFromLine = deletePartnerFromLine;
 const findServiceByIdentifierInternal = async (config, uid, identifier) => {
-    const byCode = await executeKwRead(config, uid, 'product.product', 'search_read', [[['default_code', '=', identifier.toUpperCase()]]], {
+    const byCode = await (0, client_1.executeKwRead)(config, uid, 'product.product', 'search_read', [[['default_code', '=', identifier.toUpperCase()]]], {
         fields: ['id', 'name', 'default_code', 'list_price', 'qty_available'],
         limit: 1,
     });
     if (byCode.length)
         return parseService(byCode[0]);
-    const byName = await executeKwRead(config, uid, 'product.product', 'search_read', [[['name', 'ilike', identifier]]], {
+    const byName = await (0, client_1.executeKwRead)(config, uid, 'product.product', 'search_read', [[['name', 'ilike', identifier]]], {
         fields: ['id', 'name', 'default_code', 'list_price', 'qty_available'],
         limit: 1,
     });
@@ -807,10 +663,10 @@ const listServiceCatalogItems = async (limit = 10) => {
     const config = getConfig();
     if (!config)
         return [];
-    const uid = await loginRead(config);
+    const uid = await (0, client_1.loginRead)(config);
     if (!uid)
         return [];
-    const rows = await executeKwRead(config, uid, 'product.product', 'search_read', [[['type', '=', 'service']]], {
+    const rows = await (0, client_1.executeKwRead)(config, uid, 'product.product', 'search_read', [[['type', '=', 'service']]], {
         fields: ['id', 'name', 'default_code', 'list_price', 'qty_available'],
         limit,
         order: 'write_date desc',
@@ -822,7 +678,7 @@ const getServiceByIdentifier = async (identifier) => {
     const config = getConfig();
     if (!config)
         return null;
-    const uid = await loginRead(config);
+    const uid = await (0, client_1.loginRead)(config);
     if (!uid)
         return null;
     return findServiceByIdentifierInternal(config, uid, identifier);
@@ -833,13 +689,13 @@ const createServiceCatalogItem = async (name, code, price) => {
     if (!config)
         return null;
     try {
-        const uid = await login(config);
+        const uid = await (0, client_1.login)(config);
         if (!uid)
             return null;
         const exists = await findServiceByIdentifierInternal(config, uid, code);
         if (exists)
             return exists;
-        const productId = await executeKw(config, uid, 'product.product', 'create', [{
+        const productId = await (0, client_1.executeKw)(config, uid, 'product.product', 'create', [{
                 name,
                 default_code: code.toUpperCase(),
                 list_price: price,
@@ -848,7 +704,7 @@ const createServiceCatalogItem = async (name, code, price) => {
                 sale_ok: true,
                 purchase_ok: false,
             }]);
-        const rows = await executeKw(config, uid, 'product.product', 'read', [[productId]], { fields: ['id', 'name', 'default_code', 'list_price', 'qty_available'] });
+        const rows = await (0, client_1.executeKw)(config, uid, 'product.product', 'read', [[productId]], { fields: ['id', 'name', 'default_code', 'list_price', 'qty_available'] });
         if (!rows.length)
             return null;
         return parseService(rows[0]);
@@ -856,9 +712,9 @@ const createServiceCatalogItem = async (name, code, price) => {
     catch (error) {
         console.error('createServiceCatalogItem failed:', error);
         // Never blindly retry a create; reconcile by code before reporting failure.
-        if (isTransientOdooError(error)) {
+        if ((0, client_1.isTransientOdooError)(error)) {
             try {
-                const uid = await login(config);
+                const uid = await (0, client_1.login)(config);
                 if (uid) {
                     const reconciled = await findServiceByIdentifierInternal(config, uid, code);
                     if (reconciled)
@@ -878,23 +734,21 @@ const updateServiceCatalogItem = async (identifier, fields) => {
     if (!config)
         return null;
     try {
-        const uid = await login(config);
+        const uid = await (0, client_1.login)(config);
         if (!uid)
             return null;
         const existing = await findServiceByIdentifierInternal(config, uid, identifier);
         if (!existing)
             return null;
         const values = {};
-        if (fields.name)
-            values.name = fields.name;
         if (typeof fields.price === 'number' && !Number.isNaN(fields.price))
             values.list_price = fields.price;
         if (fields.code)
             values.default_code = fields.code.toUpperCase();
         if (!Object.keys(values).length)
             return existing;
-        await withIdempotentWriteRetry('updateService', () => executeKw(config, uid, 'product.product', 'write', [[existing.id], values]));
-        const rows = await executeKw(config, uid, 'product.product', 'read', [[existing.id]], { fields: ['id', 'name', 'default_code', 'list_price', 'qty_available'] });
+        await (0, client_1.withIdempotentWriteRetry)('updateService', () => (0, client_1.executeKw)(config, uid, 'product.product', 'write', [[existing.id], values]));
+        const rows = await (0, client_1.executeKw)(config, uid, 'product.product', 'read', [[existing.id]], { fields: ['id', 'name', 'default_code', 'list_price', 'qty_available'] });
         if (!rows.length)
             return null;
         return parseService(rows[0]);
@@ -910,13 +764,13 @@ const deleteServiceCatalogItem = async (identifier) => {
     if (!config)
         return false;
     try {
-        const uid = await login(config);
+        const uid = await (0, client_1.login)(config);
         if (!uid)
             return false;
         const existing = await findServiceByIdentifierInternal(config, uid, identifier);
         if (!existing)
             return false;
-        return await withIdempotentWriteRetry('deleteService', () => executeKw(config, uid, 'product.product', 'unlink', [[existing.id]]));
+        return await (0, client_1.withIdempotentWriteRetry)('deleteService', () => (0, client_1.executeKw)(config, uid, 'product.product', 'unlink', [[existing.id]]));
     }
     catch (error) {
         console.error('deleteServiceCatalogItem failed:', error);
@@ -927,7 +781,7 @@ exports.deleteServiceCatalogItem = deleteServiceCatalogItem;
 const fetchSalesSnapshotByWindow = async (config, uid, start, end) => {
     const startStr = toOdooDateTime(start);
     const endStr = toOdooDateTime(end);
-    const orders = await executeKwRead(config, uid, 'sale.order', 'search_read', [[
+    const orders = await (0, client_1.executeKwRead)(config, uid, 'sale.order', 'search_read', [[
             ['state', 'in', ['draft', 'sent', 'sale', 'done']],
             ['date_order', '>=', startStr],
             ['date_order', '<', endStr],
@@ -939,7 +793,7 @@ const fetchSalesSnapshotByWindow = async (config, uid, start, end) => {
     const orderIds = orders.map(row => num(row.id)).filter(Boolean);
     if (!orderIds.length)
         return [];
-    const lines = await executeKwRead(config, uid, 'sale.order.line', 'search_read', [[['order_id', 'in', orderIds]]], {
+    const lines = await (0, client_1.executeKwRead)(config, uid, 'sale.order.line', 'search_read', [[['order_id', 'in', orderIds]]], {
         fields: ['product_id', 'product_uom_qty', 'price_total'],
         limit: 5000,
     });
@@ -962,7 +816,7 @@ const fetchSalesSnapshotByWindow = async (config, uid, start, end) => {
     }
     const productIds = Array.from(aggregate.keys());
     const products = productIds.length
-        ? await executeKwRead(config, uid, 'product.product', 'search_read', [[['id', 'in', productIds]]], { fields: ['id', 'qty_available'], limit: productIds.length })
+        ? await (0, client_1.executeKwRead)(config, uid, 'product.product', 'search_read', [[['id', 'in', productIds]]], { fields: ['id', 'qty_available'], limit: productIds.length })
         : [];
     const stockByProductId = new Map();
     for (const product of products) {
@@ -982,7 +836,7 @@ const getDailySalesSnapshot = async () => {
     const config = getConfig();
     if (!config)
         return [];
-    const uid = await loginRead(config);
+    const uid = await (0, client_1.loginRead)(config);
     if (!uid)
         return [];
     const now = new Date();
@@ -998,7 +852,7 @@ const getDailySalesSnapshot = async () => {
     if (rollingSnapshot.length)
         return rollingSnapshot;
     // Final fallback: real Odoo product inventory snapshot (no mock data).
-    const products = await executeKwRead(config, uid, 'product.product', 'search_read', [[]], {
+    const products = await (0, client_1.executeKwRead)(config, uid, 'product.product', 'search_read', [[]], {
         fields: ['name', 'qty_available', 'list_price'],
         limit: 20,
         order: 'write_date desc',
@@ -1012,10 +866,10 @@ const getDailySalesSnapshot = async () => {
 };
 exports.getDailySalesSnapshot = getDailySalesSnapshot;
 const findOrCreateProduct = async (config, uid, name, defaultCode, listPrice) => {
-    const found = await executeKwRead(config, uid, 'product.product', 'search_read', [[['default_code', '=', defaultCode]]], { fields: ['id'], limit: 1 });
+    const found = await (0, client_1.executeKwRead)(config, uid, 'product.product', 'search_read', [[['default_code', '=', defaultCode]]], { fields: ['id'], limit: 1 });
     if (found.length > 0)
         return num(found[0].id);
-    return executeKw(config, uid, 'product.product', 'create', [{
+    return (0, client_1.executeKw)(config, uid, 'product.product', 'create', [{
             name,
             default_code: defaultCode,
             list_price: listPrice,
@@ -1029,7 +883,7 @@ const seedOdooSampleSalesData = async () => {
     if (!config) {
         return 'Odoo is not configured. Please set ODOO_URL/ODOO_DB/ODOO_USERNAME/ODOO_API_KEY.';
     }
-    const uid = await login(config);
+    const uid = await (0, client_1.login)(config);
     if (!uid) {
         return 'Odoo login failed. Check ODOO_USERNAME and ODOO_API_KEY.';
     }
@@ -1054,10 +908,10 @@ const seedOdooSampleSalesData = async () => {
     ];
     let createdCount = 0;
     for (const values of orderValues) {
-        const existing = await executeKwRead(config, uid, 'sale.order', 'search_read', [[['client_order_ref', '=', String(values.client_order_ref)]]], { fields: ['id'], limit: 1 });
+        const existing = await (0, client_1.executeKwRead)(config, uid, 'sale.order', 'search_read', [[['client_order_ref', '=', String(values.client_order_ref)]]], { fields: ['id'], limit: 1 });
         if (existing.length > 0)
             continue;
-        await executeKw(config, uid, 'sale.order', 'create', [values]);
+        await (0, client_1.executeKw)(config, uid, 'sale.order', 'create', [values]);
         createdCount += 1;
     }
     return `Odoo sample data ready. Created ${createdCount} new demo quotation(s).`;

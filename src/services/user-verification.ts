@@ -9,7 +9,7 @@ import {
   setUserOdooVerificationStatus,
   UserLanguage,
 } from './firestore';
-import { getPartnerByPhone } from './odoo';
+import { getPartnerByPhone } from './odoo/partners';
 import { DEFAULT_CHANNEL_ID } from '../line/channels';
 import { sendTargetedMessage, sendTargetedFlexMessage } from '../line/messaging';
 import { createBotTextFlexMessage } from '../line/templates';

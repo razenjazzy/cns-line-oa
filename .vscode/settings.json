@@ -1,4 +1,8 @@
 {
+  "files.associations": {
+    "**/.github/workflows/**/*.yml": "yaml",
+    "**/.github/workflows/**/*.yaml": "yaml"
+  },
   "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
   "python.analysis.typeCheckingMode": "basic"
 }

@@ -5,23 +5,25 @@ import {
   getSaleOrderPortalLink,
   getSaleOrderPdfLink,
   getSaleOrdersForPartner,
-  confirmSaleOrder,
   markSaleOrderSent,
-  cancelSaleOrder,
-  addSaleOrderLine,
-  updateSaleOrderLineQty,
   findSaleOrderLineByProduct,
-  createInvoiceForSaleOrder,
+} from '../../services/odoo/sales';
+import {
   findProductByQuery,
+} from '../../services/odoo/catalog';
+import {
   getPartnerById,
   getPartnerByPhone,
-  type OdooSaleOrder,
-} from '../../services/odoo';
+} from '../../services/odoo/partners';
+import type { OdooSaleOrder } from '../../services/odoo/types';
 import { findVerifiedUserIdByPhone, getUserLanguage, recordAuditEvent } from '../../services/firestore';
 import type { UserLanguage } from '../../services/firestore';
+import { createApprovalRecord } from '../../services/approval-policy';
+import { saveApprovalRecord, transitionStoredApproval } from '../../services/firestore';
 import { t } from '../../services/i18n';
 import { sendTargetedMessage, sendTargetedFlexMessage } from '../messaging';
 import { DEFAULT_CHANNEL_ID } from '../channels';
+import { getErpAdapter } from '../../erp/registry';
 
 const tr = (language: UserLanguage, th: string, en: string): string => (language === 'en' ? en : th);
 
@@ -147,14 +149,14 @@ const quoteConfirmHandler: CommandHandler = {
   name: 'quote-confirm',
   match: (u) => u.startsWith('QUOTE CONFIRM'),
   handle: async (ctx) => {
-    const { userLanguage, userId, profile, channel, text } = ctx;
+    const { userLanguage, userId, profile, channel, requestId, text } = ctx;
     if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
 
     const orderId = parseOrderId(text, 'QUOTE CONFIRM');
     if (!orderId) return [notFoundReply(userLanguage)];
 
-    const ok = await confirmSaleOrder(orderId);
-    recordAuditEvent({ action: 'quote_confirm', outcome: ok ? 'success' : 'failure', actorUserId: userId, channelId: channel?.channelId, targetId: String(orderId) });
+    const ok = await getErpAdapter().confirmOrder(orderId);
+    recordAuditEvent({ action: 'quote_confirm', outcome: ok ? 'success' : 'failure', actorUserId: userId, channelId: channel?.channelId, requestId, targetId: String(orderId) });
     if (!ok) {
       return [botText(tr(userLanguage, 'ยืนยันคำสั่งซื้อไม่สำเร็จ กรุณาลองใหม่', 'Failed to confirm the order. Please try again.'), userLanguage)];
     }
@@ -187,7 +189,7 @@ const quoteSendHandler: CommandHandler = {
   name: 'quote-send',
   match: (u) => u.startsWith('QUOTE SEND'),
   handle: async (ctx) => {
-    const { userLanguage, userId, profile, channel, text } = ctx;
+    const { userLanguage, userId, profile, channel, requestId, text } = ctx;
     if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
 
     const orderId = parseOrderId(text, 'QUOTE SEND');
@@ -200,7 +202,7 @@ const quoteSendHandler: CommandHandler = {
     const customerUserId = partner?.phone ? await findVerifiedUserIdByPhone(partner.phone) : null;
 
     if (!customerUserId) {
-      recordAuditEvent({ action: 'quote_send', outcome: 'failure', actorUserId: userId, channelId: channel?.channelId, targetId: String(orderId), detail: 'customer_not_linked' });
+      recordAuditEvent({ action: 'quote_send', outcome: 'failure', actorUserId: userId, channelId: channel?.channelId, requestId, targetId: String(orderId), detail: 'customer_not_linked' });
       return [botText(t('quoteNotLinked', userLanguage), userLanguage)];
     }
 
@@ -214,7 +216,7 @@ const quoteSendHandler: CommandHandler = {
     // surfaced as a hard failure to the admin beyond the audit record.
     await sendTargetedFlexMessage([customerUserId], customerCard, channel?.channelId || DEFAULT_CHANNEL_ID);
 
-    recordAuditEvent({ action: 'quote_send', outcome: 'success', actorUserId: userId, channelId: channel?.channelId, targetId: String(orderId) });
+    recordAuditEvent({ action: 'quote_send', outcome: 'success', actorUserId: userId, channelId: channel?.channelId, requestId, targetId: String(orderId) });
     return [botText(t('quoteSentToAdmin', userLanguage), userLanguage)];
   },
 };
@@ -226,7 +228,7 @@ const quoteApproveHandler: CommandHandler = {
   name: 'quote-approve',
   match: (u) => u.startsWith('QUOTE APPROVE'),
   handle: async (ctx) => {
-    const { userLanguage, profile, text } = ctx;
+    const { userLanguage, profile, text, userId, channel } = ctx;
     const orderId = parseOrderId(text, 'QUOTE APPROVE');
     if (!orderId) return [notFoundReply(userLanguage)];
 
@@ -237,12 +239,24 @@ const quoteApproveHandler: CommandHandler = {
       return [botText(t('quoteNotYours', userLanguage), userLanguage)];
     }
 
-    const ok = await confirmSaleOrder(orderId);
+    const ok = await getErpAdapter().confirmOrder(orderId);
     if (!ok) {
       return [botText(tr(userLanguage, 'อนุมัติไม่สำเร็จ กรุณาลองใหม่', 'Approval failed. Please try again.'), userLanguage)];
     }
 
     const adminUserId = process.env.ADMIN_USER_ID?.trim();
+    const approvalRecord = createApprovalRecord({
+      id: `quote-approval-${orderId}`,
+      actorUserId: adminUserId || 'odoo-approval',
+      commandId: 'QUOTE_APPROVE',
+      targetId: String(orderId),
+      channelId: channel?.channelId || DEFAULT_CHANNEL_ID,
+    });
+    const savedApproval = await saveApprovalRecord(approvalRecord, { requestId: ctx.requestId });
+    if (savedApproval.ok) {
+      await transitionStoredApproval(approvalRecord.id, { type: 'approve', approverUserId: userId }, new Date(), { requestId: ctx.requestId });
+      await transitionStoredApproval(approvalRecord.id, { type: 'complete' }, new Date(), { requestId: ctx.requestId });
+    }
     if (adminUserId) {
       // Best-effort notification back to the salesperson — never blocks
       // the customer's own success reply below.
@@ -264,7 +278,7 @@ const quoteAddHandler: CommandHandler = {
   name: 'quote-add',
   match: (u) => u.startsWith('QUOTE ADD'),
   handle: async (ctx) => {
-    const { userLanguage, userId, profile, channel, text } = ctx;
+    const { userLanguage, userId, profile, channel, requestId, text } = ctx;
     if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
 
     const parsed = parseOrderIdAndProductQty(text, 'QUOTE ADD');
@@ -289,8 +303,8 @@ const quoteAddHandler: CommandHandler = {
       ), userLanguage)];
     }
 
-    const ok = await addSaleOrderLine(parsed.orderId, product.id, parsed.qty);
-    recordAuditEvent({ action: 'quote_add_line', outcome: ok ? 'success' : 'failure', actorUserId: userId, channelId: channel?.channelId, targetId: String(parsed.orderId), detail: `${product.id}x${parsed.qty}` });
+    const ok = await getErpAdapter().addQuoteLine(parsed.orderId, product.id, parsed.qty);
+    recordAuditEvent({ action: 'quote_add_line', outcome: ok ? 'success' : 'failure', actorUserId: userId, channelId: channel?.channelId, requestId, targetId: String(parsed.orderId), detail: `${product.id}x${parsed.qty}` });
     if (!ok) {
       return [botText(tr(userLanguage, 'เพิ่มรายการไม่สำเร็จ กรุณาลองใหม่', 'Failed to add the item. Please try again.'), userLanguage)];
     }
@@ -313,7 +327,7 @@ const quoteEditHandler: CommandHandler = {
   name: 'quote-edit',
   match: (u) => u.startsWith('QUOTE EDIT'),
   handle: async (ctx) => {
-    const { userLanguage, userId, profile, channel, text } = ctx;
+    const { userLanguage, userId, profile, channel, requestId, text } = ctx;
     if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
 
     const parsed = parseOrderIdAndProductQty(text, 'QUOTE EDIT');
@@ -324,8 +338,8 @@ const quoteEditHandler: CommandHandler = {
       return [botText(tr(userLanguage, `ไม่พบสินค้าที่ตรงกับ "${parsed.productName}"`, `No product matched "${parsed.productName}".`), userLanguage)];
     }
 
-    const ok = await updateSaleOrderLineQty(parsed.orderId, product.id, parsed.qty);
-    recordAuditEvent({ action: 'quote_edit_line', outcome: ok ? 'success' : 'failure', actorUserId: userId, channelId: channel?.channelId, targetId: String(parsed.orderId), detail: `${product.id}x${parsed.qty}` });
+    const ok = await getErpAdapter().editQuoteLine(parsed.orderId, product.id, parsed.qty);
+    recordAuditEvent({ action: 'quote_edit_line', outcome: ok ? 'success' : 'failure', actorUserId: userId, channelId: channel?.channelId, requestId, targetId: String(parsed.orderId), detail: `${product.id}x${parsed.qty}` });
     if (!ok) {
       return [botText(tr(
         userLanguage,
@@ -352,14 +366,14 @@ const quoteCancelHandler: CommandHandler = {
   name: 'quote-cancel',
   match: (u) => u.startsWith('QUOTE CANCEL'),
   handle: async (ctx) => {
-    const { userLanguage, userId, profile, channel, text } = ctx;
+    const { userLanguage, userId, profile, channel, requestId, text } = ctx;
     if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
 
     const orderId = parseOrderId(text, 'QUOTE CANCEL');
     if (!orderId) return [notFoundReply(userLanguage)];
 
-    const ok = await cancelSaleOrder(orderId);
-    recordAuditEvent({ action: 'quote_cancel', outcome: ok ? 'success' : 'failure', actorUserId: userId, channelId: channel?.channelId, targetId: String(orderId) });
+    const ok = await getErpAdapter().cancelQuote(orderId);
+    recordAuditEvent({ action: 'quote_cancel', outcome: ok ? 'success' : 'failure', actorUserId: userId, channelId: channel?.channelId, requestId, targetId: String(orderId) });
     if (!ok) {
       return [botText(tr(userLanguage, 'ยกเลิกใบเสนอราคาไม่สำเร็จ กรุณาลองใหม่', 'Failed to cancel the quotation. Please try again.'), userLanguage)];
     }
@@ -384,7 +398,7 @@ const quoteInvoiceHandler: CommandHandler = {
   name: 'quote-invoice',
   match: (u) => u.startsWith('QUOTE INVOICE'),
   handle: async (ctx) => {
-    const { userLanguage, userId, profile, channel, text } = ctx;
+    const { userLanguage, userId, profile, channel, requestId, text } = ctx;
     if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
 
     const orderId = parseOrderId(text, 'QUOTE INVOICE');
@@ -396,8 +410,8 @@ const quoteInvoiceHandler: CommandHandler = {
       return [botText(tr(userLanguage, 'ใบเสนอราคานี้ยังไม่พร้อมออกใบแจ้งหนี้ (ต้องยืนยันคำสั่งซื้อก่อน)', 'This quotation isn\'t ready to invoice yet (it needs to be confirmed first, or is already fully invoiced).'), userLanguage)];
     }
 
-    const ok = await createInvoiceForSaleOrder(orderId);
-    recordAuditEvent({ action: 'quote_invoice', outcome: ok ? 'success' : 'failure', actorUserId: userId, channelId: channel?.channelId, targetId: String(orderId) });
+    const ok = await getErpAdapter().createInvoice(orderId);
+    recordAuditEvent({ action: 'quote_invoice', outcome: ok ? 'success' : 'failure', actorUserId: userId, channelId: channel?.channelId, requestId, targetId: String(orderId) });
     if (!ok) {
       return [botText(tr(userLanguage, 'สร้างใบแจ้งหนี้ไม่สำเร็จ กรุณาลองใหม่', 'Failed to create the invoice. Please try again.'), userLanguage)];
     }
@@ -455,7 +469,7 @@ const quoteMessageHandler: CommandHandler = {
   name: 'quote-message',
   match: (u) => u.startsWith('QUOTE MESSAGE'),
   handle: async (ctx) => {
-    const { userLanguage, userId, profile, channel, text } = ctx;
+    const { userLanguage, userId, profile, channel, requestId, text } = ctx;
     if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
 
     const parsed = parseOrderIdAndMessage(text, 'QUOTE MESSAGE');
@@ -467,14 +481,14 @@ const quoteMessageHandler: CommandHandler = {
     const partner = await getPartnerById(order.partner_id[0]);
     const customerUserId = partner?.phone ? await findVerifiedUserIdByPhone(partner.phone) : null;
     if (!customerUserId) {
-      recordAuditEvent({ action: 'quote_message', outcome: 'failure', actorUserId: userId, channelId: channel?.channelId, targetId: String(parsed.orderId), detail: 'customer_not_linked' });
+      recordAuditEvent({ action: 'quote_message', outcome: 'failure', actorUserId: userId, channelId: channel?.channelId, requestId, targetId: String(parsed.orderId), detail: 'customer_not_linked' });
       return [botText(t('quoteNotLinked', userLanguage), userLanguage)];
     }
 
     const customerLanguage = await getUserLanguage(customerUserId);
     await sendTargetedFlexMessage([customerUserId], botText(parsed.message, customerLanguage), channel?.channelId || DEFAULT_CHANNEL_ID);
 
-    recordAuditEvent({ action: 'quote_message', outcome: 'success', actorUserId: userId, channelId: channel?.channelId, targetId: String(parsed.orderId) });
+    recordAuditEvent({ action: 'quote_message', outcome: 'success', actorUserId: userId, channelId: channel?.channelId, requestId, targetId: String(parsed.orderId) });
     return [botText(tr(userLanguage, 'ส่งข้อความให้ลูกค้าแล้ว', 'Message sent to the customer.'), userLanguage)];
   },
 };

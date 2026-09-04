@@ -4,6 +4,7 @@ exports.runSegmentationJob = void 0;
 const bigquery_1 = require("../services/bigquery");
 const messaging_1 = require("../line/messaging");
 const firestore_1 = require("../services/firestore");
+const logger_1 = require("../services/logger");
 // This is a placeholder. In reality, we'd use Gemini 3.1 Pro to generate personalized copy
 // based on the specific segments that the user falls into.
 // Bilingual to match the rest of the product — a marketing message is the
@@ -25,11 +26,12 @@ const generateMessageForSegment = (segment, language) => {
     return table[segment] || table.GENERAL;
 };
 const runSegmentationJob = async () => {
-    console.log('Starting nightly segmentation job...');
+    const executionId = (0, logger_1.createExecutionId)('segmentation');
+    logger_1.appLogger.info('job_started', { job: 'segmentation', executionId });
     // 1. Fetch cohort data from BigQuery
     const cohorts = await (0, bigquery_1.getCohortData)();
     if (!cohorts.length) {
-        console.log('No real cohort data found. Segmentation job skipped.');
+        logger_1.appLogger.info('job_skipped', { job: 'segmentation', executionId, reason: 'no_cohort_data' });
         return;
     }
     // 2. Process and map to segments
@@ -78,6 +80,6 @@ const runSegmentationJob = async () => {
             await (0, messaging_1.sendTargetedMessage)(userIds, messageText);
         }
     }
-    console.log('Segmentation job complete.');
+    logger_1.appLogger.info('job_completed', { job: 'segmentation', executionId });
 };
 exports.runSegmentationJob = runSegmentationJob;

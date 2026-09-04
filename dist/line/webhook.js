@@ -117,6 +117,7 @@ exports.handleWebhook = [
                     profile,
                     agentName,
                     baseUrl,
+                    requestId: String(res.getHeader('x-request-id') || '') || undefined,
                     channel,
                     isGroupContext: source?.type === 'group' || source?.type === 'room',
                 });

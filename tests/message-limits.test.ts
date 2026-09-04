@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   createBotTextFlexMessage,
+  createAdminConfigFlexMessage,
   createDailyReportFlexMessage,
   createFormPromptFlexMessage,
   createOrderSummaryFlexMessage,
@@ -88,5 +89,14 @@ describe('templates.ts builders stay within LINE limits', () => {
   it('createDailyReportFlexMessage', () => {
     const reportData = JSON.stringify([{ product: LONG_NAME, salesYesterday: 1, revenueYesterday: 1, stock: 1 }]);
     expect(checkMessageAgainstLineLimits(createDailyReportFlexMessage(reportData, 'insights', 'en'))).toEqual([]);
+  });
+
+  it('createAdminConfigFlexMessage — bilingual service toggles stay within LINE limits', () => {
+    const services = [
+      { key: 'commerce', label: 'Products & Quotes', enabled: true, nextCommand: 'ADMIN CHANNEL default SERVICES catalog' },
+      { key: 'directory', label: 'Customers', enabled: false, nextCommand: 'ADMIN CHANNEL default SERVICES directory' },
+    ];
+    expect(checkMessageAgainstLineLimits(createAdminConfigFlexMessage('default', services, 'en'))).toEqual([]);
+    expect(checkMessageAgainstLineLimits(createAdminConfigFlexMessage('default', services, 'th'))).toEqual([]);
   });
 });

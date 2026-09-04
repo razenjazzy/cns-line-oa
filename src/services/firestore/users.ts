@@ -1,0 +1,22 @@
+export {
+  deleteUserProfile,
+  filterMarketingOptedInUserIds,
+  getConversationHistory,
+  getEscalationState,
+  getUserLanguage,
+  getUserProfile,
+  markConsentNoticeShown,
+  markUserFirstContact,
+  recordChatFeedback,
+  saveConversationMessage,
+  setEscalationState,
+  setLastActionOtpAt,
+  setMarketingOptIn,
+  setUserLanguage,
+  setUserOdooPartner,
+  setUserOdooVerificationStatus,
+  setUserPendingFlow,
+  setUserRole,
+  updateUserScore,
+} from '../firestore';
+export type { PendingFlowState, UserLanguage, UserProfile, UserRole } from './types';

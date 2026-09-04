@@ -1,4 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
+import { getDefaultLanguage } from './app-config';
 
 const isAiOff = (): boolean => /^(1|true|yes|on)$/i.test(process.env.AI_OFF || '');
 export type InsightLanguage = 'th' | 'en';
@@ -188,7 +189,7 @@ const generateTextWithFallback = async (clients: GenAIClient[], prompt: string, 
   throw lastError;
 };
 
-export const generateInsights = async (salesData: string, language: InsightLanguage = 'th'): Promise<string> => {
+export const generateInsights = async (salesData: string, language: InsightLanguage = getDefaultLanguage()): Promise<string> => {
   if (isAiOff()) {
     return buildRuleBasedInsights(salesData, language);
   }

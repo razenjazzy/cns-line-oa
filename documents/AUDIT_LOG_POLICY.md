@@ -10,6 +10,19 @@ Every privileged/mutating action goes through `recordAuditEvent()`
 (`success`/`failure`), acting user, LINE channel, target id, and a free-text
 detail field, timestamped in UTC ISO-8601.
 
+The authenticated `GET /ops/audit-log` view accepts bounded filters for
+`action`, `outcome`, `actorUserId`, `channelId`, `from`, and `to`, plus a
+`limit` capped at 200 and an opaque `cursor` for fetching the next page. Results include the optional `requestId` correlation
+field and a `nextCursor` when another page is available. Send `nextCursor`
+back as `cursor` to continue in descending event order. The same correlation
+field is retained in BigQuery during rotation. Invalid dates, unsupported
+outcomes, and invalid cursors are ignored rather than causing an unbounded or
+failing query.
+
+Background jobs generate an execution ID at startup. Audit rotation stores
+that ID as its request correlation, and daily-report/segmentation lifecycle
+logs include it for operational tracing.
+
 Logging is fire-and-forget: a Firestore write failure is warned to stdout,
 never blocks or fails the command that triggered it. The trail is a
 best-effort record, not a transactional ledger.

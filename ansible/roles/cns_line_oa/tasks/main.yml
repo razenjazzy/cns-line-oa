@@ -1,4 +1,23 @@
 ---
+- name: Validate required runtime secrets
+  assert:
+    that:
+      - line_channel_secret | length > 0
+      - line_channel_access_token | length > 0
+      - odoo_url | length > 0
+      - odoo_db | length > 0
+      - odoo_username | length > 0
+      - odoo_api_key | length > 0
+      - ops_api_token | length > 0
+      - not (enable_webhook_test | bool) or webhook_test_token | length > 0
+      - not (enable_demo_control_panel | bool) or demo_control_token | length > 0
+      - not (enable_demo_control_panel | bool) or demo_session_secret | length > 0
+      - rate_limit_store != 'redis' or redis_url | length > 0
+    fail_msg: >-
+      Required vault-backed runtime configuration is missing. Configure LINE,
+      Odoo, OPS, enabled webhook/demo tokens, and Redis values before deploy.
+  no_log: true
+
 - name: Synchronize project source files to remote host
   synchronize:
     src: "{{ playbook_dir }}/../../"

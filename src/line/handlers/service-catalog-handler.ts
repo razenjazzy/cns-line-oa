@@ -1,13 +1,7 @@
 import type { CommandHandler } from './index';
 import { createBotTextFlexMessage, formatMoney } from '../templates';
 import { parseServiceCreatePayload, parseServiceUpdatePayload } from '../command-validators';
-import {
-  createServiceCatalogItem,
-  deleteServiceCatalogItem,
-  getServiceByIdentifier,
-  listServiceCatalogItems,
-  updateServiceCatalogItem,
-} from '../../services/odoo';
+import { getErpAdapter } from '../../erp/registry';
 import { recordAuditEvent } from '../../services/firestore';
 import type { UserLanguage } from '../../services/firestore';
 
@@ -37,13 +31,13 @@ const serviceListHandler: CommandHandler = {
   match: (u) => u === 'SERVICE LIST',
   handle: async (ctx) => {
     const { userLanguage } = ctx;
-    const services = await listServiceCatalogItems(10);
+    const services = await getErpAdapter().listServices(10);
     if (!services.length) {
       return [botText(tr(userLanguage, 'ยังไม่มีบริการเปิดให้บริการตอนนี้ค่ะ', 'No services are available yet.'), userLanguage)];
     }
     return [botText(tr(userLanguage,
-      `รายการบริการ\n${services.map(s => `- ${s.name} (${s.default_code || '-'}) — ${formatMoney(s.list_price, 'th')}`).join('\n')}`,
-      `Our services\n${services.map(s => `- ${s.name} (${s.default_code || '-'}) — ${formatMoney(s.list_price, 'en')}`).join('\n')}`,
+      `รายการบริการ\n${services.map(s => `- ${s.name} (${s.sku || '-'}) — ${formatMoney(s.price, 'th')}`).join('\n')}`,
+      `Our services\n${services.map(s => `- ${s.name} (${s.sku || '-'}) — ${formatMoney(s.price, 'en')}`).join('\n')}`,
     ), userLanguage)];
   },
 };
@@ -59,13 +53,13 @@ const serviceReadHandler: CommandHandler = {
       const { resolveCommandReply } = await import('../command-router');
       return resolveCommandReply({ ...ctx, text: 'FORM SERVICE READ' });
     }
-    const item = await getServiceByIdentifier(identifier);
+    const item = await getErpAdapter().lookupService(identifier);
     if (!item) {
       return [botText(tr(userLanguage, `ไม่พบบริการ ${identifier}`, `Service ${identifier} not found.`), userLanguage)];
     }
     return [botText(tr(userLanguage,
-      `${item.name}\n- รหัส: ${item.default_code || '-'}\n- ราคา: ${formatMoney(item.list_price, 'th')}`,
-      `${item.name}\n- Code: ${item.default_code || '-'}\n- Price: ${formatMoney(item.list_price, 'en')}`,
+      `${item.name}\n- รหัส: ${item.sku || '-'}\n- ราคา: ${formatMoney(item.price, 'th')}`,
+      `${item.name}\n- Code: ${item.sku || '-'}\n- Price: ${formatMoney(item.price, 'en')}`,
     ), userLanguage)];
   },
 };
@@ -75,7 +69,7 @@ const serviceCreateHandler: CommandHandler = {
   name: 'catalog-create',
   match: (u) => u.startsWith('SERVICE CREATE'),
   handle: async (ctx) => {
-    const { userLanguage, userId, profile, channel, text } = ctx;
+    const { userLanguage, userId, profile, channel, requestId, text } = ctx;
     if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
 
     const payload = text.trim().replace(/^SERVICE CREATE\s*/i, '').trim();
@@ -85,15 +79,15 @@ const serviceCreateHandler: CommandHandler = {
     }
 
     const { name, code, price } = parsed;
-    const created = await createServiceCatalogItem(name, code, price);
+    const created = await getErpAdapter().createService(name, code, price);
     if (!created) {
-      recordAuditEvent({ action: 'service_create', outcome: 'failure', actorUserId: userId, channelId: channel?.channelId, detail: `code=${code}` });
+      recordAuditEvent({ action: 'service_create', outcome: 'failure', actorUserId: userId, channelId: channel?.channelId, requestId, detail: `code=${code}` });
       return [botText(tr(userLanguage, 'สร้างบริการ Odoo ไม่สำเร็จ', 'Failed to create Odoo service item.'), userLanguage)];
     }
-    recordAuditEvent({ action: 'service_create', outcome: 'success', actorUserId: userId, channelId: channel?.channelId, targetId: String(created.id) });
+    recordAuditEvent({ action: 'service_create', outcome: 'success', actorUserId: userId, channelId: channel?.channelId, requestId, targetId: String(created.id) });
     return [botText(tr(userLanguage,
-      `สร้างบริการสำเร็จ\n- รหัส: ${created.default_code || '-'}\n- ชื่อ: ${created.name}\n- ราคา: ${created.list_price} บาท`,
-      `Service created\n- Code: ${created.default_code || '-'}\n- Name: ${created.name}\n- Price: ${created.list_price} THB`,
+      `สร้างบริการสำเร็จ\n- รหัส: ${created.sku || '-'}\n- ชื่อ: ${created.name}\n- ราคา: ${created.price} บาท`,
+      `Service created\n- Code: ${created.sku || '-'}\n- Name: ${created.name}\n- Price: ${created.price} THB`,
     ), userLanguage)];
   },
 };
@@ -103,7 +97,7 @@ const serviceUpdateHandler: CommandHandler = {
   name: 'catalog-update',
   match: (u) => u.startsWith('SERVICE UPDATE'),
   handle: async (ctx) => {
-    const { userLanguage, userId, profile, channel, text } = ctx;
+    const { userLanguage, userId, profile, channel, requestId, text } = ctx;
     if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
 
     const payload = text.trim().replace(/^SERVICE UPDATE\s*/i, '').trim();
@@ -120,15 +114,15 @@ const serviceUpdateHandler: CommandHandler = {
     }
 
     const { identifier, name, price, newCode } = parsed;
-    const updated = await updateServiceCatalogItem(identifier, { name, price, code: newCode });
+    const updated = await getErpAdapter().updateService(identifier, { name, price, sku: newCode });
     if (!updated) {
-      recordAuditEvent({ action: 'service_update', outcome: 'failure', actorUserId: userId, channelId: channel?.channelId, targetId: identifier });
+      recordAuditEvent({ action: 'service_update', outcome: 'failure', actorUserId: userId, channelId: channel?.channelId, requestId, targetId: identifier });
       return [botText(tr(userLanguage, 'อัปเดตบริการ Odoo ไม่สำเร็จ', 'Failed to update Odoo service item.'), userLanguage)];
     }
-    recordAuditEvent({ action: 'service_update', outcome: 'success', actorUserId: userId, channelId: channel?.channelId, targetId: String(updated.id) });
+    recordAuditEvent({ action: 'service_update', outcome: 'success', actorUserId: userId, channelId: channel?.channelId, requestId, targetId: String(updated.id) });
     return [botText(tr(userLanguage,
-      `อัปเดตบริการสำเร็จ\n- รหัส: ${updated.default_code || '-'}\n- ชื่อ: ${updated.name}\n- ราคา: ${updated.list_price} บาท`,
-      `Service updated\n- Code: ${updated.default_code || '-'}\n- Name: ${updated.name}\n- Price: ${updated.list_price} THB`,
+      `อัปเดตบริการสำเร็จ\n- รหัส: ${updated.sku || '-'}\n- ชื่อ: ${updated.name}\n- ราคา: ${updated.price} บาท`,
+      `Service updated\n- Code: ${updated.sku || '-'}\n- Name: ${updated.name}\n- Price: ${updated.price} THB`,
     ), userLanguage)];
   },
 };
@@ -138,7 +132,7 @@ const serviceDeleteHandler: CommandHandler = {
   name: 'catalog-delete',
   match: (u) => u.startsWith('SERVICE DELETE'),
   handle: async (ctx) => {
-    const { userLanguage, userId, profile, channel, text } = ctx;
+    const { userLanguage, userId, profile, channel, requestId, text } = ctx;
     if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
 
     const identifier = text.trim().replace(/^SERVICE DELETE\s*/i, '').trim();
@@ -147,8 +141,8 @@ const serviceDeleteHandler: CommandHandler = {
       return resolveCommandReply({ ...ctx, text: 'FORM SERVICE DELETE' });
     }
 
-    const ok = await deleteServiceCatalogItem(identifier);
-    recordAuditEvent({ action: 'service_delete', outcome: ok ? 'success' : 'failure', actorUserId: userId, channelId: channel?.channelId, targetId: identifier });
+    const ok = await getErpAdapter().deleteService(identifier);
+    recordAuditEvent({ action: 'service_delete', outcome: ok ? 'success' : 'failure', actorUserId: userId, channelId: channel?.channelId, requestId, targetId: identifier });
     return [botText(ok
       ? tr(userLanguage, `ลบบริการ ${identifier} สำเร็จ`, `Deleted service ${identifier}`)
       : tr(userLanguage, `ลบบริการ ${identifier} ไม่สำเร็จ`, `Failed to delete service ${identifier}`),

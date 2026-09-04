@@ -56,6 +56,11 @@ ansible-vault encrypt_string 'your-line-channel-secret' --name 'vault_line_chann
 ```
 Add the encrypted strings into `group_vars/production.yml`.
 
+The `cns_line_oa` role fails before deployment when required runtime values
+are missing. Configure vault-backed LINE credentials, Odoo credentials, and
+`OPS_API_TOKEN`; configure `WEBHOOK_TEST_TOKEN` and demo session secrets when
+those staging-only controls are enabled. Do not rely on fallback token values.
+
 ### 3. Full Server Provision & Deployment
 
 Provisions OS packages, Docker, Nginx, deploys the app container, and runs health verification:

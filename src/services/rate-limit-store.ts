@@ -210,7 +210,7 @@ export const createRateLimitStoreFromEnv = async (
     };
     try {
       client.disconnect();
-    } catch (_disconnectError) {
+    } catch {
       // ignore best-effort cleanup
     }
     return fallbackStore;

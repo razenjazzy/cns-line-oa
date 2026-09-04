@@ -1,242 +1,24 @@
-type OdooConfig = {
-  url: string;
-  db: string;
-  username: string;
-  apiKey: string;
-};
+import type {
+  OdooDailySalesItem,
+  OdooPartner,
+  OdooProduct,
+  OdooSaleOrder,
+  OdooSaleOrderLine,
+  OdooServiceItem,
+} from './odoo/types';
+import {
+  executeKw,
+  executeKwRead,
+  getOdooConfig,
+  isTransientOdooError,
+  login,
+  loginRead,
+  withIdempotentWriteRetry,
+  type OdooConfig,
+} from './odoo/client';
+export * from './odoo/types';
 
-const ODOO_RPC_TIMEOUT_MS = Number(process.env.ODOO_RPC_TIMEOUT_MS || 7000);
-const ODOO_READ_RETRY_ATTEMPTS = Number(process.env.ODOO_READ_RETRY_ATTEMPTS || 3);
-const ODOO_READ_RETRY_BASE_DELAY_MS = Number(process.env.ODOO_READ_RETRY_BASE_DELAY_MS || 250);
-
-type JsonRpcResponse<T> = {
-  jsonrpc: string;
-  id: number;
-  result?: T;
-  error?: {
-    code: number;
-    message: string;
-    data?: unknown;
-  };
-};
-
-export type OdooProduct = {
-  id: number;
-  name: string;
-  list_price: number;
-  qty_available: number;
-  default_code?: string;
-};
-
-export type OdooSaleOrderLine = {
-  productName: string;
-  qty: number;
-  priceUnit: number;
-  subtotal: number;
-};
-
-export type OdooSaleOrder = {
-  id: number;
-  name: string;
-  state: string;
-  amount_total: number;
-  partner_id?: [number, string];
-  date_order?: string;
-  /** Odoo's own portal share-token — present once get_portal_url has been called at least once. */
-  access_token?: string;
-  /** Only populated by getSaleOrderById, which does the extra sale.order.line read; findOrderByReference leaves this undefined. */
-  lines?: OdooSaleOrderLine[];
-  /** Odoo's own invoicing-state selection ('no' | 'to invoice' | 'invoiced' | 'upselling'). Only populated by getSaleOrderById. */
-  invoice_status?: string;
-  /** Plain string as returned by Odoo (an HTML field, but shown as-is in a chat card — no rendering needed). Only populated by getSaleOrderById. */
-  note?: string;
-};
-
-export type OdooDailySalesItem = {
-  product: string;
-  stock: number;
-  salesYesterday: number;
-  revenueYesterday: number;
-};
-
-export type OdooServiceItem = {
-  id: number;
-  name: string;
-  default_code?: string;
-  list_price: number;
-  qty_available: number;
-};
-
-export type OdooPartner = {
-  id: number;
-  name: string;
-  phone?: string;
-  email?: string;
-};
-
-const getConfig = (): OdooConfig | null => {
-  const url = process.env.ODOO_URL?.trim() || '';
-  const db = process.env.ODOO_DB?.trim() || '';
-  const username = process.env.ODOO_USERNAME?.trim() || '';
-  const apiKey = process.env.ODOO_API_KEY?.trim() || '';
-
-  if (!url || !db || !username || !apiKey) return null;
-  return { url, db, username, apiKey };
-};
-
-const delay = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
-
-const isTransientOdooError = (error: unknown): boolean => {
-  const message = String(error || '');
-  if (/timed out/i.test(message)) return true;
-  if (/fetch failed|network|ECONNRESET|ENOTFOUND|EAI_AGAIN|ETIMEDOUT/i.test(message)) return true;
-
-  const httpMatch = message.match(/Odoo HTTP\s+(\d{3})/i);
-  if (!httpMatch) return false;
-
-  const status = Number(httpMatch[1]);
-  return status === 429 || status >= 500;
-};
-
-const withReadRetry = async <T>(label: string, operation: () => Promise<T>): Promise<T> => {
-  const maxAttempts = Math.max(1, ODOO_READ_RETRY_ATTEMPTS);
-  let lastError: unknown;
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    try {
-      return await operation();
-    } catch (error) {
-      lastError = error;
-      const shouldRetry = attempt < maxAttempts && isTransientOdooError(error);
-      if (!shouldRetry) break;
-
-      const backoffMs = ODOO_READ_RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
-      console.warn(`Odoo read retry ${attempt}/${maxAttempts} for ${label} after error: ${String(error)}`);
-      await delay(backoffMs);
-    }
-  }
-
-  throw lastError;
-};
-
-const ODOO_WRITE_RETRY_ATTEMPTS = Number(process.env.ODOO_WRITE_RETRY_ATTEMPTS || 2);
-
-/**
- * Only safe for idempotent mutations (write/unlink on a known id) — never
- * wrap `create` in this, since retrying a create after an ambiguous
- * (timeout-like) failure risks creating a duplicate record.
- */
-const withIdempotentWriteRetry = async <T>(label: string, operation: () => Promise<T>): Promise<T> => {
-  const maxAttempts = Math.max(1, ODOO_WRITE_RETRY_ATTEMPTS);
-  let lastError: unknown;
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    try {
-      return await operation();
-    } catch (error) {
-      lastError = error;
-      const shouldRetry = attempt < maxAttempts && isTransientOdooError(error);
-      if (!shouldRetry) break;
-
-      const backoffMs = ODOO_READ_RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
-      console.warn(`Odoo write retry ${attempt}/${maxAttempts} for ${label} after error: ${String(error)}`);
-      await delay(backoffMs);
-    }
-  }
-
-  throw lastError;
-};
-
-const jsonRpc = async <T>(config: OdooConfig, service: string, method: string, args: unknown[]): Promise<T> => {
-  const endpoint = `${config.url.replace(/\/$/, '')}/jsonrpc`;
-  const body = {
-    jsonrpc: '2.0',
-    method: 'call',
-    params: {
-      service,
-      method,
-      args,
-    },
-    id: Date.now(),
-  };
-
-  const controller = new AbortController();
-  const timeoutHandle = setTimeout(() => controller.abort(), ODOO_RPC_TIMEOUT_MS);
-
-  let response: Response;
-  try {
-    response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-  } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error(`Odoo RPC timed out after ${ODOO_RPC_TIMEOUT_MS}ms`);
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeoutHandle);
-  }
-
-  if (!response.ok) {
-    throw new Error(`Odoo HTTP ${response.status}`);
-  }
-
-  const data = (await response.json()) as JsonRpcResponse<T>;
-  if (data.error) {
-    throw new Error(`Odoo RPC error: ${data.error.message}`);
-  }
-
-  if (data.result === undefined) {
-    throw new Error('Odoo RPC returned no result');
-  }
-
-  return data.result;
-};
-
-const login = async (config: OdooConfig): Promise<number> => {
-  return jsonRpc<number>(config, 'common', 'login', [
-    config.db,
-    config.username,
-    config.apiKey,
-  ]);
-};
-
-const executeKw = async <T>(
-  config: OdooConfig,
-  uid: number,
-  model: string,
-  method: string,
-  positionalArgs: unknown[],
-  keywordArgs: Record<string, unknown> = {}
-): Promise<T> => {
-  return jsonRpc<T>(config, 'object', 'execute_kw', [
-    config.db,
-    uid,
-    config.apiKey,
-    model,
-    method,
-    positionalArgs,
-    keywordArgs,
-  ]);
-};
-
-const loginRead = async (config: OdooConfig): Promise<number> => {
-  return withReadRetry('login', async () => login(config));
-};
-
-const executeKwRead = async <T>(
-  config: OdooConfig,
-  uid: number,
-  model: string,
-  method: string,
-  positionalArgs: unknown[],
-  keywordArgs: Record<string, unknown> = {}
-): Promise<T> => {
-  return withReadRetry(`${model}.${method}`, async () => executeKw<T>(config, uid, model, method, positionalArgs, keywordArgs));
-};
+const getConfig = getOdooConfig;
 
 const num = (value: unknown): number => {
   if (typeof value === 'number') return value;
@@ -323,43 +105,7 @@ const toOdooDateTime = (date: Date): string => {
   return `${y}-${m}-${d} ${hh}:${mm}:${ss}`;
 };
 
-export const isOdooConfigured = (): boolean => getConfig() !== null;
-
-export const pingOdoo = async (): Promise<string> => {
-  const config = getConfig();
-  if (!config) return 'Odoo is not configured (missing ODOO_URL/ODOO_DB/ODOO_USERNAME/ODOO_API_KEY).';
-
-  const uid = await loginRead(config);
-  if (!uid) return 'Odoo login failed. Check ODOO_USERNAME and ODOO_API_KEY.';
-  return `Odoo connected successfully (uid=${uid}).`;
-};
-
-export const verifyOdooAdminAccess = async (): Promise<{ ok: boolean; message: string }> => {
-  const config = getConfig();
-  if (!config) {
-    return { ok: false, message: 'Odoo is not configured.' };
-  }
-
-  const uid = await loginRead(config);
-  if (!uid) {
-    return { ok: false, message: 'Odoo login failed.' };
-  }
-
-  const canWritePartners = await executeKwRead<boolean>(
-    config,
-    uid,
-    'res.partner',
-    'check_access_rights',
-    ['write'],
-    { raise_exception: false }
-  );
-
-  if (!canWritePartners) {
-    return { ok: false, message: 'Odoo user lacks admin-level write rights on res.partner.' };
-  }
-
-  return { ok: true, message: `Odoo admin verified (uid=${uid}).` };
-};
+export { isOdooConfigured, pingOdoo, verifyOdooAdminAccess } from './odoo/admin';
 
 export const findProductByQuery = async (query: string): Promise<OdooProduct | null> => {
   const normalizedQuery = normalizeLookupText(query);
@@ -1164,7 +910,6 @@ export const updateServiceCatalogItem = async (
     if (!existing) return null;
 
     const values: Record<string, unknown> = {};
-    if (fields.name) values.name = fields.name;
     if (typeof fields.price === 'number' && !Number.isNaN(fields.price)) values.list_price = fields.price;
     if (fields.code) values.default_code = fields.code.toUpperCase();
     if (!Object.keys(values).length) return existing;
@@ -1176,7 +921,6 @@ export const updateServiceCatalogItem = async (
       'write',
       [[existing.id], values]
     ));
-
     const rows = await executeKw<Record<string, unknown>[]>(
       config,
       uid,

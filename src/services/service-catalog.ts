@@ -16,6 +16,21 @@ export type ServiceDefinition = {
   commands: ServiceCommand[];
 };
 
+export const getConfiguredServiceKeys = (): ServiceKey[] | null => {
+  const configured = process.env.ENABLED_SERVICES?.trim();
+  if (!configured) return null;
+
+  const validKeys = new Set<ServiceKey>(['commerce', 'directory', 'catalog', 'reporting', 'groupBuy']);
+  return configured.split(',')
+    .map(value => value.trim() as ServiceKey)
+    .filter((value, index, values) => validKeys.has(value) && values.indexOf(value) === index);
+};
+
+export const isServiceConfigured = (service: ServiceKey): boolean => {
+  const configured = getConfiguredServiceKeys();
+  return configured === null || configured.includes(service);
+};
+
 /**
  * Single source of truth for which commands belong to which service.
  * Used both to render channel-aware navigation menus and to gate command
@@ -154,6 +169,6 @@ export const getVisibleCommands = (service: ServiceDefinition, isAdmin: boolean)
  */
 export const getAvailableServices = (channel: ChannelContext | undefined, isAdmin: boolean): ServiceDefinition[] => {
   return SERVICE_CATALOG.filter(svc =>
-    isServiceEnabledForChannel(svc.key, channel) && getVisibleCommands(svc, isAdmin).length > 0
+    isServiceConfigured(svc.key) && isServiceEnabledForChannel(svc.key, channel) && getVisibleCommands(svc, isAdmin).length > 0
   );
 };

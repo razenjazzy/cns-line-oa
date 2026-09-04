@@ -62,8 +62,32 @@ src/
     │                            (replaces permanent-failure booleans)
     ├── clawframework.ts         Optional dev/staging-only Groq/OpenRouter
     │                            bridge subprocess (never in production)
+    ├── logger.ts                Structured JSON logger with redaction
+    ├── app-config.ts            Configurable Thai/English defaults
+    ├── firestore/types.ts       Shared Firestore contracts
+    ├── firestore/core.ts        Shared Firestore normalization helpers
+    ├── firestore/platform-config.ts  Platform config repository
+    ├── firestore/user-profile.ts    Profile mapping and secure defaults
+    ├── firestore/user-profile-repository.ts  Profile state repository
+    ├── firestore/communication.ts  Conversation, scoring, and feedback repository
+    ├── firestore/group-buy-contract.ts  Group-buy transaction contract
+    ├── firestore/group-buy-store.ts  Complete group-buy runtime store
+    ├── firestore/verification.ts    Verification challenge mapping
+    ├── firestore/verification-store.ts  Verification creation persistence
+    ├── firestore/verification-consume.ts  Verification OTP consumption
+    ├── firestore/verification-token.ts  Verification magic-link consumption
+    ├── firestore/action-otp.ts     Step-up OTP challenge mapping
+    ├── firestore/action-otp-store.ts  Step-up OTP persistence and transactions
+    ├── firestore/approval-store.ts  Approval persistence and atomic transitions
+    ├── firestore/audit-store.ts  Audit persistence, pagination, and retention reads
+    ├── firestore/group-buy.ts      Group-buy record mapping and expiry logic
+    ├── firestore/audit.ts          Audit record mapping and query helpers
+    ├── odoo/types.ts               Shared Odoo product/order/partner contracts
+    ├── odoo/client.ts              Odoo configuration and transient-error policy
+    ├── odoo/index.ts               Odoo domain exports for future consumers
     ├── service-catalog.ts       Single source of truth for both nav menus
-    │                            and command-execution gating
+    │                            and command-execution gating, including the
+    │                            global service allowlist
     ├── guided-forms.ts          One-field-at-a-time FORM * flows
     ├── group-buy.ts             Group-buy lifecycle incl. expiry and
     │                            automatic Odoo quotation on confirm
@@ -103,6 +127,7 @@ src/
 - `escapeHtml()` + a global Content-Security-Policy header on the one
   server-rendered HTML route (`/verify/odoo`).
 - Rate limiting on every public endpoint.
+- Structured application logs and non-sensitive audit-event logging.
 - ClawFramework's Groq/OpenRouter bridge is hard-gated to
   `NODE_ENV !== 'production'` and is never a runtime dependency of the
   shipped app — it's a design reference only (see `clawframework/README.MD`

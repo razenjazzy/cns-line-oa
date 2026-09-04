@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.classifyIntent = exports.transcribeAudioToText = exports.generateInsights = void 0;
 const genai_1 = require("@google/genai");
+const app_config_1 = require("./app-config");
 const isAiOff = () => /^(1|true|yes|on)$/i.test(process.env.AI_OFF || '');
 const getProject = () => {
     const project = process.env.GOOGLE_CLOUD_PROJECT;
@@ -160,7 +161,7 @@ const generateTextWithFallback = async (clients, prompt, temperature) => {
     }
     throw lastError;
 };
-const generateInsights = async (salesData, language = 'th') => {
+const generateInsights = async (salesData, language = (0, app_config_1.getDefaultLanguage)()) => {
     if (isAiOff()) {
         return buildRuleBasedInsights(salesData, language);
     }

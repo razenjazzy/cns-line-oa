@@ -28,7 +28,7 @@ import {
   UserLanguage,
   UserProfile,
 } from '../services/firestore';
-import { isServiceEnabledForChannel } from '../services/service-catalog';
+import { isServiceConfigured, isServiceEnabledForChannel } from '../services/service-catalog';
 import { resolveServiceForCommand } from '../services/service-catalog';
 import { FLOW_SPECS, getFlowByStartCommand } from '../services/guided-forms';
 import { createBotTextFlexMessage, createFormPromptFlexMessage, createOptionalSummaryFlexMessage, createServiceHomeFlexMessage } from './templates';
@@ -51,6 +51,7 @@ export type CommandReplyContext = {
   profile: UserProfile;
   agentName: string;
   baseUrl: string;
+  requestId?: string;
   channel?: ChannelContext;
   isGroupContext?: boolean;
 };
@@ -328,7 +329,7 @@ const dispatchCommandReply = async (ctx: CommandReplyContext): Promise<messaging
 
   // Step 3: Service channel gate
   const gatedService = resolveServiceForCommand(upperText);
-  if (gatedService && !isServiceEnabledForChannel(gatedService, ctx.channel)) {
+  if (gatedService && (!isServiceConfigured(gatedService) || !isServiceEnabledForChannel(gatedService, ctx.channel))) {
     return [text(tr(userLanguage,
       `${agentName} บริการนี้ไม่เปิดใช้งานสำหรับช่องทางนี้`,
       `${agentName} this service is not available on this channel.`,

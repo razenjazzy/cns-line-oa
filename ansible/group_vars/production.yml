@@ -36,3 +36,6 @@ ai_off: false
 groupbuy_enabled: false
 groupbuy_rollout_percent: 0
 enable_demo_control_panel: false
+demo_control_token: "{{ vault_demo_control_token | default('') }}"
+demo_session_secret: "{{ vault_demo_session_secret | default('') }}"
+allow_demo_header_token_fallback: false

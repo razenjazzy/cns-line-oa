@@ -1,4 +1,5 @@
 import { getUserProfile, setUserLanguage, setUserOdooPartner } from './firestore';
+import { getDefaultLanguage, type AppLanguage } from './app-config';
 import { getAgentName } from '../line/channels';
 import {
   createPartnerFromLine,
@@ -10,7 +11,7 @@ import {
   seedOdooSampleSalesData,
 } from './odoo';
 
-type UiLanguage = 'th' | 'en';
+type UiLanguage = AppLanguage;
 
 type DemoStepStatus = 'success' | 'warning' | 'error';
 
@@ -173,7 +174,7 @@ export const getDemoOverview = async (baseUrl?: string): Promise<DemoOverview> =
 
 export const runDemoJourney = async (input: DemoJourneyInput) => {
   const userId = input.userId?.trim() || 'demo_line_user';
-  const language: UiLanguage = input.language === 'en' ? 'en' : 'th';
+  const language: UiLanguage = input.language ? (input.language === 'en' ? 'en' : 'th') : getDefaultLanguage();
   const productQuery = input.productQuery?.trim() || 'App Premium Plan';
   const qty = typeof input.qty === 'number' && input.qty > 0 ? input.qty : 1;
   const customerName = input.customerName?.trim() || 'LINE Demo Customer';

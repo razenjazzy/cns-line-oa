@@ -59,7 +59,7 @@ export const verifyDemoSessionToken = (token: string, secret: string): { ok: boo
   let payload: SessionPayload;
   try {
     payload = JSON.parse(fromBase64Url(payloadB64)) as SessionPayload;
-  } catch (_error) {
+  } catch {
     return { ok: false, reason: 'invalid_payload' };
   }
 

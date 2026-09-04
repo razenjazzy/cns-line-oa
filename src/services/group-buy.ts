@@ -10,7 +10,8 @@ import {
   listGroupBuysByCreator,
   UserLanguage,
 } from './firestore';
-import { createQuotationFromLine, findProductByQuery } from './odoo';
+import { createQuotationFromLine } from './odoo/sales';
+import { findProductByQuery } from './odoo/catalog';
 
 const DEFAULT_GROUPBUY_HOURS = Number(process.env.GROUPBUY_DEFAULT_HOURS || 24);
 const MAX_GROUPBUY_HOURS = 24 * 90;
