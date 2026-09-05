@@ -203,3 +203,68 @@ working estimate:
 The remaining quarter splits between genuinely blocked items (Odoo
 configuration, not this codebase's job) and UX/polish work that's been
 scoped but not built yet.
+
+---
+
+## UI/UX feedback round — 2026-09-05
+
+A 10-item feedback batch, mostly bug reports from real testing. Each was
+investigated against the actual code (not assumed) before any fix — three
+turned out to be real, confirmed, previously-unreported bugs; two were
+confirmed working-as-designed with an explanation; the rest were shipped
+as scoped enhancements.
+
+- ✅ **Nav menu font size** — LINE's `type: 'button'` component has no
+  `size` property at all (client-controlled fixed font); converted the
+  Home menu and per-service action menus to tappable text rows
+  (`createTapRow`, `size: 'lg'`) instead.
+- ✅ **Verify link broken** — real bug: no `app.set('trust proxy', ...)`
+  meant `req.protocol` reported the reverse proxy's internal `http` hop
+  instead of the real public `https`, so the magic link came out dead on
+  Railway (or any similar deployment). Fixed, verified live via
+  `X-Forwarded-Proto`. Recommend also setting `PUBLIC_BASE_URL` and
+  `LINE_CHANNEL_BASIC_ID` in the real deployed environment — both are
+  unset in `.env` here, which weakens the link/return-to-chat fallback
+  further even with the code fix in place.
+- **Customer shown as "Line OA Demo"** — confirmed not a bug: that's the
+  real linked Odoo partner's actual name (`order.partner_id`). User will
+  rename the partner record directly in Odoo.
+- ✅ **Optional-fields "losing its previous trail"** — a real,
+  reproducible bug, not user error: answering one optional field could
+  silently overwrite a *different* field's already-collected answer.
+  Root cause: Firestore's `.set(data, {merge: true})` doesn't clear a
+  nested field that's simply omitted from a write, only one explicitly
+  set — traced to `editingFieldIndex`'s clear-on-answer path, fixed with
+  the same null-as-clear-marker convention `salesTier` already uses, and
+  covered by a new regression test.
+- ✅ **Checkbox display + default value** — added ☑/☐ glyphs to the
+  optional-fields summary card, and a computed default (+30 days) for
+  the quote's "Valid until" field — still fully editable/clearable.
+- **Language default & toggle** — confirmed already correct: new users
+  default to English (`DEFAULT_LANGUAGE` env), and the nav footer's
+  Language button already toggles both directions correctly per-request.
+- ✅ **Product search picker** — `PRODUCT FIND` was hardcoded 3 layers
+  deep to return only 1 result even when several products matched (e.g.
+  "App" matching multiple plans), silently acting on whichever Odoo
+  returned first. Added a real multi-match query and a picker card shown
+  when a search is ambiguous.
+- ✅ **Language consistency in AI fallback tiers** — two real gaps found:
+  the ClawFramework bridge tier (dev/staging only) passed zero language
+  instruction to the model at all; Gemini's system instruction didn't
+  address what to do when the user's own message is in the other
+  language (a known LLM drift pattern). Both strengthened — the Gemini
+  fix is a probabilistic improvement, not a hard guarantee, since free-text
+  model output can't be deterministically forced the way template-driven
+  replies can.
+- **"Where's the Send button/feature"** — confirmed it exists (`QUOTE
+  SEND`) and works end-to-end; it's only shown while a quote is in
+  draft/sent state and disappears after Confirm, matching Odoo's own
+  button-visibility convention. Likely just missed if tested against an
+  already-confirmed quote.
+- ✅ **Card compactness + interactive human handoff** — `HUMAN OFF`/
+  `RESUME BOT` (new) lets a user de-escalate; the AI-chat fallback now
+  checks escalation state first and steps aside with a resume button
+  instead of talking over a real person. Quotation-journey and
+  product-detail card footers now merge the trailing Home button into
+  the last row instead of always giving it a dedicated one, cutting one
+  row in most states without cramming any row past 2 buttons.
