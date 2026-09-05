@@ -130,11 +130,15 @@ deferred or not-yet-verified pieces.
   test philosophy (pure parser/validator functions, not handler-level
   mocking; no test file anywhere mocks `odoo.ts`/`firestore.ts`).
 - **Still not covered**: the P0 handlers' actual Odoo side-effects
-  (`QUOTE ADD`/`EDIT`/`CANCEL`/`INVOICE`, `QUOTE LIST`, PDF link,
+  (`QUOTE ADD`/`EDIT`/`REMOVE`/`CANCEL`/`INVOICE`, `QUOTE LIST`, PDF link,
   payment-term resolution) — these were verified via live calls against
   real Odoo instead of unit tests, consistent with how every other
   Odoo-touching function in this codebase is verified (no `odoo.test.ts`
-  exists at all). Would need a new mocking pattern (e.g. `vi.mock('../../services/odoo')`)
+  exists at all). `removeSaleOrderLine` was live-verified 2026-09-05:
+  created a throwaway quote (S00034), added a line, removed it via
+  `sale.order.line.unlink`, confirmed `findSaleOrderLineByProduct` then
+  returns `null`, and cancelled the test quote as cleanup. Would need a new
+  mocking pattern (e.g. `vi.mock('../../services/odoo')`)
   introduced deliberately if this code needs to be safely refactored later —
   not added speculatively here since it's a genuinely new pattern for this
   codebase, not a reuse of an existing one.

@@ -1,5 +1,5 @@
 import { createServiceCatalogItem, deleteServiceCatalogItem, findProductByQuery, getServiceByIdentifier, listServiceCatalogItems, updateServiceCatalogItem } from '../services/odoo/catalog';
-import { addSaleOrderLine, cancelSaleOrder, confirmSaleOrder, createInvoiceForSaleOrder, createQuotationFromLine, findOrderByReference, updateSaleOrderLineQty } from '../services/odoo/sales';
+import { addSaleOrderLine, cancelSaleOrder, confirmSaleOrder, createInvoiceForSaleOrder, createQuotationFromLine, findOrderByReference, removeSaleOrderLine, updateSaleOrderLineQty } from '../services/odoo/sales';
 import { createPartnerFromLine, deletePartnerFromLine, getPartnerByPhone, updatePartnerFromLine } from '../services/odoo/partners';
 import { getDailySalesSnapshot } from '../services/odoo/reporting';
 import type { OdooProduct } from '../services/odoo/types';
@@ -121,6 +121,9 @@ export const odooAdapter: ErpAdapter = {
   },
   async editQuoteLine(orderId: number, productId: number, qty: number): Promise<boolean> {
     return updateSaleOrderLineQty(orderId, productId, qty);
+  },
+  async removeQuoteLine(orderId: number, productId: number): Promise<boolean> {
+    return removeSaleOrderLine(orderId, productId);
   },
   async cancelQuote(orderId: number): Promise<boolean> {
     return cancelSaleOrder(orderId);

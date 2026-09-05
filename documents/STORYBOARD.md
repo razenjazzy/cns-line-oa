@@ -81,6 +81,8 @@ real device · ⬜ not built · 🔒 blocked by Odoo-side configuration, not cod
     product already on the quote (points at `QUOTE EDIT` instead) rather
     than silently creating a duplicate line. ✅
 12. `QUOTE EDIT <id> <product>,<qty>` — change an existing line's quantity. ✅
+12a. `QUOTE REMOVE <id> <product>` — delete an existing line entirely
+    (mirrors Odoo web's own line-delete). ✅
 13. `QUOTE CANCEL <id>`. ✅
 14. `QUOTE CONFIRM <id>` — Quotation → Sales Order; customer is pushed the
     updated card automatically. ✅

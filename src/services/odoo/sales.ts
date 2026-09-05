@@ -12,6 +12,7 @@ export {
   getSaleOrderPortalLink,
   getSaleOrdersForPartner,
   markSaleOrderSent,
+  removeSaleOrderLine,
   updateSaleOrderLineQty,
 } from '../odoo';
 export type { OdooSaleOrder, OdooSaleOrderLine } from './types';

@@ -106,6 +106,7 @@ const COMMAND_PREFIX_SERVICE_MAP: { prefix: string; service: ServiceKey }[] = [
   { prefix: 'QUOTE APPROVE', service: 'commerce' },
   { prefix: 'QUOTE ADD', service: 'commerce' },
   { prefix: 'QUOTE EDIT', service: 'commerce' },
+  { prefix: 'QUOTE REMOVE', service: 'commerce' },
   { prefix: 'QUOTE CANCEL', service: 'commerce' },
   { prefix: 'QUOTE INVOICE', service: 'commerce' },
   { prefix: 'QUOTE LIST', service: 'commerce' },

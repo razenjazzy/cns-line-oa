@@ -434,6 +434,34 @@ export const updateSaleOrderLineQty = async (orderId: number, productId: number,
 };
 
 /**
+ * Deletes an existing line entirely (mirrors Odoo web's own line-delete
+ * button, as opposed to updateSaleOrderLineQty which only changes a
+ * quantity). Returns false, not an error, if the product isn't on this
+ * quote — same "not found vs failed" convention as the rest of this file.
+ * Odoo itself enforces whether the order's current state allows deleting a
+ * line (e.g. a locked/invoiced order rejects it); that surfaces here as a
+ * caught error, same as any other write failure.
+ */
+export const removeSaleOrderLine = async (orderId: number, productId: number): Promise<boolean> => {
+  const config = getConfig();
+  if (!config) return false;
+
+  try {
+    const uid = await login(config);
+    if (!uid) return false;
+
+    const existing = await findSaleOrderLineByProduct(orderId, productId);
+    if (!existing) return false;
+
+    await executeKw<boolean>(config, uid, 'sale.order.line', 'unlink', [[existing.id]]);
+    return true;
+  } catch (error) {
+    console.error('removeSaleOrderLine failed:', error);
+    return false;
+  }
+};
+
+/**
  * Mirrors Odoo web's "Create Invoice" button, which is a window action
  * opening the sale.advance.payment.inv wizard (confirmed live on this
  * instance: sale.order.form's create_invoice button has type="action",

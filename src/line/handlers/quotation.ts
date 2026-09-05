@@ -87,6 +87,23 @@ export const parseOrderIdAndProductQty = (text: string, prefix: string): { order
 const usageReply = (language: UserLanguage, example: string) =>
   botText(tr(language, `รูปแบบไม่ถูกต้อง ตัวอย่าง: ${example}`, `That doesn't look right. Example: ${example}`), language);
 
+// "<prefix> <orderId> <product>" — no qty, no comma-split payload (unlike
+// parseOrderIdAndProductQty): the whole remainder after the orderId is the
+// product name/query, used by QUOTE REMOVE to delete a line entirely.
+export const parseOrderIdAndProductName = (text: string, prefix: string): { orderId: number; productName: string } | null => {
+  const raw = text.trim().replace(new RegExp(`^${prefix}\\s*`, 'i'), '').trim();
+  const firstSpace = raw.indexOf(' ');
+  if (firstSpace === -1) return null;
+
+  const orderId = Number(raw.slice(0, firstSpace).trim());
+  if (!Number.isFinite(orderId) || orderId <= 0) return null;
+
+  const productName = raw.slice(firstSpace + 1).trim();
+  if (!productName) return null;
+
+  return { orderId, productName };
+};
+
 // "<prefix> <orderId> <free-text message>" — unlike parseOrderIdAndProductQty,
 // the remainder is arbitrary text (a message to the customer), not a
 // comma-split payload.
@@ -359,6 +376,46 @@ const quoteEditHandler: CommandHandler = {
   },
 };
 
+// QUOTE REMOVE <orderId> <product> — admin-only. Deletes an existing line
+// entirely (mirrors Odoo web's own line-delete), as opposed to QUOTE EDIT
+// which only changes a quantity. Day-to-day sales action, same as
+// Add/Edit — not manager-restricted the way Cancel/Invoice are.
+const quoteRemoveHandler: CommandHandler = {
+  name: 'quote-remove',
+  match: (u) => u.startsWith('QUOTE REMOVE'),
+  handle: async (ctx) => {
+    const { userLanguage, userId, profile, channel, requestId, text } = ctx;
+    if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
+
+    const parsed = parseOrderIdAndProductName(text, 'QUOTE REMOVE');
+    if (!parsed) return [usageReply(userLanguage, 'QUOTE REMOVE 17 Widget')];
+
+    const product = await findProductByQuery(parsed.productName);
+    if (!product) {
+      return [botText(tr(userLanguage, `ไม่พบสินค้าที่ตรงกับ "${parsed.productName}"`, `No product matched "${parsed.productName}".`), userLanguage)];
+    }
+
+    const ok = await getErpAdapter().removeQuoteLine(parsed.orderId, product.id);
+    recordAuditEvent({ action: 'quote_remove_line', outcome: ok ? 'success' : 'failure', actorUserId: userId, channelId: channel?.channelId, requestId, targetId: String(parsed.orderId), detail: String(product.id) });
+    if (!ok) {
+      return [botText(tr(
+        userLanguage,
+        `ไม่พบ "${parsed.productName}" ในใบเสนอราคานี้ หรือไม่สามารถลบได้ในขณะนี้`,
+        `"${parsed.productName}" isn't on this quote, or it can't be removed right now.`,
+      ), userLanguage)];
+    }
+
+    const order = await getSaleOrderById(parsed.orderId);
+    if (!order) return [notFoundReply(userLanguage)];
+
+    notifyCustomerOfOrderUpdate(order, channel?.channelId)
+      .catch(err => console.warn('quote-remove: customer notify failed (non-fatal):', err));
+
+    const { portalLink, pdfLink } = await getOrderLinks(parsed.orderId);
+    return [createQuotationJourneyFlexMessage(order, { role: 'admin', salesTier: profile.salesTier, portalLink, pdfLink }, userLanguage)];
+  },
+};
+
 // QUOTE CANCEL <orderId> — admin-only, single-tap. Odoo's own cancel is
 // reversible (reset to draft in Odoo web) — not exposed as a LINE command
 // since it's outside this journey's scope.
@@ -515,6 +572,7 @@ export const quotationHandlers: CommandHandler[] = [
   quoteApproveHandler,
   quoteAddHandler,
   quoteEditHandler,
+  quoteRemoveHandler,
   quoteCancelHandler,
   quoteInvoiceHandler,
   quoteMessageHandler,

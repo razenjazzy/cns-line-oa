@@ -5,6 +5,7 @@ describe('isGatedMutation', () => {
   it('gates the quote lifecycle mutations', () => {
     expect(isGatedMutation('QUOTE CREATE App Premium Plan,1,Somchai,0812345678')).toBe(true);
     expect(isGatedMutation('QUOTE ADD 5 App Premium Plan,1')).toBe(true);
+    expect(isGatedMutation('QUOTE REMOVE 5 App Premium Plan')).toBe(true);
     expect(isGatedMutation('QUOTE CANCEL 5')).toBe(true);
     expect(isGatedMutation('QUOTE INVOICE 5')).toBe(true);
     expect(isGatedMutation('MESSAGE CUSTOMER 0812345678 Hello')).toBe(true);

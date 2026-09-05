@@ -190,26 +190,27 @@ to validate it against.
 ERP adapter, modular Firestore/Odoo, approval policy, audit query,
 structured logging, `ADMIN CONFIG` UI, ansible secret hardening — see
 `documents/STAGED_IMPLEMENTATION_BACKLOG.md` Track A/B1/B2, now merged and
-verified: `npm run build`/`lint`/`test` clean, 39 files / 208 tests).
+verified: `npm run build`/`lint`/`test` clean, 39 files / 212 tests).
 
 | Dimension | Score | Why | To close the gap |
 |---|---|---|---|
-| **Feature completeness** (core Sales journey) | 8/10 | Unchanged by this pass — full Quotation → Sales Order → Invoice lifecycle built & verified (`STORYBOARD.md`). Gaps: delivery (Odoo-blocked), pricelist/salesperson (no data yet), line removal (qty-edit only, no delete-a-line). | [ ] Add `QUOTE REMOVE <id> <product>` (delete a line entirely). [ ] Revisit pricelist/salesperson once Odoo has data. |
+| **Feature completeness** (core Sales journey) | 9/10 (was 8) | `QUOTE REMOVE <id> <product>` shipped — deletes a line entirely (`removeSaleOrderLine`, `sale.order.line.unlink`), day-to-day action like Add/Edit, not manager-restricted. Remaining gaps: delivery and pricelist/salesperson selection, both blocked on Odoo having no data for them yet, not missing code. | [ ] Revisit pricelist/salesperson once Odoo has data (not actionable until then). |
 | **Security** | 10/10 (was 7) | Gains: `QUOTE CREATE`'s missing audit trail closed; ansible's hardcoded fallback secrets removed + fail-closed pre-deploy assert; `tests/http-auth.test.ts`; `ERP_PROVIDER` fails closed; **section 1 shipped** — `salesTier` gates Cancel/Invoice server-side, fail-safe to today's behavior for every account with no linked Odoo user; **step-up OTP now also gates `USER`/`SERVICE` CRUD**, closing the last named gap (`tests/action-otp-gate.test.ts`). `ADMIN ENABLE`/`DISABLE` deliberately stay outside this gate — the allowlist + Odoo admin-capability chain is already stronger. | Nothing scored remaining — the two named gaps above are closed. Section 1's tiered-button path is still unverified end-to-end (no real Sales User/Manager Odoo login exists to test against), tracked separately, not scored as a security defect since its fallback is fail-safe. |
 | **Configurability** | 8/10 (was 6) | `ADMIN CONFIG` (section 2) is now shipped — a Flex toggle grid over the existing per-channel service flags, admin-only. `ERP_PROVIDER`/`ENABLED_SERVICES`/`DEFAULT_LANGUAGE`/`LOG_LEVEL` are now documented env-configurable knobs. Remaining gap: language/copy is still bilingual-hardcoded rather than a configurable string table beyond the quotation feature's own `i18n.ts`. | [ ] Extend `i18n.ts`'s pattern app-wide only if a third language is ever actually needed — deliberately not done speculatively. |
 | **Overall architecture / design quality** | 9/10 (was 8) | The ERP boundary is no longer just a documented convention — `src/erp/` is a real adapter+registry, fail-closed for unimplemented providers, wired into every commerce/directory/catalog/reporting handler; `CLAUDE.md` now documents it. Firestore/Odoo are barrel-split into domain modules with an import-compatible facade. `salesTier` is a real additive layer on top of the protected chain, never replacing it. Remaining gap: a completed-but-unwired command-registry/policy foundation (`src/ux/`, `command-policy.ts`) exists for a future menu-projection feature (Track C2) and is intentionally not live yet. | [ ] Track C2 (registry-to-menu projection), only after Track A3 (broader privileged-write audit review). |
 
-**Total: 35/40 → 8.75/10** (8+10+8+9=35; security reached 10/10 once
-step-up OTP was extended to `USER`/`SERVICE` CRUD). Section 1 (Odoo-role-based
+**Total: 36/40 → 9.0/10** (9+10+8+9=36). Section 1 (Odoo-role-based
 permissions) is built, fail-safe, and tested at the mapper layer — but
 genuinely unverified end-to-end (no real Sales User/Manager Odoo login
 exists to click-test the tiered button set against yet; your own account
-correctly exercises only the fallback path). The remaining 1.25 points are
-the small, individually-scoped to-dos still open in the table above —
-`QUOTE REMOVE`, pricelist/salesperson (Odoo-data-blocked), and the app-wide
-`i18n.ts` extension (deliberately deferred, no third language yet) — plus
-Track C2/C3 from `STAGED_IMPLEMENTATION_BACKLOG.md`. Nothing left is a
-speculative or unstarted initiative.
+correctly exercises only the fallback path). The remaining 1.0 point is
+split between: pricelist/salesperson selection (Odoo-data-blocked, not
+actionable until Odoo has that data), the app-wide `i18n.ts` extension
+(deliberately deferred, no third language yet), and Track C2/C3 from
+`STAGED_IMPLEMENTATION_BACKLOG.md` (menu projection + a future-ERP-provider
+spike, both intentionally not started). Nothing left is a speculative or
+unstarted initiative — every remaining gap is either blocked on external
+data/decisions, or deliberately deferred pending a concrete need.
 
 ---
 

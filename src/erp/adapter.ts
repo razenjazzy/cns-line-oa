@@ -119,6 +119,7 @@ export type ErpAdapter = {
   createInvoice: (orderId: number) => Promise<boolean>;
   addQuoteLine: (orderId: number, productId: number, qty: number) => Promise<boolean>;
   editQuoteLine: (orderId: number, productId: number, qty: number) => Promise<boolean>;
+  removeQuoteLine: (orderId: number, productId: number) => Promise<boolean>;
   cancelQuote: (orderId: number) => Promise<boolean>;
   getOrderStatus: (orderRef: string) => Promise<ErpOrderStatus | null>;
   getDailySnapshot: () => Promise<ErpDailySnapshotRow[]>;

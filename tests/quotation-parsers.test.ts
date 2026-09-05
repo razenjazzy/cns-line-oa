@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseOrderId, parseOrderIdAndProductQty } from '../src/line/handlers/quotation';
+import { parseOrderId, parseOrderIdAndProductName, parseOrderIdAndProductQty } from '../src/line/handlers/quotation';
 
 describe('parseOrderId', () => {
   it('parses a valid numeric order id after the prefix', () => {
@@ -59,5 +59,36 @@ describe('parseOrderIdAndProductQty', () => {
 
   it('rejects a missing product name', () => {
     expect(parseOrderIdAndProductQty('QUOTE ADD 17 ,2', 'QUOTE ADD')).toBeNull();
+  });
+});
+
+describe('parseOrderIdAndProductName', () => {
+  it('parses "<prefix> <orderId> <product>" with no comma/qty', () => {
+    expect(parseOrderIdAndProductName('QUOTE REMOVE 17 Widget', 'QUOTE REMOVE')).toEqual({
+      orderId: 17,
+      productName: 'Widget',
+    });
+  });
+
+  it('keeps a multi-word product name intact', () => {
+    expect(parseOrderIdAndProductName('QUOTE REMOVE 17 App Premium Plan', 'QUOTE REMOVE')).toEqual({
+      orderId: 17,
+      productName: 'App Premium Plan',
+    });
+  });
+
+  it('is case-insensitive on the prefix', () => {
+    expect(parseOrderIdAndProductName('quote remove 17 Widget', 'QUOTE REMOVE')).toEqual({
+      orderId: 17,
+      productName: 'Widget',
+    });
+  });
+
+  it('rejects a missing order id, missing product name, or malformed order id', () => {
+    expect(parseOrderIdAndProductName('QUOTE REMOVE', 'QUOTE REMOVE')).toBeNull();
+    expect(parseOrderIdAndProductName('QUOTE REMOVE 17', 'QUOTE REMOVE')).toBeNull();
+    expect(parseOrderIdAndProductName('QUOTE REMOVE 17 ', 'QUOTE REMOVE')).toBeNull();
+    expect(parseOrderIdAndProductName('QUOTE REMOVE abc Widget', 'QUOTE REMOVE')).toBeNull();
+    expect(parseOrderIdAndProductName('QUOTE REMOVE 0 Widget', 'QUOTE REMOVE')).toBeNull();
   });
 });

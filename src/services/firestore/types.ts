@@ -132,6 +132,7 @@ export type AuditAction =
     | 'quote_cancel'
     | 'quote_add_line'
     | 'quote_edit_line'
+    | 'quote_remove_line'
     | 'quote_invoice'
     | 'quote_message'
     | 'sales_message'

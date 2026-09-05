@@ -14,7 +14,7 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.seedOdooSampleSalesData = exports.getDailySalesSnapshot = exports.deleteServiceCatalogItem = exports.updateServiceCatalogItem = exports.createServiceCatalogItem = exports.getServiceByIdentifier = exports.listServiceCatalogItems = exports.deletePartnerFromLine = exports.updatePartnerFromLine = exports.createPartnerFromLine = exports.getPartnerById = exports.getPartnerByPhone = exports.createQuotationFromLine = exports.createInvoiceForSaleOrder = exports.updateSaleOrderLineQty = exports.findSaleOrderLineByProduct = exports.addSaleOrderLine = exports.cancelSaleOrder = exports.markSaleOrderSent = exports.confirmSaleOrder = exports.findPaymentTermByName = exports.getSaleOrdersForPartner = exports.getSaleOrderPdfLink = exports.getSaleOrderPortalLink = exports.getSaleOrderById = exports.findOrderByReference = exports.listProducts = exports.findProductByQuery = exports.verifyOdooAdminAccess = exports.pingOdoo = exports.isOdooConfigured = void 0;
+exports.seedOdooSampleSalesData = exports.getDailySalesSnapshot = exports.deleteServiceCatalogItem = exports.updateServiceCatalogItem = exports.createServiceCatalogItem = exports.getServiceByIdentifier = exports.listServiceCatalogItems = exports.deletePartnerFromLine = exports.updatePartnerFromLine = exports.createPartnerFromLine = exports.getPartnerById = exports.getPartnerByPhone = exports.createQuotationFromLine = exports.createInvoiceForSaleOrder = exports.removeSaleOrderLine = exports.updateSaleOrderLineQty = exports.findSaleOrderLineByProduct = exports.addSaleOrderLine = exports.cancelSaleOrder = exports.markSaleOrderSent = exports.confirmSaleOrder = exports.findPaymentTermByName = exports.getSaleOrdersForPartner = exports.getSaleOrderPdfLink = exports.getSaleOrderPortalLink = exports.getSaleOrderById = exports.findOrderByReference = exports.listProducts = exports.findProductByQuery = exports.verifyOdooAdminAccess = exports.pingOdoo = exports.isOdooConfigured = void 0;
 const client_1 = require("./odoo/client");
 __exportStar(require("./odoo/types"), exports);
 const getConfig = client_1.getOdooConfig;
@@ -385,6 +385,35 @@ const updateSaleOrderLineQty = async (orderId, productId, qty) => {
     }
 };
 exports.updateSaleOrderLineQty = updateSaleOrderLineQty;
+/**
+ * Deletes an existing line entirely (mirrors Odoo web's own line-delete
+ * button, as opposed to updateSaleOrderLineQty which only changes a
+ * quantity). Returns false, not an error, if the product isn't on this
+ * quote — same "not found vs failed" convention as the rest of this file.
+ * Odoo itself enforces whether the order's current state allows deleting a
+ * line (e.g. a locked/invoiced order rejects it); that surfaces here as a
+ * caught error, same as any other write failure.
+ */
+const removeSaleOrderLine = async (orderId, productId) => {
+    const config = getConfig();
+    if (!config)
+        return false;
+    try {
+        const uid = await (0, client_1.login)(config);
+        if (!uid)
+            return false;
+        const existing = await (0, exports.findSaleOrderLineByProduct)(orderId, productId);
+        if (!existing)
+            return false;
+        await (0, client_1.executeKw)(config, uid, 'sale.order.line', 'unlink', [[existing.id]]);
+        return true;
+    }
+    catch (error) {
+        console.error('removeSaleOrderLine failed:', error);
+        return false;
+    }
+};
+exports.removeSaleOrderLine = removeSaleOrderLine;
 /**
  * Mirrors Odoo web's "Create Invoice" button, which is a window action
  * opening the sale.advance.payment.inv wizard (confirmed live on this
