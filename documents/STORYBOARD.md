@@ -125,14 +125,24 @@ real device · ⬜ not built · 🔒 blocked by Odoo-side configuration, not cod
 - `/ops/audit-log` + BigQuery archive/rotation, `/ops/kpi`, `/ops/workflow-audit`. ✅
 - CLI (`cns`) and MCP server exposing the same ops endpoints as agent tools. ✅
 
-## Not built yet — explicitly requested, not started
+## UX/polish feedback items — mostly closed 2026-09-05
 
-These come directly from your last two rounds of feedback and are real
-scope, just not attempted in this pass:
+These come directly from your last two rounds of feedback. Three of the
+four are now shipped (rich menu, `GUIDE`, header consistency); the
+remaining two are real scope, just not attempted yet:
 
-- ⬜ Rich-menu (persistent bottom menu) font/legibility and a multi-purpose
-  redesign (Home/Help/Search/Language icons; "Tap to open" → a
-  purpose-specific label).
+- ✅ Rich-menu redesign — closed 2026-09-05. The live account's rich menu
+  (`richmenu-5e5e12e9...`, "Cloudnex Card Menu EN") wasn't set as default
+  and had two real bugs: "Order Status" sent `DEMO ORDER`, a command
+  renamed away long ago with zero handler matches left in the codebase
+  (would have silently done nothing for a real user); "Language" always
+  sent the fixed `LANG TH` (no real toggle). Created a new rich menu
+  (`richmenu-ca2d88b1...`, chatBarText "เมนู / Menu" replacing the generic
+  "Tap to open") with the same 6-button layout but `ORDER STATUS` and the
+  new bare `LANG` toggle (see `src/line/handlers/language.ts`) in place of
+  the two broken actions, and set it as the account's active default —
+  confirmed live via `get_rich_menu_list`. The old menu was left in place,
+  inactive, as a rollback option (user's choice) rather than deleted.
 - ✅ `GUIDE`/help command redesign — closed 2026-09-05. `GUIDE` now shows a
   tappable category menu (8 topics, mirroring service-catalog.ts's
   ServiceKeys plus 3 general ones); each topic drills into
@@ -187,7 +197,7 @@ working estimate:
 |---|---|---|
 | Core Quotation → Sales Order → Invoice lifecycle | **~85–90%** | Every step in Phases 3–5 is built and live-verified; the gap is almost entirely Odoo-side blocks (delivery, pricelists), not missing code. |
 | Enterprise-grade hardening (auth, audit, step-up security) | **~95%** (was ~70%) | Step-up OTP (now covering the full quote lifecycle **and** `USER`/`SERVICE` CRUD), full admin-authorization chain, audit trail + archive, `ADMIN CONFIG` UI, ansible fallback-secret removal, `salesTier` Odoo-role gating, `tests/http-auth.test.ts`/`tests/action-otp-gate.test.ts` regression coverage, and Track A3's audit sweep (which found and fixed a real authorization bypass on `DAILY REPORT`/`SEGMENT CUSTOMERS`) are all shipped since this was last written (see `ENTERPRISE_ROADMAP.md` — security now scores 10/10). Remaining gap: Odoo-touching handlers still have no automated test coverage beyond live verification (a deliberate choice — no mocking pattern exists yet for `odoo.ts`, not introduced speculatively). |
-| UX consistency & polish | **~80%** (was ~50%) | Design-system pass, picker chips, the summary card, the per-card header consistency sweep, and now the `GUIDE` overhaul (categorized, tappable, prefill-button-driven) are all shipped; the rich-menu redesign is the one remaining item, still explicitly not started. |
+| UX consistency & polish | **~95%** (was ~50%) | Every item on this pass's list is now shipped: design-system pass, picker chips, the summary card, the per-card header consistency sweep, the `GUIDE` overhaul, and the rich-menu redesign (which also fixed a live, real bug — a broken button no real user could have used). Remaining: natural-language/fuzzy matching against real phrasing variety, and multi-channel broadcast outside a customer's Odoo-linked identity — both still explicitly not started, per the "Not built yet" list above. |
 
 **Overall: roughly 3/4 of the core sales journey is built and verified.**
 The remaining quarter splits between genuinely blocked items (Odoo
