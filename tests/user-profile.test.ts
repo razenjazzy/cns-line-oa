@@ -47,4 +47,22 @@ describe('Firestore user profile mapping', () => {
     expect(buildFallbackUserProfile({ salesTier: 'sales_manager' }, pendingFlowIsActive, 'en').salesTier).toBe('sales_manager');
     expect(buildFallbackUserProfile({}, pendingFlowIsActive, 'en').salesTier).toBeUndefined();
   });
+
+  // Regression for a real reported bug: Firestore's `.set(data, {merge:
+  // true}) merges a nested map field-by-field rather than replacing it
+  // wholesale, so a write meaning to clear editingFieldIndex by simply
+  // omitting the key (rather than nulling it) left the stale index
+  // persisted -- the next guided-form answer then overwrote the *previous*
+  // field instead of the one the user actually just filled in.
+  it('treats a stored null (or missing) editingFieldIndex as not-editing, and a real number as active', () => {
+    const future = new Date(Date.now() + 60_000).toISOString();
+    const withNull = parseStoredUserProfile({ pendingFlow: { flow: 'QUOTE_CREATE', stepIndex: 4, collected: {}, expiresAt: future, summaryMode: true, editingFieldIndex: null } }, pendingFlowIsActive);
+    expect(withNull.pendingFlow?.editingFieldIndex).toBeUndefined();
+
+    const withoutKey = parseStoredUserProfile({ pendingFlow: { flow: 'QUOTE_CREATE', stepIndex: 4, collected: {}, expiresAt: future, summaryMode: true } }, pendingFlowIsActive);
+    expect(withoutKey.pendingFlow?.editingFieldIndex).toBeUndefined();
+
+    const editingField5 = parseStoredUserProfile({ pendingFlow: { flow: 'QUOTE_CREATE', stepIndex: 4, collected: {}, expiresAt: future, summaryMode: true, editingFieldIndex: 5 } }, pendingFlowIsActive);
+    expect(editingField5.pendingFlow?.editingFieldIndex).toBe(5);
+  });
 });

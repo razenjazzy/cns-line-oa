@@ -38,11 +38,29 @@ export const buildFallbackUserProfile = (
     salesTier: cached.salesTier,
 });
 
+/**
+ * Firestore's `.set(data, {merge: true})` merges nested map fields
+ * field-by-field rather than replacing them wholesale — a write that omits
+ * `editingFieldIndex` (rather than explicitly nulling it) leaves whatever
+ * was already stored there untouched. src/line/command-router.ts now
+ * writes `editingFieldIndex: null` to actually clear it (the same
+ * null-as-clear-marker convention `salesTier` already uses), so this reads
+ * that back as "not editing" rather than passing a stale index through.
+ */
+const sanitizePendingFlow = (raw: PendingFlowState | undefined): PendingFlowState | undefined => {
+    if (!raw) return raw;
+    if (typeof raw.editingFieldIndex !== 'number') {
+        const { editingFieldIndex: _ignored, ...rest } = raw;
+        return rest;
+    }
+    return raw;
+};
+
 export const parseStoredUserProfile = (
     data: Record<string, unknown>,
     isPendingFlowActive: PendingFlowPredicate,
 ): UserProfile => {
-    const rawPendingFlow = data.pendingFlow as PendingFlowState | undefined;
+    const rawPendingFlow = sanitizePendingFlow(data.pendingFlow as PendingFlowState | undefined);
     return {
         language: data.language === 'th' ? 'th' : 'en',
         role: data.role === 'admin' ? 'admin' : 'user',

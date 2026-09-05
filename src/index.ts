@@ -14,6 +14,14 @@ import { registerJobsRoutes } from './http/jobs-routes';
 import { registerDemoRoutes } from './http/demo-routes';
 
 const app = express();
+// Railway (and most PaaS hosts) terminate TLS at a reverse proxy and forward
+// plain HTTP internally, so req.protocol reports 'http' even on a real
+// https:// deployment unless Express is told to trust the proxy's
+// X-Forwarded-Proto header. Without this, any link built from a request's
+// baseUrl (e.g. the VERIFY START magic link in user-verification.ts) comes
+// out as a broken http:// URL. `1` trusts exactly one hop, matching a
+// single reverse-proxy deployment shape — not a blanket "trust anything".
+app.set('trust proxy', 1);
 const port = process.env.PORT || 8080;
 
 app.use(cspMiddleware);

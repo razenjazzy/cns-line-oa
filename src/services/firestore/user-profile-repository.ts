@@ -130,8 +130,19 @@ export const createUserProfileRepository = (dependencies: RepositoryDependencies
     setPendingFlow: async (userId: string, pendingFlow: PendingFlowState | null) => {
         const previous = dependencies.getPrevious(userId);
         dependencies.mergeCached(userId, { pendingFlow: pendingFlow || undefined });
+        // Firestore's `.set(data, {merge: true})` merges a nested map
+        // field-by-field rather than replacing it wholesale — omitting
+        // editingFieldIndex here (rather than explicitly nulling it) would
+        // leave whatever was previously stored there untouched, so a
+        // caller that means to clear it (see command-router.ts's
+        // pendingWithoutEditingField) would silently have that clear
+        // dropped on the next read from a cold cache. Same null-as-clear
+        // convention setSalesTier already uses.
+        const pendingFlowForWrite = pendingFlow
+            ? { ...pendingFlow, editingFieldIndex: pendingFlow.editingFieldIndex ?? null }
+            : pendingFlow;
         const result = await dependencies.write('setUserPendingFlow', async database => {
-            await database.collection('users').doc(userId).set({ pendingFlow }, { merge: true });
+            await database.collection('users').doc(userId).set({ pendingFlow: pendingFlowForWrite }, { merge: true });
         });
         if (!result.ok) dependencies.restorePrevious(userId, previous);
         return result;
