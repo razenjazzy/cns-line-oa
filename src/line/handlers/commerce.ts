@@ -227,12 +227,24 @@ const demoSeedHandler: CommandHandler = {
   },
 };
 
-// DAILY REPORT — trigger daily report (async, non-blocking)
+const adminOnlyCommerceReply = (language: UserLanguage) =>
+  botText(tr(language,
+    'คำสั่งนี้สำหรับแอดมินเท่านั้น กรุณาใช้ ADMIN VERIFY และ ADMIN ENABLE ก่อน',
+    'This command is admin-only. Run ADMIN VERIFY and ADMIN ENABLE first.',
+  ), language);
+
+// DAILY REPORT — trigger daily report (async, non-blocking). Admin-only:
+// this was missing its role check (unlike its sibling SEED SAMPLE DATA
+// below), which meant any LINE user could force an internal-data report
+// generation — closed as a real authorization gap, not a style nit.
 const demoReportHandler: CommandHandler = {
   name: 'commerce-daily-report',
   match: (u) => u === 'DAILY REPORT',
   handle: async (ctx) => {
-    const { userLanguage } = ctx;
+    const { userLanguage, profile, userId, channel, requestId } = ctx;
+    if (profile.role !== 'admin') return [adminOnlyCommerceReply(userLanguage)];
+
+    recordAuditEvent({ action: 'daily_report_trigger', outcome: 'success', actorUserId: userId, channelId: channel?.channelId, requestId });
     import('../../jobs/daily-report')
       .then(({ runDailyReport }) => runDailyReport(userLanguage))
       .catch(err => console.error('Demo report error:', err));
@@ -243,14 +255,20 @@ const demoReportHandler: CommandHandler = {
   },
 };
 
-// SEGMENT CUSTOMERS — trigger segmentation job
+// SEGMENT CUSTOMERS — trigger segmentation job. Admin-only: same missing
+// role-check gap as DAILY REPORT above — this one is higher-stakes since it
+// triggers a real bulk marketing multicast to customers, not just an
+// internal report.
 const demoSegmentHandler: CommandHandler = {
   name: 'commerce-segment-customers',
   match: (u) => u === 'SEGMENT CUSTOMERS',
   handle: async (ctx) => {
-    const { userLanguage } = ctx;
+    const { userLanguage, profile, userId, channel, requestId } = ctx;
+    if (profile.role !== 'admin') return [adminOnlyCommerceReply(userLanguage)];
+
     const { runSegmentationJob } = await import('../../jobs/segmentation');
     await runSegmentationJob();
+    recordAuditEvent({ action: 'segment_customers_trigger', outcome: 'success', actorUserId: userId, channelId: channel?.channelId, requestId });
     return [botText(tr(userLanguage,
       'จัดกลุ่มลูกค้าเสร็จแล้ว พร้อมส่งข้อความตามเซกเมนต์เรียบร้อยค่ะ',
       'Segmentation complete. Targeted segment messages have been dispatched.',

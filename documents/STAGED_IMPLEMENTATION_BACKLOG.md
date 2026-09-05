@@ -84,17 +84,36 @@ This backlog converts the enterprise architecture plan into small, reversible im
 
 ### A3. Privileged-write audit review
 
-- **Next implementation slice.**
-- Global service configuration is now enforced for both menus and typed commands.
-- Approval transitions still require runtime handler integration and an atomic persistence API.
-- Approval transitions still require runtime handler integration and dedicated audit events.
-- Broader privileged-write adoption and background execution-ID correlation remain after the `QUOTE APPROVE` slice.
-- HTTP and primary background job correlation is now implemented; remaining work is broader privileged approval adoption and any future worker-specific correlation.
-- Broader privileged-write adoption and correlation for background/non-HTTP callers remain after the `QUOTE APPROVE` slice.
-- Verify every admin and ERP mutation records success or failure with actor, channel, target, and safe detail.
-- Add missing audit events only where the existing handler does not already record one.
-- Acceptance: no password, API key, access token, OTP, or raw personal payload is written to audit detail.
-- Check: focused audit tests and staging workflow audit.
+- **Completed 2026-09-05** — swept every `getErpAdapter()`/Firestore-write
+  call site in `src/line/handlers/*.ts`, `src/services/group-buy.ts`, and
+  the jobs it triggers, checking each against "does this record an audit
+  event on both success and failure."
+- **Found and fixed a real authorization gap, not just an audit gap**:
+  `DAILY REPORT` and `SEGMENT CUSTOMERS` (`src/line/handlers/commerce.ts`)
+  had **no admin-role check at all** — unlike their sibling
+  `SEED SAMPLE DATA` handler in the same file, which had the check all
+  along. Any LINE user could trigger a bulk customer marketing multicast
+  or force internal-sales-report generation just by typing the command
+  text. This is the reason `service-catalog.ts`'s `requiresAdmin` flag is
+  not itself an enforcement mechanism for typed commands — it only governs
+  *menu visibility* (`getVisibleCommands`), not execution; execution-time
+  admin gating is each handler's own responsibility, and these two missed
+  it. Fixed by adding the same `profile.role !== 'admin'` check every other
+  admin-only handler already has.
+- Also closed two real audit-trail gaps found in the same sweep:
+  `QUOTE APPROVE`'s failure path (when Odoo's confirm fails) recorded no
+  audit event at all — success is audited via the `approval_requested`/
+  `approved`/`completed` chain (Track A2), but that chain never fires on
+  failure, so a distinct `quote_approve` failure event was added, plus a
+  fallback success event for the rare case where the approval-record save
+  itself fails after Odoo's confirm already succeeded. `group-buy.ts`'s
+  Odoo-order auto-creation (on Group-Buy confirm) had no audit trail at
+  all; added `group_buy_odoo_order_create` success/failure events.
+- Acceptance: no password, API key, access token, OTP, or raw personal
+  payload is written to audit detail — verified, all `detail` fields used
+  are product ids, order names, or short fixed reason strings.
+- Check: `npm run build && npm run lint && npm test` (39 files / 212 tests)
+  all pass.
 
 ### A4. HTTP boundary hardening
 

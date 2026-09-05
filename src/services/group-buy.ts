@@ -8,6 +8,7 @@ import {
   GroupBuyRecord,
   joinGroupBuy,
   listGroupBuysByCreator,
+  recordAuditEvent,
   UserLanguage,
 } from './firestore';
 import { createQuotationFromLine } from './odoo/sales';
@@ -229,7 +230,9 @@ export const handleGroupBuyCommand = async (input: HandleGroupBuyInput): Promise
         if (quotation) {
           await attachGroupBuyOdooOrder(record.id, { odooOrderRef: quotation.orderName, odooOrderTotal: quotation.total });
           record = { ...record, odooOrderRef: quotation.orderName, odooOrderTotal: quotation.total };
+          recordAuditEvent({ action: 'group_buy_odoo_order_create', outcome: 'success', actorUserId: input.userId, targetId: record.id, detail: quotation.orderName });
         } else {
+          recordAuditEvent({ action: 'group_buy_odoo_order_create', outcome: 'failure', actorUserId: input.userId, targetId: record.id, detail: 'product_not_found' });
           odooNote = tr(
             input.userLanguage,
             '\n- คำเตือน: สร้างใบสั่งซื้อ Odoo อัตโนมัติไม่สำเร็จ (ไม่พบสินค้าใน Odoo) กรุณาสร้างด้วยตนเอง',
@@ -238,6 +241,7 @@ export const handleGroupBuyCommand = async (input: HandleGroupBuyInput): Promise
         }
       } catch (error) {
         console.warn('Group-Buy Odoo order creation failed:', error);
+        recordAuditEvent({ action: 'group_buy_odoo_order_create', outcome: 'failure', actorUserId: input.userId, targetId: record.id, detail: 'exception' });
         odooNote = tr(
           input.userLanguage,
           '\n- คำเตือน: สร้างใบสั่งซื้อ Odoo อัตโนมัติไม่สำเร็จ กรุณาสร้างด้วยตนเอง',

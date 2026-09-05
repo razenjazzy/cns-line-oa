@@ -258,6 +258,11 @@ const quoteApproveHandler: CommandHandler = {
 
     const ok = await getErpAdapter().confirmOrder(orderId);
     if (!ok) {
+      // Success is audited via the approval_requested/approved/completed
+      // chain below (Track A2's own audit record, not a second store) — but
+      // a failed confirmOrder never reaches that chain, so it needs its own
+      // event here or a failed approval attempt would be entirely unaudited.
+      recordAuditEvent({ action: 'quote_approve', outcome: 'failure', actorUserId: userId, channelId: channel?.channelId, requestId: ctx.requestId, targetId: String(orderId) });
       return [botText(tr(userLanguage, 'อนุมัติไม่สำเร็จ กรุณาลองใหม่', 'Approval failed. Please try again.'), userLanguage)];
     }
 
@@ -273,6 +278,11 @@ const quoteApproveHandler: CommandHandler = {
     if (savedApproval.ok) {
       await transitionStoredApproval(approvalRecord.id, { type: 'approve', approverUserId: userId }, new Date(), { requestId: ctx.requestId });
       await transitionStoredApproval(approvalRecord.id, { type: 'complete' }, new Date(), { requestId: ctx.requestId });
+    } else {
+      // The Odoo confirm already succeeded (ok === true) at this point —
+      // the approval-record bookkeeping failing separately shouldn't leave
+      // that real mutation completely unaudited.
+      recordAuditEvent({ action: 'quote_approve', outcome: 'success', actorUserId: userId, channelId: channel?.channelId, requestId: ctx.requestId, targetId: String(orderId), detail: 'approval_record_save_failed' });
     }
     if (adminUserId) {
       // Best-effort notification back to the salesperson — never blocks
