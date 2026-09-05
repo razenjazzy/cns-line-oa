@@ -3,6 +3,14 @@
 Use this checklist after the reviewed release snapshot is committed. Do not put
 credentials or secret values in this repository.
 
+**Note (2026-09-05):** this checklist is entirely for the Cloud Run
+pipeline (`release.yml`), which is not the actual deploy target — Railway
+(`railway.json`'s Dockerfile builder) is. `release.yml` no longer runs
+automatically on push (switched to `workflow_dispatch`-only) specifically
+because these items were still unconfigured and it was failing on every
+commit with no real signal value. Work through this list only if Cloud
+Run is actually going to be used; otherwise it can stay as-is.
+
 ## Automated Local Evidence
 
 - [x] `npm test` passes.

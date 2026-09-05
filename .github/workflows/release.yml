@@ -15,9 +15,15 @@ name: release
 # check for another tool (e.g. GitHub Copilot) editing it concurrently.
 
 on:
-  push:
-    branches:
-      - main
+  # Deliberately manual-only (workflow_dispatch), not push -- Railway
+  # (railway.json's Dockerfile builder) is the actual staging/production
+  # target and needs no GitHub Action of its own. This Cloud Run pipeline
+  # was kept for a possible future need but its secrets
+  # (DEPLOY_ENV_STAGING_YAML, GCP_SERVICE_ACCOUNT, etc. -- see
+  # documents/PRODUCTION_READINESS_CHECKLIST.md's "GitHub Environment
+  # Configuration" section) were never configured, so running it on every
+  # push to main just produced a permanent, misleading red check. Run it
+  # by hand from the Actions tab once those secrets are actually filled in.
   workflow_dispatch:
     inputs:
       deploy_production:

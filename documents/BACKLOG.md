@@ -85,10 +85,21 @@ deferred or not-yet-verified pieces.
   on the `cns-line-oa` GCP project. It was disabled to mint the Firestore
   service-account key for Railway and never re-locked:
   `gcloud resource-manager org-policies enable-enforce constraints/iam.disableServiceAccountKeyCreation --project=cns-line-oa`
-- **GitHub Actions `release.yml`** (GCP Cloud Run staging-preflight) has been
-  failing since before this session, unrelated to any of this session's
-  changes. Deprioritized in favor of Railway as the staging target; root
-  cause not diagnosed (403 blocked job-log access without admin/`gh auth`).
+- ~~**GitHub Actions `release.yml`** (GCP Cloud Run staging-preflight) has
+  been failing since before this session~~ — **root cause diagnosed and
+  closed 2026-09-05**: the user pasted the actual failing step's output,
+  bypassing the earlier 403-blocked-log-access dead end. Cause:
+  `deploy.env.staging.yaml` is materialized from the GitHub Actions secret
+  `DEPLOY_ENV_STAGING_YAML` (`release.yml`), which was never configured —
+  see the still-unchecked `documents/PRODUCTION_READINESS_CHECKLIST.md`
+  item. Since this pipeline targets Cloud Run, a target already
+  deprioritized in favor of Railway, and Railway's own deploy
+  (`railway.json`'s Dockerfile builder) doesn't touch this workflow at
+  all, fixed by switching `release.yml` to `workflow_dispatch`-only
+  (manual) instead of running — and failing — on every push to `main`.
+  `ci.yml` (build/lint/test) now runs on `main` pushes too, since it
+  previously excluded `main` entirely and `release.yml` had been the only
+  thing providing any CI signal there.
 
 ## Deferred features (P2 scope, dropped deliberately)
 
