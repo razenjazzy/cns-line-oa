@@ -51,4 +51,28 @@ const langEnHandler: CommandHandler = {
   },
 };
 
-export const languageHandlers: CommandHandler[] = [langThHandler, langEnHandler];
+// LANG (bare, no target) — toggles to the other language. Exists for the
+// rich menu's Language button: a default rich menu's action list is static
+// for every viewer, so it can't send a per-user-correct "LANG EN"/"LANG TH"
+// the way the NAV footer's Flex button already does (that one computes the
+// right target at render time, since each Flex reply is per-request).
+const langToggleHandler: CommandHandler = {
+  name: 'lang-toggle',
+  match: (u) => u === 'LANG',
+  handle: async (ctx) => {
+    const { userId, userLanguage } = ctx;
+    const target: UserLanguage = userLanguage === 'en' ? 'th' : 'en';
+    const result = await setUserLanguage(userId, target);
+    if (!result.ok) {
+      return [createBotTextFlexMessage({
+        title: tr(userLanguage, 'ผู้ช่วย Cloudnex', 'Cloudnex assistant'),
+        body: tr(userLanguage, 'บันทึกภาษาไม่สำเร็จ กรุณาลองใหม่อีกครั้ง', 'Unable to save language preference. Please try again.'),
+        language: userLanguage,
+        tone: 'error',
+      })];
+    }
+    return [botText(target === 'en' ? `${ctx.agentName} switched language to English.` : `${ctx.agentName} เปลี่ยนภาษาเป็นไทยแล้วค่ะ`, target)];
+  },
+};
+
+export const languageHandlers: CommandHandler[] = [langThHandler, langEnHandler, langToggleHandler];

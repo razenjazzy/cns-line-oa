@@ -27,6 +27,7 @@ const COMMAND_SPECS: CommandSpec[] = [
   { key: 'BACK', examples: ['BACK'], category: 'basics' },
   { key: 'LANG EN', examples: ['LANG EN'], aliases: ['ENGLISH'], category: 'basics' },
   { key: 'LANG TH', examples: ['LANG TH'], aliases: ['THAI', 'ภาษาไทย'], category: 'basics' },
+  { key: 'LANG', examples: ['LANG'], category: 'basics' },
 
   { key: 'PRODUCT FIND', examples: ['PRODUCT FIND App'], category: 'commerce' },
   { key: 'QUOTE CREATE', examples: ['QUOTE CREATE App Premium Plan,1,Somchai,0812345678'], category: 'commerce' },
