@@ -608,19 +608,25 @@ const createQuotationJourneyFlexMessage = (order, options, language) => {
     // Matches Odoo web's own Create Invoice button condition exactly
     // (sale.order.form: invisible="invoice_status != 'to invoice'").
     const canInvoice = !isCancelled && order.state === 'sale' && order.invoice_status === 'to invoice';
+    // Odoo's own convention: cancellation and invoicing are manager-level
+    // actions. Only an explicitly-resolved 'salesperson' tier loses them —
+    // undefined (no linked Odoo user, today's default) and 'sales_manager'
+    // both keep today's full admin action set. See findOdooSalesTierByPartnerId.
+    const isRestrictedToSalesperson = options.salesTier === 'salesperson';
     if (options.role === 'admin') {
         if (canStillAct) {
             footerRows.push([
                 createMessageActionButton((0, i18n_1.t)('confirm', language), `QUOTE CONFIRM ${order.id}`, 'primary', BRAND.teal),
                 createMessageActionButton((0, i18n_1.t)('sendToCustomer', language), `QUOTE SEND ${order.id}`, 'secondary', BRAND.tealTint),
             ]);
-            footerRows.push([
+            const lineActionButtons = [
                 createPrefillButton((0, i18n_1.t)('addItem', language), `QUOTE ADD ${order.id} `, 'secondary', BRAND.tealTint),
                 createPrefillButton((0, i18n_1.t)('editItem', language), `QUOTE EDIT ${order.id} `, 'secondary', BRAND.tealTint),
-                createMessageActionButton((0, i18n_1.t)('cancelQuote', language), `QUOTE CANCEL ${order.id}`, 'secondary', BRAND.goldTint),
-            ]);
+                ...(isRestrictedToSalesperson ? [] : [createMessageActionButton((0, i18n_1.t)('cancelQuote', language), `QUOTE CANCEL ${order.id}`, 'secondary', BRAND.goldTint)]),
+            ];
+            footerRows.push(lineActionButtons);
         }
-        if (canInvoice) {
+        if (canInvoice && !isRestrictedToSalesperson) {
             footerRows.push([createMessageActionButton((0, i18n_1.t)('createInvoice', language), `QUOTE INVOICE ${order.id}`, 'primary', BRAND.teal)]);
         }
         footerRows.push([createPrefillButton((0, i18n_1.t)('messageCustomer', language), `QUOTE MESSAGE ${order.id} `, 'secondary', BRAND.tealTint)]);

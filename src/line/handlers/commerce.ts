@@ -88,7 +88,7 @@ const demoOrderHandler: CommandHandler = {
       getSaleOrderPdfLink(order.id).then(v => v || undefined),
     ]);
     const role = ctx.profile.role === 'admin' ? 'admin' : 'customer';
-    return [createQuotationJourneyFlexMessage(order, { role, portalLink, pdfLink }, userLanguage)];
+    return [createQuotationJourneyFlexMessage(order, { role, salesTier: ctx.profile.salesTier, portalLink, pdfLink }, userLanguage)];
   },
 };
 
@@ -175,7 +175,7 @@ const demoQuoteHandler: CommandHandler = {
       getSaleOrderPdfLink(quotation.id).then(v => v || undefined),
     ]);
     const role = profile.role === 'admin' ? 'admin' : 'customer';
-    const card = createQuotationJourneyFlexMessage(order, { role, portalLink, pdfLink }, userLanguage);
+    const card = createQuotationJourneyFlexMessage(order, { role, salesTier: profile.salesTier, portalLink, pdfLink }, userLanguage);
 
     if (paymentTermNotFound) {
       return [

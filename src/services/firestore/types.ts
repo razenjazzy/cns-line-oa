@@ -45,6 +45,18 @@ export type GroupBuyWriteResult = {
 export type UserLanguage = 'th' | 'en';
 export type UserRole = 'admin' | 'user';
 
+/**
+ * Odoo-native tier, resolved once (best-effort) at ADMIN ENABLE time from
+ * the verified partner's linked res.users security-group membership — see
+ * findOdooSalesTierByPartnerId in src/services/odoo/admin.ts. This is an
+ * additive refinement layered on top of `role`, never a replacement for it:
+ * only ever consulted for a profile that is already `role === 'admin'`.
+ * Undefined (no linked Odoo user, or one in neither Sales group) means
+ * "fall back to today's plain admin behavior" — fails toward the current
+ * known-good state, never toward more access.
+ */
+export type OdooSalesTier = 'salesperson' | 'sales_manager';
+
 export type UserProfile = {
     language: UserLanguage;
     role: UserRole;
@@ -58,6 +70,7 @@ export type UserProfile = {
     consentNoticeShownAt?: string;
     marketingOptIn: boolean;
     lastActionOtpAt?: string;
+    salesTier?: OdooSalesTier;
 };
 
 export type OdooVerificationChallenge = {

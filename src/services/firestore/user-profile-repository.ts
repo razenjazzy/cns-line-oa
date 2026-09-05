@@ -16,6 +16,7 @@ type CachedUserState = {
     consentNoticeShownAt?: string;
     marketingOptIn?: boolean;
     lastActionOtpAt?: string;
+    salesTier?: 'salesperson' | 'sales_manager';
 };
 
 type RepositoryDependencies = {
@@ -141,6 +142,22 @@ export const createUserProfileRepository = (dependencies: RepositoryDependencies
         dependencies.mergeCached(userId, { role });
         const result = await dependencies.write('setUserRole', async database => {
             await database.collection('users').doc(userId).set({ role }, { merge: true });
+        });
+        if (!result.ok) dependencies.restorePrevious(userId, previous);
+        return result;
+    },
+
+    /**
+     * Odoo-native tier, resolved best-effort at ADMIN ENABLE time — see
+     * findOdooSalesTierByPartnerId. Additive on top of `role`; never called
+     * for a non-admin profile. Pass `undefined` to clear it back to the
+     * fallback (plain admin behavior), e.g. on ADMIN DISABLE.
+     */
+    setSalesTier: async (userId: string, salesTier: 'salesperson' | 'sales_manager' | undefined) => {
+        const previous = dependencies.getPrevious(userId);
+        dependencies.mergeCached(userId, { salesTier });
+        const result = await dependencies.write('setUserSalesTier', async database => {
+            await database.collection('users').doc(userId).set({ salesTier: salesTier ?? null }, { merge: true });
         });
         if (!result.ok) dependencies.restorePrevious(userId, previous);
         return result;

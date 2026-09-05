@@ -636,7 +636,7 @@ const QUOTATION_STATE_SEQUENCE = ['draft', 'sent', 'sale'] as const;
  */
 export const createQuotationJourneyFlexMessage = (
   order: OdooSaleOrder,
-  options: { role: 'admin' | 'customer'; portalLink?: string; pdfLink?: string },
+  options: { role: 'admin' | 'customer'; salesTier?: 'salesperson' | 'sales_manager'; portalLink?: string; pdfLink?: string },
   language: Lang
 ): messagingApi.FlexMessage => {
   const customerName = order.partner_id?.[1] || '-';
@@ -691,6 +691,11 @@ export const createQuotationJourneyFlexMessage = (
   // Matches Odoo web's own Create Invoice button condition exactly
   // (sale.order.form: invisible="invoice_status != 'to invoice'").
   const canInvoice = !isCancelled && order.state === 'sale' && order.invoice_status === 'to invoice';
+  // Odoo's own convention: cancellation and invoicing are manager-level
+  // actions. Only an explicitly-resolved 'salesperson' tier loses them —
+  // undefined (no linked Odoo user, today's default) and 'sales_manager'
+  // both keep today's full admin action set. See findOdooSalesTierByPartnerId.
+  const isRestrictedToSalesperson = options.salesTier === 'salesperson';
 
   if (options.role === 'admin') {
     if (canStillAct) {
@@ -698,13 +703,14 @@ export const createQuotationJourneyFlexMessage = (
         createMessageActionButton(t('confirm', language), `QUOTE CONFIRM ${order.id}`, 'primary', BRAND.teal),
         createMessageActionButton(t('sendToCustomer', language), `QUOTE SEND ${order.id}`, 'secondary', BRAND.tealTint),
       ]);
-      footerRows.push([
+      const lineActionButtons = [
         createPrefillButton(t('addItem', language), `QUOTE ADD ${order.id} `, 'secondary', BRAND.tealTint),
         createPrefillButton(t('editItem', language), `QUOTE EDIT ${order.id} `, 'secondary', BRAND.tealTint),
-        createMessageActionButton(t('cancelQuote', language), `QUOTE CANCEL ${order.id}`, 'secondary', BRAND.goldTint),
-      ]);
+        ...(isRestrictedToSalesperson ? [] : [createMessageActionButton(t('cancelQuote', language), `QUOTE CANCEL ${order.id}`, 'secondary', BRAND.goldTint)]),
+      ];
+      footerRows.push(lineActionButtons);
     }
-    if (canInvoice) {
+    if (canInvoice && !isRestrictedToSalesperson) {
       footerRows.push([createMessageActionButton(t('createInvoice', language), `QUOTE INVOICE ${order.id}`, 'primary', BRAND.teal)]);
     }
     footerRows.push([createPrefillButton(t('messageCustomer', language), `QUOTE MESSAGE ${order.id} `, 'secondary', BRAND.tealTint)]);

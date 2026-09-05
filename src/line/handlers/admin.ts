@@ -1,7 +1,7 @@
 import type { CommandHandler } from './index';
 import { isAuthorizedForAdminRole } from '../../services/admin-authorization';
-import { verifyOdooAdminAccess } from '../../services/odoo/admin';
-import { recordAuditEvent, setUserRole } from '../../services/firestore';
+import { findOdooSalesTierByPartnerId, verifyOdooAdminAccess } from '../../services/odoo/admin';
+import { recordAuditEvent, setUserRole, setUserSalesTier } from '../../services/firestore';
 import { createAdminConfigFlexMessage, createBotTextFlexMessage } from '../templates';
 import type { UserLanguage } from '../../services/firestore';
 import { getChannelServiceOverride, resolveChannelConfig, setChannelServiceOverride } from '../channels';
@@ -84,7 +84,14 @@ const adminEnableHandler: CommandHandler = {
       return [botText(tr(userLanguage, 'เปิดสิทธิ์แอดมินไม่สำเร็จจากระบบข้อมูล กรุณาลองอีกครั้ง', 'Admin enable failed due to data-store issue. Please try again.'), userLanguage)];
     }
 
-    recordAuditEvent({ action: 'role_grant', outcome: 'success', actorUserId: userId, channelId: channel?.channelId, requestId, targetId: userId });
+    // Best-effort Odoo-native tier refinement — never blocks or downgrades
+    // ADMIN ENABLE itself. No linked Odoo user (the common case today) means
+    // this resolves to undefined and the account keeps today's full admin
+    // behavior unchanged, exactly as before this existed.
+    const salesTier = profile.odooPartnerId ? await findOdooSalesTierByPartnerId(profile.odooPartnerId) : undefined;
+    if (salesTier) await setUserSalesTier(userId, salesTier);
+
+    recordAuditEvent({ action: 'role_grant', outcome: 'success', actorUserId: userId, channelId: channel?.channelId, requestId, targetId: userId, detail: salesTier || 'no_linked_odoo_user' });
     return [botText(tr(userLanguage, 'เปิดสิทธิ์แอดมินแล้ว สามารถใช้คำสั่งแอดมินได้', 'Admin role enabled. You can now run admin commands.'), userLanguage)];
   },
 };
@@ -101,6 +108,7 @@ const adminDisableHandler: CommandHandler = {
     if (!roleResult.ok) {
       return [botText(tr(userLanguage, 'ปิดสิทธิ์แอดมินไม่สำเร็จจากระบบข้อมูล กรุณาลองอีกครั้ง', 'Admin disable failed due to a data-store issue. Please try again.'), userLanguage)];
     }
+    if (profile.salesTier) await setUserSalesTier(userId, undefined);
 
     recordAuditEvent({ action: 'role_revoke', outcome: 'success', actorUserId: userId, channelId: channel?.channelId, requestId, targetId: userId });
     return [botText(tr(userLanguage, 'ปิดสิทธิ์แอดมินสำหรับบัญชีนี้แล้ว', 'Admin role disabled for this account.'), userLanguage)];

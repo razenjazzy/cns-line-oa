@@ -1,6 +1,6 @@
 # Enterprise Roadmap — Odoo-native permissions, admin config UI, multi-ERP stance, and a scored gap analysis
 
-## Status as of 2026-09-04
+## Status as of 2026-09-05 (updated — section 1 now shipped)
 
 This is a planning document, not a changelog — nothing here is built yet.
 The Odoo-permissions piece in particular touches the authorization chain
@@ -65,26 +65,42 @@ finer-grained layer on top**, only for users who already cleared that gate:
    group) → **falls back to today's plain admin/customer behavior** —
    fails toward the current known-good state, never toward more access.
 
-### Step-by-step to-dos
+### Step-by-step to-dos — shipped 2026-09-05
 
-- [ ] Confirm with you: is `partner 12` (your current test account)
-  *supposed* to have a real Odoo employee login, or is it a customer
-  contact being used for admin testing? This decides whether the fallback
-  path (today's binary admin/customer) needs to stay the *primary* path
-  for your own testing, or whether you'll set up a proper linked
-  `res.users` login to test the tiered behavior for real.
-- [ ] Live field-discovery script (same technique used all session) to
-  nail down the exact `res.groups`/security-group field names and IDs on
-  this instance for Sales User vs Sales Manager.
-- [ ] Extend `UserProfile`/Firestore with `salesTier`, written during
-  `VERIFY`/`ADMIN ENABLE`, read-only elsewhere.
-- [ ] Change `createQuotationJourneyFlexMessage`'s `options.role` from a
-  binary `'admin' | 'customer'` to also carry `salesTier`, and gate each
-  footer button individually instead of the current single `role === 'admin'` check.
-- [ ] Mirror the same tiering in each handler's server-side check
-  (`quotation.ts`) — never trust which buttons the client rendered, same
-  discipline already used for `QUOTE APPROVE`'s partner-id check.
-- [ ] Update `documents/STORYBOARD.md` once shipped.
+- [x] You answered: keep the test account as a customer-contact-based admin
+  account (not a real Odoo employee login). Built accordingly — the
+  fallback path (today's binary admin/customer) is the one your account
+  will actually exercise; the tiered path is implemented but unverified
+  end-to-end until a real Sales User/Manager Odoo login exists to test
+  against.
+- [x] `findOdooSalesTierByPartnerId` (`src/services/odoo/admin.ts`) —
+  resolves `res.users` by `partner_id`, then tries `all_group_ids` /
+  `group_ids` / `groups_id` in turn (this instance's actual field name
+  wasn't re-confirmed live since there's no linked user to query against
+  yet — the fallback list covers the known-different-across-versions
+  cases; first real hit through this path should be double-checked against
+  whatever field name it actually resolves via). Sales Team groups resolved
+  by stable external ID (`ir.model.data`, module `sales_team`), not a
+  hardcoded numeric id. Never throws — any failure at any step returns
+  `undefined` (today's behavior).
+- [x] `UserProfile`/Firestore extended with `salesTier`, written at
+  `ADMIN ENABLE` (best-effort, never blocks the grant), cleared at
+  `ADMIN DISABLE`.
+- [x] `createQuotationJourneyFlexMessage`'s `options` now carries
+  `salesTier` alongside `role`; a `salesperson` tier hides Cancel/Invoice
+  from the footer (Odoo's own manager-level convention), `sales_manager`
+  and undefined (the fallback) keep every button `admin` gets today.
+- [x] Mirrored server-side in `quotation.ts`'s `QUOTE CANCEL`/`QUOTE
+  INVOICE` handlers — denies with a clear message and audits the denial,
+  regardless of which buttons the client rendered, same discipline as
+  `QUOTE APPROVE`'s partner-id check.
+- [x] `tests/user-profile.test.ts` covers the new mapper field (parse/
+  fallback, including the Firestore `null` clear-marker).
+- [ ] Once a real Odoo Sales User/Manager login exists to test against:
+  confirm the actual `res.users` group field name on this instance and
+  drop the unused candidates from the fallback list; verify the tiered
+  button set end-to-end on a live LINE client.
+- [ ] Update `documents/STORYBOARD.md` to reflect this.
 
 ---
 
@@ -174,19 +190,22 @@ to validate it against.
 ERP adapter, modular Firestore/Odoo, approval policy, audit query,
 structured logging, `ADMIN CONFIG` UI, ansible secret hardening — see
 `documents/STAGED_IMPLEMENTATION_BACKLOG.md` Track A/B1/B2, now merged and
-verified: `npm run build`/`lint`/`test` clean, 38 files / 201 tests).
+verified: `npm run build`/`lint`/`test` clean, 38 files / 203 tests).
 
 | Dimension | Score | Why | To close the gap |
 |---|---|---|---|
 | **Feature completeness** (core Sales journey) | 8/10 | Unchanged by this pass — full Quotation → Sales Order → Invoice lifecycle built & verified (`STORYBOARD.md`). Gaps: delivery (Odoo-blocked), pricelist/salesperson (no data yet), line removal (qty-edit only, no delete-a-line). | [ ] Add `QUOTE REMOVE <id> <product>` (delete a line entirely). [ ] Revisit pricelist/salesperson once Odoo has data. |
-| **Security** | 8/10 (was 7) | Gains this pass: `QUOTE CREATE`'s missing audit trail closed (every privileged write now audits success/failure); ansible's hardcoded fallback secrets (`staging-webhook-token`, `staging-ops-token`) removed and replaced with a fail-closed pre-deploy assert; `tests/http-auth.test.ts` adds regression coverage for admin/ops HTTP auth; `ERP_PROVIDER` fails closed. Remaining gaps: `USER`/`SERVICE` CRUD still not step-up-OTP-gated; permissions are still LINE-flag-based, not Odoo-role-based (section 1, not started — blocked on your answer about whether the test account should have a real Odoo login). | [ ] Extend step-up OTP's `GATED_MUTATION_PREFIXES` to `USER`/`SERVICE` CRUD. [ ] Section 1, pending your input. |
+| **Security** | 9/10 (was 7) | Gains: `QUOTE CREATE`'s missing audit trail closed; ansible's hardcoded fallback secrets removed + fail-closed pre-deploy assert; `tests/http-auth.test.ts`; `ERP_PROVIDER` fails closed; **section 1 shipped** — `salesTier` gates Cancel/Invoice server-side, fail-safe to today's behavior for every account with no linked Odoo user. Remaining gap: `USER`/`SERVICE` CRUD still not step-up-OTP-gated. | [ ] Extend step-up OTP's `GATED_MUTATION_PREFIXES` to `USER`/`SERVICE` CRUD. |
 | **Configurability** | 8/10 (was 6) | `ADMIN CONFIG` (section 2) is now shipped — a Flex toggle grid over the existing per-channel service flags, admin-only. `ERP_PROVIDER`/`ENABLED_SERVICES`/`DEFAULT_LANGUAGE`/`LOG_LEVEL` are now documented env-configurable knobs. Remaining gap: language/copy is still bilingual-hardcoded rather than a configurable string table beyond the quotation feature's own `i18n.ts`. | [ ] Extend `i18n.ts`'s pattern app-wide only if a third language is ever actually needed — deliberately not done speculatively. |
-| **Overall architecture / design quality** | 9/10 (was 8) | The ERP boundary is no longer just a documented convention — `src/erp/` is a real adapter+registry, fail-closed for unimplemented providers, wired into every commerce/directory/catalog/reporting handler; `CLAUDE.md` now documents it. Firestore/Odoo are barrel-split into domain modules with an import-compatible facade. Remaining gap: no per-tier permission model yet (section 1); a completed-but-unwired command-registry/policy foundation (`src/ux/`, `command-policy.ts`) exists for a future menu-projection feature (Track C2) and is intentionally not live yet. | [ ] Section 1, once you've confirmed the design. [ ] Track C2 (registry-to-menu projection), only after Track A3 (broader privileged-write audit review). |
+| **Overall architecture / design quality** | 9/10 (was 8) | The ERP boundary is no longer just a documented convention — `src/erp/` is a real adapter+registry, fail-closed for unimplemented providers, wired into every commerce/directory/catalog/reporting handler; `CLAUDE.md` now documents it. Firestore/Odoo are barrel-split into domain modules with an import-compatible facade. `salesTier` is a real additive layer on top of the protected chain, never replacing it. Remaining gap: a completed-but-unwired command-registry/policy foundation (`src/ux/`, `command-policy.ts`) exists for a future menu-projection feature (Track C2) and is intentionally not live yet. | [ ] Track C2 (registry-to-menu projection), only after Track A3 (broader privileged-write audit review). |
 
-**Total: ~33/40 → 8.25/10.** The remaining 1.75 points are concentrated
-almost entirely in Section 1 (Odoo-role-based permissions) — every other
-gap either has a small, scoped to-do or is deliberately deferred pending
-a real second-ERP requirement.
+**Total: ~35/40 → 8.75/10.** Section 1 (Odoo-role-based permissions) is
+now built, fail-safe, and tested at the mapper layer — but genuinely
+unverified end-to-end (no real Sales User/Manager Odoo login exists to
+click-test the tiered button set against yet; your own account correctly
+exercises only the fallback path). The remaining 1.25 points are the small,
+individually-scoped to-dos in the table above — nothing left is a
+speculative or unstarted initiative.
 
 ---
 

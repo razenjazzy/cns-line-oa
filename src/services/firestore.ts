@@ -49,6 +49,7 @@ type CachedUserState = {
     marketingOptIn?: boolean;
     /** Last time this user completed the step-up OTP gate for a mutating quote action. */
     lastActionOtpAt?: string;
+    salesTier?: 'salesperson' | 'sales_manager';
 };
 
 const isPendingFlowActive = (pendingFlow: PendingFlowState | undefined | null): pendingFlow is PendingFlowState => {
@@ -415,6 +416,8 @@ export const recordChatFeedback = communicationRepository.recordChatFeedback;
 export const setUserPendingFlow = userProfileRepository.setPendingFlow;
 
 export const setUserRole = userProfileRepository.setRole;
+
+export const setUserSalesTier = userProfileRepository.setSalesTier;
 
 export const setUserOdooPartner = userProfileRepository.setOdooPartner;
 

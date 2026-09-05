@@ -34,4 +34,17 @@ describe('Firestore user profile mapping', () => {
     const profile = parseStoredUserProfile({ pendingFlow: { flow: 'QUOTE_CREATE', stepIndex: 1, collected: {}, expiresAt: '2020-01-01T00:00:00.000Z' } }, pendingFlowIsActive);
     expect(profile.pendingFlow).toBeUndefined();
   });
+
+  it('parses a recognized salesTier and drops anything else, including the Firestore null clear-marker', () => {
+    expect(parseStoredUserProfile({ salesTier: 'salesperson' }, pendingFlowIsActive).salesTier).toBe('salesperson');
+    expect(parseStoredUserProfile({ salesTier: 'sales_manager' }, pendingFlowIsActive).salesTier).toBe('sales_manager');
+    expect(parseStoredUserProfile({ salesTier: null }, pendingFlowIsActive).salesTier).toBeUndefined();
+    expect(parseStoredUserProfile({ salesTier: 'owner' }, pendingFlowIsActive).salesTier).toBeUndefined();
+    expect(parseStoredUserProfile({}, pendingFlowIsActive).salesTier).toBeUndefined();
+  });
+
+  it('passes salesTier through from the cache as-is (undefined unless a prior Odoo lookup already cached one)', () => {
+    expect(buildFallbackUserProfile({ salesTier: 'sales_manager' }, pendingFlowIsActive, 'en').salesTier).toBe('sales_manager');
+    expect(buildFallbackUserProfile({}, pendingFlowIsActive, 'en').salesTier).toBeUndefined();
+  });
 });

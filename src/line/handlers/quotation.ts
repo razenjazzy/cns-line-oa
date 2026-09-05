@@ -140,7 +140,7 @@ const quoteStatusHandler: CommandHandler = {
 
     const role = profile.role === 'admin' ? 'admin' : 'customer';
     const { portalLink, pdfLink } = await getOrderLinks(orderId);
-    return [createQuotationJourneyFlexMessage(order, { role, portalLink, pdfLink }, userLanguage)];
+    return [createQuotationJourneyFlexMessage(order, { role, salesTier: profile.salesTier, portalLink, pdfLink }, userLanguage)];
   },
 };
 
@@ -175,7 +175,7 @@ const quoteConfirmHandler: CommandHandler = {
       .catch(err => console.warn('quote-confirm: customer notify failed (non-fatal):', err));
 
     const { portalLink, pdfLink } = await getOrderLinks(orderId);
-    return [createQuotationJourneyFlexMessage(order, { role: 'admin', portalLink, pdfLink }, userLanguage)];
+    return [createQuotationJourneyFlexMessage(order, { role: 'admin', salesTier: profile.salesTier, portalLink, pdfLink }, userLanguage)];
   },
 };
 
@@ -316,7 +316,7 @@ const quoteAddHandler: CommandHandler = {
       .catch(err => console.warn('quote-add: customer notify failed (non-fatal):', err));
 
     const { portalLink, pdfLink } = await getOrderLinks(parsed.orderId);
-    return [createQuotationJourneyFlexMessage(order, { role: 'admin', portalLink, pdfLink }, userLanguage)];
+    return [createQuotationJourneyFlexMessage(order, { role: 'admin', salesTier: profile.salesTier, portalLink, pdfLink }, userLanguage)];
   },
 };
 
@@ -355,7 +355,7 @@ const quoteEditHandler: CommandHandler = {
       .catch(err => console.warn('quote-edit: customer notify failed (non-fatal):', err));
 
     const { portalLink, pdfLink } = await getOrderLinks(parsed.orderId);
-    return [createQuotationJourneyFlexMessage(order, { role: 'admin', portalLink, pdfLink }, userLanguage)];
+    return [createQuotationJourneyFlexMessage(order, { role: 'admin', salesTier: profile.salesTier, portalLink, pdfLink }, userLanguage)];
   },
 };
 
@@ -368,6 +368,15 @@ const quoteCancelHandler: CommandHandler = {
   handle: async (ctx) => {
     const { userLanguage, userId, profile, channel, requestId, text } = ctx;
     if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
+    // Manager-level action per Odoo's own convention — never trust which
+    // buttons the client happened to render (same discipline as QUOTE
+    // APPROVE's partner-id check). Undefined tier (no linked Odoo user,
+    // today's default) keeps today's behavior; only an explicitly-resolved
+    // 'salesperson' is restricted.
+    if (profile.salesTier === 'salesperson') {
+      recordAuditEvent({ action: 'quote_cancel', outcome: 'failure', actorUserId: userId, channelId: channel?.channelId, requestId, detail: 'sales_tier_restricted' });
+      return [botText(tr(userLanguage, 'การยกเลิกใบเสนอราคาต้องได้รับสิทธิ์ระดับผู้จัดการฝ่ายขาย', 'Cancelling a quotation requires sales-manager-level access.'), userLanguage)];
+    }
 
     const orderId = parseOrderId(text, 'QUOTE CANCEL');
     if (!orderId) return [notFoundReply(userLanguage)];
@@ -387,7 +396,7 @@ const quoteCancelHandler: CommandHandler = {
       .catch(err => console.warn('quote-cancel: customer notify failed (non-fatal):', err));
 
     const { portalLink, pdfLink } = await getOrderLinks(orderId);
-    return [createQuotationJourneyFlexMessage(order, { role: 'admin', portalLink, pdfLink }, userLanguage)];
+    return [createQuotationJourneyFlexMessage(order, { role: 'admin', salesTier: profile.salesTier, portalLink, pdfLink }, userLanguage)];
   },
 };
 
@@ -400,6 +409,12 @@ const quoteInvoiceHandler: CommandHandler = {
   handle: async (ctx) => {
     const { userLanguage, userId, profile, channel, requestId, text } = ctx;
     if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
+    // Manager-level action per Odoo's own convention — see the matching
+    // check in quote-cancel above.
+    if (profile.salesTier === 'salesperson') {
+      recordAuditEvent({ action: 'quote_invoice', outcome: 'failure', actorUserId: userId, channelId: channel?.channelId, requestId, detail: 'sales_tier_restricted' });
+      return [botText(tr(userLanguage, 'การออกใบแจ้งหนี้ต้องได้รับสิทธิ์ระดับผู้จัดการฝ่ายขาย', 'Creating an invoice requires sales-manager-level access.'), userLanguage)];
+    }
 
     const orderId = parseOrderId(text, 'QUOTE INVOICE');
     if (!orderId) return [notFoundReply(userLanguage)];
@@ -422,7 +437,7 @@ const quoteInvoiceHandler: CommandHandler = {
     }
 
     const { portalLink, pdfLink } = await getOrderLinks(orderId);
-    return [createQuotationJourneyFlexMessage(order, { role: 'admin', portalLink, pdfLink }, userLanguage)];
+    return [createQuotationJourneyFlexMessage(order, { role: 'admin', salesTier: profile.salesTier, portalLink, pdfLink }, userLanguage)];
   },
 };
 

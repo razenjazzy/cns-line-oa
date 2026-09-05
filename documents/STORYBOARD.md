@@ -19,7 +19,13 @@ real device · ⬜ not built · 🔒 blocked by Odoo-side configuration, not cod
   quote) require completing identity verification first.
 - **Sales / Admin user** — a LINE user who has verified their Odoo identity
   *and* is on the `ADMIN_USER_ID` allowlist (`src/services/admin-authorization.ts`).
-  Drives quote creation and the lifecycle on the customer's behalf.
+  Drives quote creation and the lifecycle on the customer's behalf. If their
+  verified Odoo partner also has a linked `res.users` login in a Sales
+  security group, `ADMIN ENABLE` additionally resolves a `salesTier`
+  (`salesperson`/`sales_manager`) — a `salesperson` gets the day-to-day
+  actions (Confirm/Send/Add/Edit/Message) but not Cancel/Invoice, which stay
+  manager-level. No linked Odoo user (the common case, and today's own test
+  account) keeps the full admin action set exactly as before this existed.
 
 ---
 
@@ -37,6 +43,11 @@ real device · ⬜ not built · 🔒 blocked by Odoo-side configuration, not cod
 4. `ADMIN VERIFY` / `ADMIN ENABLE` → elevates to admin role. Full chain:
    LINE identity → `odooVerified` → `ADMIN_USER_ID` allowlist → Odoo
    admin-capability check → role grant, audited. ✅
+5. `ADMIN ENABLE` additionally attempts to resolve an Odoo-native
+   `salesTier` from the partner's linked `res.users` login (see Actors
+   above). 🚧 — built and unit-tested at the mapper layer, but not yet
+   click-tested end-to-end on a live LINE client against a real tiered
+   Sales User/Manager Odoo login (none exists yet to test against).
 
 ## Phase 2 — Product & catalog discovery
 
