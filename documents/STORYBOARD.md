@@ -120,7 +120,7 @@ real device · ⬜ not built · 🔒 blocked by Odoo-side configuration, not cod
 
 ## Phase 7 — Admin/ops surface (parallel track, not sales-journey-specific)
 
-- `USER`/`SERVICE` CRUD via guided forms. ✅ — **not** step-up-OTP-gated yet (scoped out this pass, noted in BACKLOG.md)
+- `USER`/`SERVICE` CRUD via guided forms. ✅ — step-up-OTP-gated (closed 2026-09-05, `tests/action-otp-gate.test.ts`)
 - `DAILY REPORT` (AI-summarized daily report), `SEGMENT CUSTOMERS` (segmentation + targeted multicast). ✅
 - `/ops/audit-log` + BigQuery archive/rotation, `/ops/kpi`, `/ops/workflow-audit`. ✅
 - CLI (`cns`) and MCP server exposing the same ops endpoints as agent tools. ✅
@@ -170,7 +170,7 @@ working estimate:
 | Area | Estimate | Basis |
 |---|---|---|
 | Core Quotation → Sales Order → Invoice lifecycle | **~85–90%** | Every step in Phases 3–5 is built and live-verified; the gap is almost entirely Odoo-side blocks (delivery, pricelists), not missing code. |
-| Enterprise-grade hardening (auth, audit, step-up security) | **~85%** (was ~70%) | Step-up OTP, full admin-authorization chain, audit trail + archive, `ADMIN CONFIG` UI, ansible fallback-secret removal, `salesTier` Odoo-role gating, and `tests/http-auth.test.ts` regression coverage are all shipped since this was last written (see `ENTERPRISE_ROADMAP.md` — security scored 9/10). Remaining gap: `USER`/`SERVICE` CRUD still isn't step-up-gated, and Odoo-touching handlers still have no automated test coverage beyond live verification. |
+| Enterprise-grade hardening (auth, audit, step-up security) | **~95%** (was ~70%) | Step-up OTP (now covering the full quote lifecycle **and** `USER`/`SERVICE` CRUD), full admin-authorization chain, audit trail + archive, `ADMIN CONFIG` UI, ansible fallback-secret removal, `salesTier` Odoo-role gating, `tests/http-auth.test.ts`/`tests/action-otp-gate.test.ts` regression coverage, and Track A3's audit sweep (which found and fixed a real authorization bypass on `DAILY REPORT`/`SEGMENT CUSTOMERS`) are all shipped since this was last written (see `ENTERPRISE_ROADMAP.md` — security now scores 10/10). Remaining gap: Odoo-touching handlers still have no automated test coverage beyond live verification (a deliberate choice — no mocking pattern exists yet for `odoo.ts`, not introduced speculatively). |
 | UX consistency & polish | **~50%** | Design-system pass, picker chips, and the summary card shipped broadly; the rich-menu redesign, `GUIDE` overhaul, and per-card header consistency sweep are explicitly not started. |
 
 **Overall: roughly 3/4 of the core sales journey is built and verified.**
