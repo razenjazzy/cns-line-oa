@@ -108,7 +108,7 @@ export const createOptionalSummaryFlexMessage = (params: {
     quickReply: {
       items: params.fields.slice(0, 13).map(f => ({
         type: 'action' as const,
-        action: { type: 'message' as const, label: buttonLabel(`${f.value ? '✓ ' : ''}${f.label}`), text: `FORM FIELD ${f.index}` },
+        action: { type: 'message' as const, label: buttonLabel(`${f.value ? '☑' : '☐'} ${f.label}`), text: `FORM FIELD ${f.index}` },
       })),
     },
     contents: {
@@ -139,7 +139,7 @@ export const createOptionalSummaryFlexMessage = (params: {
           paddingAll: 'sm' as const,
           action: { type: 'message' as const, text: `FORM FIELD ${f.index}` },
           contents: [
-            { type: 'text' as const, text: f.label, size: 'sm' as const, weight: 'bold' as const, color: BRAND.ink, flex: 2, wrap: true },
+            { type: 'text' as const, text: `${f.value ? '☑' : '☐'} ${f.label}`, size: 'sm' as const, weight: 'bold' as const, color: f.value ? BRAND.tealStrong : BRAND.ink, flex: 2, wrap: true },
             {
               type: 'text' as const,
               text: f.value || (params.language === 'en' ? '(not set)' : '(ยังไม่ระบุ)'),
