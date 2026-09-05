@@ -2,14 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { addSaleOrderLine, cancelSaleOrder, confirmSaleOrder, createInvoiceForSaleOrder, createQuotationFromLine, findOrderByReference, updateSaleOrderLineQty } from '../src/services/odoo/sales';
 import { createPartnerFromLine, deletePartnerFromLine, getPartnerByPhone, updatePartnerFromLine } from '../src/services/odoo/partners';
 import { getDailySalesSnapshot } from '../src/services/odoo/reporting';
-import { createServiceCatalogItem, deleteServiceCatalogItem, findProductByQuery, getServiceByIdentifier, listServiceCatalogItems, updateServiceCatalogItem } from '../src/services/odoo/catalog';
+import { createServiceCatalogItem, deleteServiceCatalogItem, findProductsByQuery, getServiceByIdentifier, listServiceCatalogItems, updateServiceCatalogItem } from '../src/services/odoo/catalog';
 import { odooAdapter } from '../src/erp/odoo-adapter';
 import { getErpAdapter } from '../src/erp/registry';
 
 vi.mock('../src/services/odoo/catalog', () => ({
   createServiceCatalogItem: vi.fn(),
   deleteServiceCatalogItem: vi.fn(),
-  findProductByQuery: vi.fn(),
+  findProductsByQuery: vi.fn(),
   getServiceByIdentifier: vi.fn(),
   listServiceCatalogItems: vi.fn(),
   updateServiceCatalogItem: vi.fn(),
@@ -33,7 +33,7 @@ vi.mock('../src/services/odoo/reporting', () => ({
   getDailySalesSnapshot: vi.fn(),
 }));
 
-const mockedFindProduct = vi.mocked(findProductByQuery);
+const mockedFindProducts = vi.mocked(findProductsByQuery);
 const mockedListServices = vi.mocked(listServiceCatalogItems);
 const mockedGetService = vi.mocked(getServiceByIdentifier);
 const mockedCreateService = vi.mocked(createServiceCatalogItem);
@@ -66,14 +66,26 @@ describe('Odoo ERP adapter', () => {
   });
 
   it('normalizes product search results and filters by name or SKU', async () => {
-    mockedFindProduct.mockResolvedValue({ id: 1, name: 'Widget Pro', default_code: 'WP-1', list_price: 125, qty_available: 8 });
+    mockedFindProducts.mockResolvedValue([{ id: 1, name: 'Widget Pro', default_code: 'WP-1', list_price: 125, qty_available: 8 }]);
 
     await expect(odooAdapter.searchProducts(' widget ', 5)).resolves.toEqual([
       { id: 1, name: 'Widget Pro', sku: 'WP-1', price: 125, quantity: 8, currency: 'THB' },
     ]);
-    expect(mockedFindProduct).toHaveBeenCalledWith('widget');
+    expect(mockedFindProducts).toHaveBeenCalledWith('widget', 5);
     await expect(odooAdapter.searchProducts('   ')).resolves.toEqual([]);
-    expect(mockedFindProduct).toHaveBeenCalledTimes(1);
+    expect(mockedFindProducts).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns every match when a search term is ambiguous, instead of only the first', async () => {
+    mockedFindProducts.mockResolvedValue([
+      { id: 1, name: 'App Premium Plan', list_price: 100, qty_available: 5 },
+      { id: 2, name: 'App Premium Plan XL', list_price: 150, qty_available: 2 },
+    ]);
+
+    await expect(odooAdapter.searchProducts('app', 5)).resolves.toEqual([
+      { id: 1, name: 'App Premium Plan', sku: undefined, price: 100, quantity: 5, currency: 'THB' },
+      { id: 2, name: 'App Premium Plan XL', sku: undefined, price: 150, quantity: 2, currency: 'THB' },
+    ]);
   });
 
   it('delegates customer and sales operations through domain facades', async () => {

@@ -134,6 +134,40 @@ export const findProductByQuery = async (query: string): Promise<OdooProduct | n
 };
 
 /**
+ * Same ilike search as findProductByQuery, but returns every match up to
+ * `limit` instead of only the first row — lets a caller show a picker when
+ * a search term is genuinely ambiguous ("App" matching several plans)
+ * instead of silently acting on whichever row Odoo happened to return
+ * first. findProductByQuery itself is left untouched since callers that
+ * need exactly one product (e.g. quote-line creation) still want that
+ * single-result contract.
+ */
+export const findProductsByQuery = async (query: string, limit = 5): Promise<OdooProduct[]> => {
+  const normalizedQuery = normalizeLookupText(query);
+  if (!normalizedQuery) return [];
+
+  const config = getConfig();
+  if (!config) return [];
+
+  const uid = await loginRead(config);
+  if (!uid) return [];
+
+  const rows = await executeKwRead<Record<string, unknown>[]>(
+    config,
+    uid,
+    'product.product',
+    'search_read',
+    [[['name', 'ilike', normalizedQuery]]],
+    {
+      fields: ['id', 'name', 'list_price', 'qty_available', 'default_code'],
+      limit,
+    }
+  );
+
+  return rows.map(parseProduct);
+};
+
+/**
  * Powers the guided-form product picker (select instead of type) — mirrors
  * listServiceCatalogItems's convention exactly, just without the
  * type='service' filter findProductByQuery also doesn't apply.

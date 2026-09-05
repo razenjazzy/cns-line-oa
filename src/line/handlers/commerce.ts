@@ -1,6 +1,7 @@
 import type { CommandHandler } from './index';
 import {
   createProductCardFlexMessage,
+  createProductPickerFlexMessage,
   createQuotationJourneyFlexMessage,
   createBotTextFlexMessage,
   formatMoney,
@@ -48,10 +49,14 @@ const demoProductHandler: CommandHandler = {
       const { resolveCommandReply } = await import('../command-router');
       return resolveCommandReply({ ...ctx, text: 'FORM PRODUCT FIND' });
     }
-    const product = (await getErpAdapter().searchProducts(query, 1))[0];
-    if (!product) {
+    const products = await getErpAdapter().searchProducts(query, 5);
+    if (!products.length) {
       return [botText(tr(userLanguage, `ไม่พบสินค้าที่ตรงกับ "${query}" ลองใช้ชื่อสินค้าอื่นดูนะคะ`, `No product matched "${query}". Try a different product name?`), userLanguage)];
     }
+    if (products.length > 1) {
+      return [createProductPickerFlexMessage(products, userLanguage)];
+    }
+    const product = products[0];
     return [createProductCardFlexMessage(product.name, product.price || 0, product.quantity || 0, userLanguage)];
   },
 };

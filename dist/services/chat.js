@@ -279,7 +279,7 @@ const processGeminiResponse = async (response, userId, isThai, agentName) => {
 // ---------------------------------------------------------------------------
 // Main export — processChatMessage
 // ---------------------------------------------------------------------------
-const processChatMessage = async (userId, userText, language = 'th') => {
+const processChatMessage = async (userId, userText, language) => {
     const agentName = (0, channels_1.getAgentName)();
     const isThai = language === 'th';
     // AI disabled globally — skip straight to heuristic

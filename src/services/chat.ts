@@ -331,7 +331,7 @@ const processGeminiResponse = async (
 export const processChatMessage = async (
   userId: string,
   userText: string,
-  language: ChatLanguage = 'th',
+  language: ChatLanguage,
 ): Promise<ChatResult> => {
   const agentName = getAgentName();
   const isThai = language === 'th';

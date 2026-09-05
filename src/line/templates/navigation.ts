@@ -1,5 +1,5 @@
 import { messagingApi } from '@line/bot-sdk';
-import { BRAND, buttonLabel, createMessageActionButton, truncate, type ReportLanguage } from './shared';
+import { BRAND, buttonLabel, createMessageActionButton, createTapRow, truncate, type ReportLanguage } from './shared';
 
 export const SERVICE_ICON: Record<string, string> = {
   VERIFY: '🔐',
@@ -38,17 +38,9 @@ export const createServiceHomeFlexMessage = (
         type: 'box',
         layout: 'vertical',
         spacing: 'sm',
-        contents: services.slice(0, 10).map(service => ({
-          type: 'button',
-          style: 'primary',
-          height: 'md',
-          color: BRAND.teal,
-          action: {
-            type: 'message',
-            label: buttonLabel(`${SERVICE_ICON[service.key] || ''} ${service.label}`.trim()),
-            text: `NAV ${service.key}`,
-          },
-        })),
+        contents: services.slice(0, 10).map(service =>
+          createTapRow(`${SERVICE_ICON[service.key] || ''} ${service.label}`.trim(), `NAV ${service.key}`)
+        ),
       },
       footer: {
         type: 'box',
@@ -105,9 +97,7 @@ export const createServiceActionFlexMessage = (
         type: 'box',
         layout: 'vertical',
         spacing: 'sm',
-        contents: actions.slice(0, 10).map(action => ({
-          ...createMessageActionButton(action.label, action.text, 'primary', BRAND.teal),
-        })),
+        contents: actions.slice(0, 10).map(action => createTapRow(action.label, action.text)),
       },
       footer: {
         type: 'box',

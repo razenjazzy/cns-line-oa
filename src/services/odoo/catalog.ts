@@ -2,6 +2,7 @@ export {
   createServiceCatalogItem,
   deleteServiceCatalogItem,
   findProductByQuery,
+  findProductsByQuery,
   getServiceByIdentifier,
   listProducts,
   listServiceCatalogItems,

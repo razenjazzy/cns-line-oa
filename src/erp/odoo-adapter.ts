@@ -1,4 +1,4 @@
-import { createServiceCatalogItem, deleteServiceCatalogItem, findProductByQuery, getServiceByIdentifier, listServiceCatalogItems, updateServiceCatalogItem } from '../services/odoo/catalog';
+import { createServiceCatalogItem, deleteServiceCatalogItem, findProductsByQuery, getServiceByIdentifier, listServiceCatalogItems, updateServiceCatalogItem } from '../services/odoo/catalog';
 import { addSaleOrderLine, cancelSaleOrder, confirmSaleOrder, createInvoiceForSaleOrder, createQuotationFromLine, findOrderByReference, removeSaleOrderLine, updateSaleOrderLineQty } from '../services/odoo/sales';
 import { createPartnerFromLine, deletePartnerFromLine, getPartnerByPhone, updatePartnerFromLine } from '../services/odoo/partners';
 import { getDailySalesSnapshot } from '../services/odoo/reporting';
@@ -55,8 +55,8 @@ export const odooAdapter: ErpAdapter = {
     const normalized = query.trim().toLowerCase();
     if (!normalized) return [];
 
-    const product = await findProductByQuery(normalized);
-    return product ? [toErpProduct(product)].slice(0, limit) : [];
+    const products = await findProductsByQuery(normalized, limit);
+    return products.map(toErpProduct);
   },
   async listServices(limit = 10): Promise<ErpService[]> {
     const services = await listServiceCatalogItems(limit);

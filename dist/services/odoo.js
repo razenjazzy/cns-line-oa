@@ -14,7 +14,7 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.seedOdooSampleSalesData = exports.getDailySalesSnapshot = exports.deleteServiceCatalogItem = exports.updateServiceCatalogItem = exports.createServiceCatalogItem = exports.getServiceByIdentifier = exports.listServiceCatalogItems = exports.deletePartnerFromLine = exports.updatePartnerFromLine = exports.createPartnerFromLine = exports.getPartnerById = exports.getPartnerByPhone = exports.createQuotationFromLine = exports.createInvoiceForSaleOrder = exports.removeSaleOrderLine = exports.updateSaleOrderLineQty = exports.findSaleOrderLineByProduct = exports.addSaleOrderLine = exports.cancelSaleOrder = exports.markSaleOrderSent = exports.confirmSaleOrder = exports.findPaymentTermByName = exports.getSaleOrdersForPartner = exports.getSaleOrderPdfLink = exports.getSaleOrderPortalLink = exports.getSaleOrderById = exports.findOrderByReference = exports.listProducts = exports.findProductByQuery = exports.verifyOdooAdminAccess = exports.pingOdoo = exports.isOdooConfigured = void 0;
+exports.seedOdooSampleSalesData = exports.getDailySalesSnapshot = exports.deleteServiceCatalogItem = exports.updateServiceCatalogItem = exports.createServiceCatalogItem = exports.getServiceByIdentifier = exports.listServiceCatalogItems = exports.deletePartnerFromLine = exports.updatePartnerFromLine = exports.createPartnerFromLine = exports.getPartnerById = exports.getPartnerByPhone = exports.createQuotationFromLine = exports.createInvoiceForSaleOrder = exports.removeSaleOrderLine = exports.updateSaleOrderLineQty = exports.findSaleOrderLineByProduct = exports.addSaleOrderLine = exports.cancelSaleOrder = exports.markSaleOrderSent = exports.confirmSaleOrder = exports.findPaymentTermByName = exports.getSaleOrdersForPartner = exports.getSaleOrderPdfLink = exports.getSaleOrderPortalLink = exports.getSaleOrderById = exports.findOrderByReference = exports.listProducts = exports.findProductsByQuery = exports.findProductByQuery = exports.verifyOdooAdminAccess = exports.pingOdoo = exports.isOdooConfigured = void 0;
 const client_1 = require("./odoo/client");
 __exportStar(require("./odoo/types"), exports);
 const getConfig = client_1.getOdooConfig;
@@ -118,6 +118,32 @@ const findProductByQuery = async (query) => {
     return parseProduct(rows[0]);
 };
 exports.findProductByQuery = findProductByQuery;
+/**
+ * Same ilike search as findProductByQuery, but returns every match up to
+ * `limit` instead of only the first row — lets a caller show a picker when
+ * a search term is genuinely ambiguous ("App" matching several plans)
+ * instead of silently acting on whichever row Odoo happened to return
+ * first. findProductByQuery itself is left untouched since callers that
+ * need exactly one product (e.g. quote-line creation) still want that
+ * single-result contract.
+ */
+const findProductsByQuery = async (query, limit = 5) => {
+    const normalizedQuery = normalizeLookupText(query);
+    if (!normalizedQuery)
+        return [];
+    const config = getConfig();
+    if (!config)
+        return [];
+    const uid = await (0, client_1.loginRead)(config);
+    if (!uid)
+        return [];
+    const rows = await (0, client_1.executeKwRead)(config, uid, 'product.product', 'search_read', [[['name', 'ilike', normalizedQuery]]], {
+        fields: ['id', 'name', 'list_price', 'qty_available', 'default_code'],
+        limit,
+    });
+    return rows.map(parseProduct);
+};
+exports.findProductsByQuery = findProductsByQuery;
 /**
  * Powers the guided-form product picker (select instead of type) — mirrors
  * listServiceCatalogItems's convention exactly, just without the

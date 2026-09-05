@@ -17,15 +17,6 @@ export const BRAND = {
   radius: '12px',
 } as const;
 
-/**
- * Fallback only for callers that genuinely have no per-user language to pass
- * (there are none left in this codebase as of this fix — every call site
- * now threads the actual UserLanguage through). Two Flex builders used to
- * read this env var directly instead of taking a `language` parameter at
- * all, so a user's LANG EN/LANG TH choice was silently ignored for product
- * cards and order summaries no matter what they'd set.
- */
-export const defaultUiLanguage = (): ReportLanguage => (process.env.DEFAULT_UI_LANGUAGE || 'th').toLowerCase() === 'en' ? 'en' : 'th';
 
 export const buttonLabel = (label: string): string => {
   const cleaned = label.trim();
@@ -107,6 +98,32 @@ export const createPrefillButton = (
     inputOption: 'openKeyboard',
     fillInText,
   } as messagingApi.PostbackAction,
+});
+
+/**
+ * A tappable full-width row using an explicit text `size`, instead of a
+ * `type: 'button'` component — LINE renders every button's label at a
+ * fixed client-controlled system font with no `size` property at all, so
+ * this is the only way to make menu text genuinely bigger/more legible
+ * (also removes buttonLabel()'s 20-char truncation, a free side benefit,
+ * since this is a text component, not a button label). Same "tappable box"
+ * mechanism createQuotationListFlexMessage's order rows already use.
+ */
+export const createTapRow = (
+  label: string,
+  actionText: string,
+  color: string = BRAND.teal,
+  textColor: string = '#FFFFFF'
+): messagingApi.FlexBox => ({
+  type: 'box',
+  layout: 'vertical',
+  backgroundColor: color,
+  cornerRadius: BRAND.radius,
+  paddingAll: 'md',
+  action: { type: 'message', text: actionText },
+  contents: [
+    { type: 'text', text: label, size: 'lg', weight: 'bold', color: textColor, wrap: true },
+  ],
 });
 
 export const truncate = (value: string, maxLength: number): string => {

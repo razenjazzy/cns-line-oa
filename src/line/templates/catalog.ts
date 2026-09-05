@@ -1,7 +1,55 @@
 import { messagingApi } from '@line/bot-sdk';
-import { BRAND, createMessageActionButton, defaultUiLanguage, formatMoney, truncate, type ReportLanguage } from './shared';
+import { BRAND, createMessageActionButton, createTapRow, formatMoney, truncate, type ReportLanguage } from './shared';
 
-export const createProductCardFlexMessage = (productName: string, price: number, stock: number, language: ReportLanguage = defaultUiLanguage()): messagingApi.FlexMessage => {
+/**
+ * PRODUCT FIND <query> shown when the search matched more than one
+ * product — previously the handler silently acted on whichever row Odoo
+ * happened to return first with no indication others matched. Tapping a
+ * row re-issues PRODUCT FIND with that exact name, which always resolves
+ * to a single match.
+ */
+export const createProductPickerFlexMessage = (
+  products: { name: string; price?: number }[],
+  language: ReportLanguage,
+): messagingApi.FlexMessage => ({
+  type: 'flex',
+  altText: language === 'en' ? `${products.length} products found` : `พบสินค้า ${products.length} รายการ`,
+  contents: {
+    type: 'bubble',
+    styles: {
+      header: { backgroundColor: BRAND.teal },
+      body: { backgroundColor: BRAND.surface },
+      footer: { backgroundColor: BRAND.surface },
+    },
+    header: {
+      type: 'box',
+      layout: 'vertical',
+      paddingAll: 'md',
+      contents: [
+        { type: 'text', text: language === 'en' ? 'Multiple products matched' : 'พบสินค้าหลายรายการ', weight: 'bold', size: 'md', color: '#FFFFFF', wrap: true },
+        { type: 'text', text: language === 'en' ? 'Tap the one you meant' : 'แตะเลือกสินค้าที่ต้องการ', size: 'xs', color: '#DDEBE9', margin: 'xs', wrap: true },
+      ],
+    },
+    body: {
+      type: 'box',
+      layout: 'vertical',
+      spacing: 'sm',
+      contents: products.map(product => createTapRow(
+        product.price !== undefined ? `${product.name} — ${formatMoney(product.price, language)}` : product.name,
+        `PRODUCT FIND ${product.name}`,
+        BRAND.tealTint,
+        BRAND.tealStrong,
+      )),
+    },
+    footer: {
+      type: 'box',
+      layout: 'vertical',
+      contents: [createMessageActionButton(language === 'en' ? 'Home' : 'หน้าหลัก', 'NAV HOME', 'secondary', BRAND.goldTint)],
+    },
+  },
+});
+
+export const createProductCardFlexMessage = (productName: string, price: number, stock: number, language: ReportLanguage): messagingApi.FlexMessage => {
   return {
     type: 'flex',
     altText: truncate(language === 'en' ? `Product: ${productName}` : `สินค้า: ${productName}`, 390),
@@ -74,7 +122,7 @@ export const createProductCardFlexMessage = (productName: string, price: number,
   };
 };
 
-export const createOrderSummaryFlexMessage = (total: number, language: ReportLanguage = defaultUiLanguage()): messagingApi.FlexMessage => {
+export const createOrderSummaryFlexMessage = (total: number, language: ReportLanguage): messagingApi.FlexMessage => {
   return {
     type: 'flex',
     altText: language === 'en' ? 'Order summary' : 'สรุปคำสั่งซื้อ',
