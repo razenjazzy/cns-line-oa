@@ -97,10 +97,9 @@ Every Flex message is a single `bubble` with the same three-part shape:
 ## Action kinds
 
 1. **List row** (`createTapRow`) — rounded 12px box, icon in the label,
-   size `sm`, not bold. Home, service menus, GUIDE topics, pickers, quote
-   list, optional-field rows. Not LINE `type: button` (that draws a border).
-2. **Footer CTA** — LINE `button`, contrast rule above. Complete commands
-   send immediately (`message` action).
+   size `lg` on NAV Home/service rows, not bold. Home, service menus, GUIDE topics, pickers, quote
+   list, optional-field rows, Language/Guide on Home. Not LINE `type: button`.
+2. **Footer CTA** — Confirm/Send/Verify stay LINE `button` with the contrast rule.
 3. **Input** — prefill keyboard or LINE `datetimepicker` only when the user
    must enter a **new** value. Date is a LINE date sheet, not a drawn clock.
 
@@ -109,8 +108,7 @@ Never re-ask a field the current card already established. Seed
 
 ## Type scale
 
-`xs` captions, `sm` lists and body, `md` titles, `xl` hero numbers.
-Do not use `lg`+bold on menu rows.
+`xs` captions, `md` titles, `lg` NAV menu rows (not bold), `xl` hero numbers.
 
 LINE has no native dropdown: Odoo lists are tap rows + quick replies
 (max 13). Button labels cap at 20 characters.

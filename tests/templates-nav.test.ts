@@ -3,7 +3,7 @@ import { createServiceActionFlexMessage, createServiceHomeFlexMessage } from '..
 import { BRAND } from '../src/line/templates/shared';
 
 describe('NAV HOME rounded boxes', () => {
-  it('keeps the committed tap-row box at sm without bold', () => {
+  it('keeps the committed tap-row box at lg without bold', () => {
     const message = createServiceHomeFlexMessage([{ key: 'commerce', label: 'Products & Quotes' }], 'en', 'Sora');
     const bubble = message.contents as { body?: { contents?: Array<Record<string, unknown>> } };
     const row = bubble.body?.contents?.[0];
@@ -13,7 +13,7 @@ describe('NAV HOME rounded boxes', () => {
     expect(row?.style).toBeUndefined();
     const contents = row?.contents as Array<{ text?: string; size?: string; weight?: string }>;
     expect(contents[0]?.text).toBe('🛍️ Products & Quotes');
-    expect(contents[0]?.size).toBe('sm');
+    expect(contents[0]?.size).toBe('lg');
     expect(contents[0]?.weight).toBeUndefined();
   });
 
@@ -23,7 +23,20 @@ describe('NAV HOME rounded boxes', () => {
     const row = bubble.body?.contents?.[0];
     expect(row?.type).toBe('box');
     expect(row?.cornerRadius).toBe(BRAND.radius);
-    expect(row?.contents?.[0]?.size).toBe('sm');
+    expect(row?.contents?.[0]?.size).toBe('lg');
     expect(row?.contents?.[0]?.weight).toBeUndefined();
+  });
+
+  it('puts Language and Guide in the same tap-row type as the service list', () => {
+    const message = createServiceHomeFlexMessage([{ key: 'commerce', label: 'Products & Quotes' }], 'en', 'Sora');
+    const bubble = message.contents as { footer?: { layout?: string; contents?: Array<Record<string, unknown>> } };
+    expect(bubble.footer?.layout).toBe('horizontal');
+    const tiles = bubble.footer?.contents || [];
+    expect(tiles).toHaveLength(2);
+    expect(tiles.every(tile => tile.type === 'box' && tile.cornerRadius === BRAND.radius && tile.style === undefined)).toBe(true);
+    const first = tiles[0]?.contents as Array<{ text?: string; size?: string; weight?: string }>;
+    expect(first[0]?.text).toBe('🌐 Language');
+    expect(first[0]?.size).toBe('lg');
+    expect(first[0]?.weight).toBeUndefined();
   });
 });

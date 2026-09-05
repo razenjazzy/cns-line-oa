@@ -101,14 +101,16 @@ export const createPrefillButton = (
 });
 
 /**
- * Rounded, borderless tappable row. Lists use size `sm` without bold.
+ * Rounded, borderless tappable row — same type as 6babb2c1 / be0219f2
+ * (not LINE `type: button`). NAV menus pass `lg` for the original type
+ * scale without restoring `weight: bold`.
  */
 export const createTapRow = (
   label: string,
   actionText: string,
   color: string = BRAND.teal,
   textColor: string = '#FFFFFF',
-  size: 'sm' | 'md' = 'sm',
+  size: 'sm' | 'md' | 'lg' = 'md',
 ): messagingApi.FlexBox => ({
   type: 'box',
   layout: 'vertical',

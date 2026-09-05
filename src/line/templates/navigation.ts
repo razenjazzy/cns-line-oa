@@ -41,7 +41,7 @@ export const createServiceHomeFlexMessage = (
         spacing: 'sm',
         paddingBottom: 'lg',
         contents: services.slice(0, 10).map(service =>
-          createTapRow(`${SERVICE_ICON[service.key] || ''} ${service.label}`.trim(), `NAV ${service.key}`)
+          createTapRow(`${SERVICE_ICON[service.key] || ''} ${service.label}`.trim(), `NAV ${service.key}`, BRAND.teal, '#FFFFFF', 'lg')
         ),
       },
       footer: {
@@ -49,22 +49,8 @@ export const createServiceHomeFlexMessage = (
         layout: 'horizontal',
         spacing: 'sm',
         contents: [
-          {
-            type: 'button',
-            style: 'secondary',
-            height: 'md',
-            flex: 1,
-            color: BRAND.tealTint,
-            action: { type: 'message', label: t('languageToggle', language), text: language === 'en' ? 'LANG TH' : 'LANG EN' },
-          },
-          {
-            type: 'button',
-            style: 'secondary',
-            height: 'md',
-            flex: 1,
-            color: BRAND.tealTint,
-            action: { type: 'message', label: t('guide', language), text: 'GUIDE' },
-          },
+          { ...createTapRow(`🌐 ${t('languageToggle', language)}`, language === 'en' ? 'LANG TH' : 'LANG EN', BRAND.tealTint, BRAND.tealStrong, 'lg'), flex: 1 },
+          { ...createTapRow(`📖 ${t('guide', language)}`, 'GUIDE', BRAND.tealTint, BRAND.tealStrong, 'lg'), flex: 1 },
         ],
       },
     },
@@ -100,13 +86,13 @@ export const createServiceActionFlexMessage = (
         layout: 'vertical',
         spacing: 'sm',
         paddingBottom: 'lg',
-        contents: actions.slice(0, 10).map(action => createTapRow(action.label, action.text)),
+        contents: actions.slice(0, 10).map(action => createTapRow(action.label, action.text, BRAND.teal, '#FFFFFF', 'lg')),
       },
       footer: {
         type: 'box',
         layout: 'vertical',
         contents: [
-          createMessageActionButton(t('home', language), 'NAV HOME', 'secondary', BRAND.goldTint),
+          createTapRow(`🏠 ${t('home', language)}`, 'NAV HOME', BRAND.goldTint, BRAND.tealStrong, 'lg'),
         ],
       },
     },
