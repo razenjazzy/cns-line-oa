@@ -199,7 +199,9 @@ verified: `npm run build`/`lint`/`test` clean, 38 files / 203 tests).
 | **Configurability** | 8/10 (was 6) | `ADMIN CONFIG` (section 2) is now shipped — a Flex toggle grid over the existing per-channel service flags, admin-only. `ERP_PROVIDER`/`ENABLED_SERVICES`/`DEFAULT_LANGUAGE`/`LOG_LEVEL` are now documented env-configurable knobs. Remaining gap: language/copy is still bilingual-hardcoded rather than a configurable string table beyond the quotation feature's own `i18n.ts`. | [ ] Extend `i18n.ts`'s pattern app-wide only if a third language is ever actually needed — deliberately not done speculatively. |
 | **Overall architecture / design quality** | 9/10 (was 8) | The ERP boundary is no longer just a documented convention — `src/erp/` is a real adapter+registry, fail-closed for unimplemented providers, wired into every commerce/directory/catalog/reporting handler; `CLAUDE.md` now documents it. Firestore/Odoo are barrel-split into domain modules with an import-compatible facade. `salesTier` is a real additive layer on top of the protected chain, never replacing it. Remaining gap: a completed-but-unwired command-registry/policy foundation (`src/ux/`, `command-policy.ts`) exists for a future menu-projection feature (Track C2) and is intentionally not live yet. | [ ] Track C2 (registry-to-menu projection), only after Track A3 (broader privileged-write audit review). |
 
-**Total: ~35/40 → 8.75/10.** Section 1 (Odoo-role-based permissions) is
+**Total: 34/40 → 8.5/10** (corrected — an earlier version of this line said
+8.75, which didn't match the table's own numbers; 8+9+8+9=34, not 35).
+Section 1 (Odoo-role-based permissions) is
 now built, fail-safe, and tested at the mapper layer — but genuinely
 unverified end-to-end (no real Sales User/Manager Odoo login exists to
 click-test the tiered button set against yet; your own account correctly

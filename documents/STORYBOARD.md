@@ -168,7 +168,7 @@ working estimate:
 | Area | Estimate | Basis |
 |---|---|---|
 | Core Quotation → Sales Order → Invoice lifecycle | **~85–90%** | Every step in Phases 3–5 is built and live-verified; the gap is almost entirely Odoo-side blocks (delivery, pricelists), not missing code. |
-| Enterprise-grade hardening (auth, audit, step-up security) | **~70%** | Step-up OTP, full admin-authorization chain, audit trail + archive all shipped; `USER`/`SERVICE` CRUD isn't step-up-gated yet, and Odoo-touching handlers have no automated test coverage (verified live instead — see BACKLOG.md). |
+| Enterprise-grade hardening (auth, audit, step-up security) | **~85%** (was ~70%) | Step-up OTP, full admin-authorization chain, audit trail + archive, `ADMIN CONFIG` UI, ansible fallback-secret removal, `salesTier` Odoo-role gating, and `tests/http-auth.test.ts` regression coverage are all shipped since this was last written (see `ENTERPRISE_ROADMAP.md` — security scored 9/10). Remaining gap: `USER`/`SERVICE` CRUD still isn't step-up-gated, and Odoo-touching handlers still have no automated test coverage beyond live verification. |
 | UX consistency & polish | **~50%** | Design-system pass, picker chips, and the summary card shipped broadly; the rich-menu redesign, `GUIDE` overhaul, and per-card header consistency sweep are explicitly not started. |
 
 **Overall: roughly 3/4 of the core sales journey is built and verified.**
