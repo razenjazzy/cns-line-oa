@@ -23,9 +23,17 @@ This repository is optimized for low-token, low-cost agent work. Follow these ru
        domain (shared, bot, catalog, navigation, forms, quotation) + barrel.
        `src/line/templates.ts` itself is now a 6-line compatibility
        re-export — look in `src/line/templates/` for actual builder logic.
-   - Planned but not yet split: `src/demo/page.ts` (909 lines, static demo
-     assets) — see `documents/STAGED_IMPLEMENTATION_BACKLOG.md` Track B4
-     for the remaining, smaller half of this track.
+     - `src/demo/page.ts` -> split into `src/demo/styles.ts` (CSS),
+       `src/demo/markup.ts` (body HTML), `src/demo/script.ts` (inline JS).
+       `src/demo/page.ts` itself is now a ~25-line assembler that imports
+       the three and composes the full HTML document — look in
+       `src/demo/{styles,markup,script}.ts` for actual content, not
+       `page.ts`. (This split also fixed a real pre-existing bug: the
+       `login-token` button's click listener was missing its
+       `addEventListener` wrapper entirely, an orphaned callback body that
+       was a syntax error breaking the whole inline script in the
+       browser — see `src/demo/script.ts`'s header comment.)
+   - Track B4 is now fully complete (no remaining unsplit large files).
 
 3. Prefer targeted verification.
    - Run the smallest relevant test before and after a fix.

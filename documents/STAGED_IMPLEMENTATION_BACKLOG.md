@@ -68,7 +68,7 @@ This backlog converts the enterprise architecture plan into small, reversible im
 - Step-up OTP extended to USER/SERVICE CRUD, closing the last named security gap.
 - Odoo-native sales-tier permissions (salesTier) shipped as an additive layer, fail-safe to today's behavior with no linked Odoo user.
 - Track B3 HTTP route extraction complete: src/index.ts split into src/http/* (env, runtime-state, middleware, demo-session, and one file per route group). Verified via build/lint/test plus a live local smoke test.
-- Track B4 Flex-builder split complete: src/line/templates.ts split into src/line/templates/* by domain (shared/bot/catalog/navigation/forms/quotation), compatibility barrel preserved. Demo asset extraction (src/demo/page.ts) is the smaller remaining half of B4, not started.
+- Track B4 fully complete: src/line/templates.ts split into src/line/templates/* by domain (shared/bot/catalog/navigation/forms/quotation), compatibility barrel preserved. src/demo/page.ts (the smaller remaining half) also split into styles.ts/markup.ts/script.ts + a thin assembler; extraction caught and fixed a real bug where the demo page's login-token button was missing its click-listener wrapper entirely, breaking the whole inline script.
 
 ## Track A: security and policy
 
@@ -195,11 +195,25 @@ This backlog converts the enterprise architecture plan into small, reversible im
   live local smoke test hitting `/webhook-test` for `GUIDE`/`HELP`
   (navigation.ts), `PRODUCT FIND` (catalog.ts), and a fresh-user PDPA
   notice (bot.ts) — all rendered correctly.
-- **Demo asset extraction not started.** `src/demo/page.ts` (909 lines)
-  is untouched — a separate, smaller piece of B4 than the templates split
-  was. Revisit if/when it becomes a real hotspot; not urgent on its own.
+- **Demo asset extraction complete.** `src/demo/page.ts` (909 lines) split
+  into `src/demo/styles.ts` (CSS), `src/demo/markup.ts` (body HTML),
+  `src/demo/script.ts` (inline JS) — `page.ts` is now a ~25-line assembler
+  importing the three, same barrel-preserving pattern, one import site
+  (`src/http/demo-routes.ts`) unchanged. Verified via `npm run build`/
+  `test` (39/212 still passing), a live local `GET /demo` smoke test, and
+  a byte-diff of the rendered HTML against the pre-split page (only
+  whitespace-seam differences plus one intentional fix, below). Found and
+  fixed a real, previously-shipped bug during extraction: the `login-token`
+  button's click handler was missing its `addEventListener('click', () =>
+  {` wrapper entirely — an orphaned callback body that was a syntax error,
+  which broke the *entire* inline `<script>` block in the browser (no
+  listener on this page ever attached, not just login). Confirmed via
+  `node --check` on the extracted script both before (failed) and after
+  (passed) the fix.
+- Track B4 is now fully complete (templates half + demo half).
 - Acceptance: generated LINE message shapes and demo rendering remain
-  unchanged — confirmed for the templates half.
+  unchanged (byte-identical modulo the bug fix) — confirmed for both
+  halves of B4.
 - Check: `npm run build && npm test` — done for the templates half.
 
 ## Track C: provider and UX expansion
