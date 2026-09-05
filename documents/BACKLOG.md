@@ -38,13 +38,14 @@ deferred or not-yet-verified pieces.
 - **"Edit/delete for authorized users"** — raised alongside the step-up OTP
   request, but the user asked to discuss the actual gap separately rather
   than guess at it. Not implemented. Come back to this once scoped.
-- **Step-up OTP scope** — currently gates only the quote lifecycle
-  (`QUOTE CREATE`, `QUOTE ADD`/`EDIT`/`CANCEL`/`CONFIRM`/`SEND`/`INVOICE`/
-  `APPROVE`/`MESSAGE`, `MESSAGE CUSTOMER`) — a deliberate scope decision,
-  not an oversight. `USER`/`SERVICE` CRUD and `ADMIN ENABLE`/`DISABLE` are
-  not gated by a fresh OTP yet; revisit if that surface needs the same
-  treatment (the mechanism in `src/line/handlers/action-otp.ts` is generic
-  enough to extend — just add prefixes to `GATED_MUTATION_PREFIXES`).
+- ~~**Step-up OTP scope**~~ — **closed 2026-09-05.** Now gates the quote
+  lifecycle (`QUOTE CREATE`, `QUOTE ADD`/`EDIT`/`CANCEL`/`CONFIRM`/`SEND`/
+  `INVOICE`/`APPROVE`/`MESSAGE`, `MESSAGE CUSTOMER`) **and** `USER`/`SERVICE`
+  CRUD (`USER CREATE`/`UPDATE`/`DELETE`, `SERVICE CREATE`/`UPDATE`/`DELETE`).
+  `ADMIN ENABLE`/`DISABLE` remain deliberately ungated — they already sit
+  behind the stronger `ADMIN_USER_ID` allowlist + Odoo admin-capability
+  chain, which a fresh OTP wouldn't meaningfully add to. Covered by
+  `tests/action-otp-gate.test.ts`.
 
 ---
 

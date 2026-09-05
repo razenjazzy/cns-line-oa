@@ -18,10 +18,14 @@ const botText = (title: string, body: string, language: UserLanguage, tone: 'inf
 const ACTION_OTP_WINDOW_MINUTES = Number(process.env.ACTION_OTP_WINDOW_MINUTES || 10);
 
 /**
- * Commands that create/edit/delete a quote (or send a customer-facing
- * message on its behalf) — view-only commands (QUOTE STATUS, QUOTE LIST)
- * are deliberately not gated. Scoped to the quote lifecycle only, not
- * USER/SERVICE CRUD or ADMIN ENABLE/DISABLE — see documents/BACKLOG.md.
+ * Commands that create/edit/delete a quote or a directory/catalog record
+ * (or send a customer-facing message) — view-only commands (QUOTE STATUS,
+ * QUOTE LIST, USER READ, SERVICE READ/LIST) are deliberately not gated.
+ * USER/SERVICE CRUD was added here per ENTERPRISE_ROADMAP.md's security
+ * scorecard gap — previously scoped out (see documents/BACKLOG.md), now
+ * closed. ADMIN ENABLE/DISABLE remain ungated: they already require
+ * passing the separate ADMIN_USER_ID-allowlist + Odoo admin-capability
+ * chain, a stronger check than a fresh OTP would add on top.
  */
 const GATED_MUTATION_PREFIXES = [
   'QUOTE CREATE',
@@ -34,9 +38,15 @@ const GATED_MUTATION_PREFIXES = [
   'QUOTE APPROVE',
   'QUOTE MESSAGE',
   'MESSAGE CUSTOMER',
+  'USER CREATE',
+  'USER UPDATE',
+  'USER DELETE',
+  'SERVICE CREATE',
+  'SERVICE UPDATE',
+  'SERVICE DELETE',
 ];
 
-const isGatedMutation = (upperText: string): boolean => GATED_MUTATION_PREFIXES.some(p => upperText.startsWith(p));
+export const isGatedMutation = (upperText: string): boolean => GATED_MUTATION_PREFIXES.some(p => upperText.startsWith(p));
 
 const hasFreshActionOtp = (profile: UserProfile): boolean => {
   if (!profile.lastActionOtpAt) return false;
