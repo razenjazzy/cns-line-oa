@@ -40,6 +40,16 @@ export type FlowFieldSpec = {
    * separate value/label distinction needed.
    */
   loadOptions?: () => Promise<string[]>;
+  /**
+   * Pre-fills this field the moment a flow enters grouped optional-fields
+   * summary mode (see FlowSpec.optionalSummaryStartIndex) — shown as
+   * already-checked with this value, still editable via FORM FIELD <n>
+   * (type a new value, or SKIP to clear it back to blank) or overridable
+   * as-is by finalizing without touching it. Only set where a field has a
+   * genuinely sensible computed default; most optional fields have none
+   * and stay blank until the user fills them.
+   */
+  defaultValue?: () => string;
 };
 
 export type FlowSpec = {
@@ -70,6 +80,7 @@ const isEmailLike = (value: string): boolean => value.trim() === '' || /^[^\s@]+
 const isCommaFreeText = (value: string): boolean => isNonEmpty(value) && !value.includes(',');
 const isPercent = (value: string): boolean => { const n = Number(value); return Number.isFinite(n) && n >= 0 && n <= 100; };
 const isIsoDate = (value: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
+const isoDatePlusDays = (days: number): string => new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
 /**
  * Each flow's buildFinalCommand reconstructs the exact single-line command
@@ -226,7 +237,7 @@ export const FLOW_SPECS: Record<FlowKey, FlowSpec> = {
       // than 5 sequential prompts — summaryLabel* keeps the card's chips short.
       { key: 'customerReference', promptTh: 'เลขอ้างอิงลูกค้า (ถ้ามี)?', promptEn: "Customer reference, if any?", optional: true, validate: isCommaFreeText, summaryLabelTh: 'เลขอ้างอิงลูกค้า', summaryLabelEn: 'Customer ref' },
       { key: 'discountPercent', promptTh: 'ส่วนลด % (ถ้ามี)?', promptEn: 'Discount %, if any?', optional: true, validate: isPercent, summaryLabelTh: 'ส่วนลด %', summaryLabelEn: 'Discount %' },
-      { key: 'validityDate', promptTh: 'วันหมดอายุใบเสนอราคา (YYYY-MM-DD, ถ้ามี)?', promptEn: 'Quotation expiration date (YYYY-MM-DD), if any?', optional: true, validate: isIsoDate, summaryLabelTh: 'วันหมดอายุ', summaryLabelEn: 'Valid until' },
+      { key: 'validityDate', promptTh: 'วันหมดอายุใบเสนอราคา (YYYY-MM-DD, ถ้ามี)?', promptEn: 'Quotation expiration date (YYYY-MM-DD), if any?', optional: true, validate: isIsoDate, summaryLabelTh: 'วันหมดอายุ', summaryLabelEn: 'Valid until', defaultValue: () => isoDatePlusDays(30) },
       { key: 'note', promptTh: 'หมายเหตุ (ถ้ามี)?', promptEn: 'Note, if any?', optional: true, validate: isCommaFreeText, summaryLabelTh: 'หมายเหตุ', summaryLabelEn: 'Note' },
       { key: 'paymentTerm', promptTh: 'เงื่อนไขการชำระเงิน (เช่น 30 Days, ถ้ามี)?', promptEn: 'Payment term (e.g. 30 Days), if any?', optional: true, validate: isCommaFreeText, summaryLabelTh: 'เงื่อนไขชำระเงิน', summaryLabelEn: 'Payment term' },
     ],

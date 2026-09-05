@@ -125,6 +125,24 @@ const buildFormPromptMessage = async (
   });
 };
 
+/**
+ * Runs once, the moment a flow first enters summary mode — fills in any
+ * field from FlowSpec.optionalSummaryStartIndex onward that declares a
+ * defaultValue and hasn't already been answered (e.g. typed during the
+ * flow's earlier linear phase, before summary mode existed for this
+ * field range). Never overwrites a value the user already provided.
+ */
+const applyFieldDefaults = (flowSpec: FlowSpec, collected: Record<string, string>): Record<string, string> => {
+  const startIndex = flowSpec.optionalSummaryStartIndex ?? flowSpec.fields.length;
+  const withDefaults = { ...collected };
+  flowSpec.fields.slice(startIndex).forEach(field => {
+    if (!withDefaults[field.key] && field.defaultValue) {
+      withDefaults[field.key] = field.defaultValue();
+    }
+  });
+  return withDefaults;
+};
+
 const buildOptionalSummaryMessage = (
   language: UserLanguage,
   agentName: string,
@@ -237,14 +255,15 @@ const handleGuidedFormStep = async (ctx: CommandReplyContext): Promise<messaging
   const nextIndex = pending.stepIndex + 1;
 
   if (flowSpec.optionalSummaryStartIndex !== undefined && nextIndex === flowSpec.optionalSummaryStartIndex) {
+    const collectedWithDefaults = applyFieldDefaults(flowSpec, collected);
     await setUserPendingFlow(userId, {
       flow: flowSpec.key,
       stepIndex: nextIndex,
-      collected,
+      collected: collectedWithDefaults,
       expiresAt: buildFlowExpiry(),
       summaryMode: true,
     });
-    return [buildOptionalSummaryMessage(userLanguage, agentName, flowSpec, collected)];
+    return [buildOptionalSummaryMessage(userLanguage, agentName, flowSpec, collectedWithDefaults)];
   }
 
   if (nextIndex >= flowSpec.fields.length) {
