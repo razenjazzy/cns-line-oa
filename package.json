@@ -60,7 +60,7 @@
     "bullmq": "^5.81.4",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "googleapis": "^173.0.0",
+    "googleapis": "^178.0.0",
     "graphql": "^17.0.2",
     "graphql-yoga": "^5.22.0",
     "ioredis": "^6.0.0",
