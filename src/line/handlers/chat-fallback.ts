@@ -17,6 +17,7 @@ import { processChatMessage } from '../../services/chat';
 import { createBotTextFlexMessage } from '../templates';
 import { buildHomeMenuMessage } from '../command-router';
 import type { CommandReplyContext } from '../command-router';
+import { getEscalationState } from '../../services/firestore';
 import type { UserLanguage } from '../../services/firestore';
 
 const tr = (language: UserLanguage, th: string, en: string): string => (language === 'en' ? en : th);
@@ -56,6 +57,25 @@ export const handleChatFallback = async (
   ctx: CommandReplyContext,
 ): Promise<messagingApi.Message[]> => {
   const { userId, text, userLanguage, agentName, channel, profile } = ctx;
+
+  // While escalated (HUMAN command, or the AI's own judgment call), step
+  // aside instead of auto-replying — a real person is expected to be
+  // reading this conversation, and the bot talking over them (or giving a
+  // conflicting answer) would be worse than a short "still connected"
+  // notice. Every other command (typed or guided-form) still works
+  // normally; only this last-resort AI-chat path is gated.
+  if (await getEscalationState(userId)) {
+    return [createBotTextFlexMessage({
+      title: tr(userLanguage, 'ผู้ช่วย Cloudnex', 'Cloudnex assistant'),
+      body: tr(userLanguage,
+        `${agentName} โอนเคสนี้ให้แอดมินแล้ว เจ้าหน้าที่จะดูแลต่อจากนี้ค่ะ`,
+        `${agentName} has connected you with a human agent, who'll take it from here.`,
+      ),
+      language: userLanguage,
+      tone: 'info',
+      secondaryAction: { label: tr(userLanguage, 'กลับไปคุยกับบอท', 'Resume with bot'), text: 'HUMAN OFF' },
+    })];
+  }
 
   const chatResult = await processChatMessage(userId, text.trim(), userLanguage);
 

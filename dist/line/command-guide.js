@@ -43,6 +43,7 @@ const COMMAND_SPECS = [
     { key: 'ADMIN CHANNEL', examples: ['ADMIN CHANNEL default STATUS', 'ADMIN CHANNEL default SERVICES commerce,catalog'], category: 'admin' },
     { key: 'ADMIN AUDIT ROTATE', examples: ['ADMIN AUDIT ROTATE'], category: 'admin' },
     { key: 'HUMAN', examples: ['HUMAN'], aliases: ['AGENT', 'ติดต่อแอดมิน', 'คุยกับแอดมิน'], category: 'account' },
+    { key: 'HUMAN OFF', examples: ['HUMAN OFF'], aliases: ['RESUME BOT'], category: 'account' },
     { key: 'MY DATA', examples: ['MY DATA'], aliases: ['ข้อมูลของฉัน'], category: 'account' },
     { key: 'DELETE MY DATA', examples: ['DELETE MY DATA'], category: 'account' },
     { key: 'PROMO ON', examples: ['PROMO ON'], aliases: ['รับโปรโมชัน'], category: 'account' },

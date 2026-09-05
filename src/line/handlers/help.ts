@@ -82,7 +82,10 @@ const runDemoJourneyHandler: CommandHandler = {
 // human agent. Deterministic path: does not depend on the AI fallback
 // deciding to call escalateToHuman (src/services/chat.ts), which only fires
 // on its own judgment and is never listed anywhere as a command a user can
-// rely on.
+// rely on. While escalated, the AI-chat fallback (chat-fallback.ts) steps
+// aside instead of auto-replying, so a real person's messages aren't
+// talked over by the bot — this is the one command that flag actually
+// gates, everything else (typed commands, guided forms) works as normal.
 const humanHandoffHandler: CommandHandler = {
   name: 'help-human-handoff',
   match: (u) => ['HUMAN', 'AGENT', 'ติดต่อแอดมิน', 'คุยกับแอดมิน', 'คุยกับเจ้าหน้าที่'].includes(u),
@@ -92,6 +95,28 @@ const humanHandoffHandler: CommandHandler = {
     const message = result.ok
       ? tr(userLanguage, `${agentName} โอนเคสให้แอดมินแล้วนะคะ เดี๋ยวเจ้าหน้าที่จะดูแลต่อทันที`, `${agentName} has escalated this chat to a human agent. Someone will follow up shortly.`)
       : tr(userLanguage, `${agentName} ยังไม่สามารถโอนเคสให้แอดมินได้ กรุณาลองใหม่อีกครั้ง`, `${agentName} could not escalate right now. Please try again.`);
+    return [createBotTextFlexMessage({
+      title: tr(userLanguage, 'ผู้ช่วย Cloudnex', 'Cloudnex assistant'),
+      body: message,
+      language: userLanguage,
+      tone: result.ok ? 'success' : 'error',
+      ...(result.ok ? { secondaryAction: { label: tr(userLanguage, 'กลับไปคุยกับบอท', 'Resume with bot'), text: 'HUMAN OFF' } } : {}),
+    })];
+  },
+};
+
+// HUMAN OFF / RESUME BOT — de-escalate, letting the AI-chat fallback
+// answer again. There was previously no way back once escalated: the
+// escalatedToHuman flag could only ever be set to true, never cleared.
+const humanResumeHandler: CommandHandler = {
+  name: 'help-human-resume',
+  match: (u) => u === 'HUMAN OFF' || u === 'RESUME BOT' || u === 'กลับไปคุยกับบอท',
+  handle: async (ctx) => {
+    const { userLanguage, userId, agentName } = ctx;
+    const result = await setEscalationState(userId, false);
+    const message = result.ok
+      ? tr(userLanguage, `${agentName} กลับมาช่วยเหลือคุณต่อแล้วนะคะ`, `${agentName} is back to assist you.`)
+      : tr(userLanguage, `${agentName} ยังไม่สามารถเปลี่ยนกลับได้ กรุณาลองใหม่อีกครั้ง`, `${agentName} could not switch back right now. Please try again.`);
     return [botText(message, userLanguage)];
   },
 };
@@ -136,5 +161,6 @@ export const helpHandlers: CommandHandler[] = [
   nameHandler,
   runDemoJourneyHandler,
   humanHandoffHandler,
+  humanResumeHandler,
   guideHandler,
 ];
