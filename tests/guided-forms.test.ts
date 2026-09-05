@@ -152,4 +152,17 @@ describe('QUOTE_CREATE flow', () => {
     });
     expect(cmd).toBe('QUOTE CREATE App Premium Plan,1,Somchai,0812345678,PO-1001,10,2026-12-31,Rush order,30 Days');
   });
+
+  it('gives validityDate a computed default (today + 30 days) and no other optional field one', () => {
+    const validityField = spec.fields.find(f => f.key === 'validityDate')!;
+    const defaultDate = validityField.defaultValue?.();
+    expect(defaultDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(validityField.validate(defaultDate!)).toBe(true);
+
+    const expected = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    expect(defaultDate).toBe(expected);
+
+    const otherOptionalFields = spec.fields.filter(f => f.optional && f.key !== 'validityDate');
+    expect(otherOptionalFields.every(f => !f.defaultValue)).toBe(true);
+  });
 });

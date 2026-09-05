@@ -94,26 +94,32 @@ const isLikelyCommand = (input) => {
         return true;
     return /^[A-Z฀-๿]+$/.test(value);
 };
+/** Longest known key/alias any real command's multi-word phrase reaches (e.g. "WHAT IS YOUR NAME", "RUN DEMO JOURNEY", "ADMIN AUDIT ROTATE"). */
+const MAX_INTENT_TOKENS = 4;
+/**
+ * Tries the input's leading tokens against every real command key/alias,
+ * longest prefix first, so a multi-word command (e.g. "QUOTE CREATE",
+ * "STATUS GROUPBUY") resolves to its full key rather than just its first
+ * word. Replaces a previous hardcoded list of which first words needed
+ * 2-/3-token handling (USER/SERVICE/ADMIN/LANG/VERIFY/RUN/DEMO) — that
+ * list silently missed QUOTE, MESSAGE, and every Group-Buy command
+ * (START/JOIN/STATUS/CONFIRM/CANCEL), so a typo on any of those degraded
+ * to fuzzy-matching just the first word ("QUOTE") instead of what was
+ * actually typed, and referenced a "DEMO SEED" command that no longer
+ * exists at all (see the DEMO-prefixed command rename earlier this repo's
+ * history) — falls back to the first word only when no known prefix matches.
+ */
 const extractIntentKey = (input) => {
     const normalized = normalize(input);
     const tokens = normalized.split(' ').filter(Boolean);
     if (!tokens.length)
         return '';
-    if (tokens[0] === 'RUN' && tokens.length >= 3) {
-        return tokens.slice(0, 3).join(' ');
+    const knownKeys = new Set(allCommandKeys());
+    for (let len = Math.min(tokens.length, MAX_INTENT_TOKENS); len >= 1; len -= 1) {
+        const candidate = tokens.slice(0, len).join(' ');
+        if (knownKeys.has(candidate))
+            return candidate;
     }
-    if (tokens[0] === 'DEMO' && tokens.length >= 2) {
-        if (tokens[1] === 'SEED' && tokens.length >= 3)
-            return tokens.slice(0, 3).join(' ');
-        return tokens.slice(0, 2).join(' ');
-    }
-    if ((tokens[0] === 'USER' || tokens[0] === 'SERVICE' || tokens[0] === 'ADMIN' || tokens[0] === 'LANG' || tokens[0] === 'VERIFY') && tokens.length >= 2) {
-        return tokens.slice(0, 2).join(' ');
-    }
-    if (tokens[0] === 'WHAT' && tokens.length >= 4)
-        return 'WHAT IS YOUR NAME';
-    if (tokens[0] === 'BOT' && tokens.length >= 2)
-        return 'BOT NAME';
     return tokens[0];
 };
 const levenshtein = (a, b) => {
