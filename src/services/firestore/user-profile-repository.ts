@@ -1,6 +1,6 @@
 import type { Firestore } from '@google-cloud/firestore';
 import { buildFallbackUserProfile, parseStoredUserProfile } from './user-profile';
-import type { PendingFlowState, UserLanguage, UserProfile, UserRole } from './types';
+import type { LastProductContext, PendingFlowState, UserLanguage, UserProfile, UserRole } from './types';
 
 type CachedUserState = {
     language?: UserLanguage;
@@ -12,6 +12,8 @@ type CachedUserState = {
     phone?: string;
     escalatedToHuman?: boolean;
     pendingFlow?: PendingFlowState;
+    lastProductContext?: LastProductContext;
+    lastQuoteListFrom?: string;
     firstMessageAt?: string;
     consentNoticeShownAt?: string;
     marketingOptIn?: boolean;
@@ -143,6 +145,26 @@ export const createUserProfileRepository = (dependencies: RepositoryDependencies
             : pendingFlow;
         const result = await dependencies.write('setUserPendingFlow', async database => {
             await database.collection('users').doc(userId).set({ pendingFlow: pendingFlowForWrite }, { merge: true });
+        });
+        if (!result.ok) dependencies.restorePrevious(userId, previous);
+        return result;
+    },
+
+    setLastProductContext: async (userId: string, lastProductContext: LastProductContext | null) => {
+        const previous = dependencies.getPrevious(userId);
+        dependencies.mergeCached(userId, { lastProductContext: lastProductContext || undefined });
+        const result = await dependencies.write('setLastProductContext', async database => {
+            await database.collection('users').doc(userId).set({ lastProductContext: lastProductContext || null }, { merge: true });
+        });
+        if (!result.ok) dependencies.restorePrevious(userId, previous);
+        return result;
+    },
+
+    setLastQuoteListFrom: async (userId: string, lastQuoteListFrom: string | null) => {
+        const previous = dependencies.getPrevious(userId);
+        dependencies.mergeCached(userId, { lastQuoteListFrom: lastQuoteListFrom || undefined });
+        const result = await dependencies.write('setLastQuoteListFrom', async database => {
+            await database.collection('users').doc(userId).set({ lastQuoteListFrom: lastQuoteListFrom || null }, { merge: true });
         });
         if (!result.ok) dependencies.restorePrevious(userId, previous);
         return result;

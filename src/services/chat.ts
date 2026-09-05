@@ -32,6 +32,7 @@ import { spawn } from 'child_process';
 import path from 'path';
 import type { UserProfile, UserLanguage } from './firestore';
 import { getAgentName } from '../line/channels';
+import { appLogger } from './logger';
 
 // ---------------------------------------------------------------------------
 // Environment helpers
@@ -296,7 +297,7 @@ const processGeminiResponse = async (
           aiTextResponse += quotation
             ? `[Quotation ${quotation.orderName} for ${qty}x ${odooProduct.name}]`
             : `[Order summary for ${qty}x ${odooProduct.name}]`;
-          messages.push(createOrderSummaryFlexMessage(total, isThai ? 'th' : 'en'));
+          messages.push(createOrderSummaryFlexMessage(total, isThai ? 'th' : 'en', quotation?.orderId));
           if (quotation) {
             messages.push({ type: 'text', text: isThai
               ? `${agentName} สร้างใบเสนอราคาใน Odoo แล้ว เลขที่ ${quotation.orderName}`
@@ -419,7 +420,7 @@ export const processChatMessage = async (
         : 'Reply in English only, regardless of what language this message is written in. Do not mix languages.';
       const content = await callClawBridge(`${languageDirective}\n\n${userText}`);
       clawCircuit.recordSuccess();
-      console.log('[chat] ClawBridge (Tier 2) responded successfully.');
+      appLogger.info('clawbridge_tier2_ok');
       await saveConversationMessage(userId, 'model', content);
       return { handled: true, messages: [{ type: 'text', text: content }] };
     } catch (err) {

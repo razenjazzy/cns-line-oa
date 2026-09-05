@@ -1,4 +1,5 @@
 import { createClient } from 'redis';
+import { appLogger } from './logger';
 
 type RedisClient = ReturnType<typeof createClient>;
 
@@ -191,7 +192,7 @@ export const createRateLimitStoreFromEnv = async (
     });
 
     await withTimeout(client.connect(), connectTimeoutMs);
-    console.log('Redis rate-limit store connected.');
+    appLogger.info('rate_limit_redis_connected');
     runtimeStatus = {
       configuredMode: 'redis',
       activeBackend: 'redis',

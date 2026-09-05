@@ -13,6 +13,7 @@ import { getPartnerByPhone } from './odoo/partners';
 import { DEFAULT_CHANNEL_ID } from '../line/channels';
 import { sendTargetedMessage, sendTargetedFlexMessage } from '../line/messaging';
 import { createBotTextFlexMessage } from '../line/templates';
+import { appLogger } from './logger';
 
 const tr = (language: UserLanguage, th: string, en: string): string => (language === 'en' ? en : th);
 
@@ -134,12 +135,11 @@ export const startOdooUserVerification = async (input: StartVerificationInput): 
     };
   }
 
-  console.log('[verification] OTP generated', {
+  appLogger.info('verification_otp_generated', {
     userId: input.userId,
     phone,
     partnerId: partner.id,
     challengeId: created.data.id,
-    otpCode,
   });
 
   return {

@@ -61,6 +61,7 @@ export type ErpQuotationOptions = {
   validityDate?: string;
   note?: string;
   paymentTermId?: number;
+  productId?: number;
 };
 
 export type ErpCustomerUpdate = {
@@ -112,6 +113,7 @@ export type ErpAdapter = {
   editQuoteLine: (orderId: number, productId: number, qty: number) => Promise<boolean>;
   removeQuoteLine: (orderId: number, productId: number) => Promise<boolean>;
   cancelQuote: (orderId: number) => Promise<boolean>;
+  sendQuotationEmail: (orderId: number, email: string, subject: string, body: string) => Promise<boolean>;
   getOrderStatus: (orderRef: string) => Promise<ErpOrderStatus | null>;
   getDailySnapshot: () => Promise<ErpDailySnapshotRow[]>;
   getDailySummary: () => Promise<string | null>;

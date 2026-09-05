@@ -45,5 +45,7 @@ else after it.
 - This is a static-reply mechanism only. For anything that needs to look
   up live data (Odoo, Firestore) or write anything, that's a TypeScript
   handler in `src/line/handlers/`, not a skill file.
+- Odoo field → LINE widget maps live in `skills/odoo-fields/` and are
+  **not** chat commands. See that folder's README.
 
 See `src/services/skill-loader.ts` for the implementation.

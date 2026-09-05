@@ -43,7 +43,15 @@ export const UI_STRINGS = {
   preview: { en: 'Preview', th: 'ดูตัวอย่าง' },
   sendToCustomer: { en: 'Send to customer', th: 'ส่งให้ลูกค้า' },
   confirm: { en: 'Confirm', th: 'ยืนยันคำสั่งซื้อ' },
-  approve: { en: 'Approve', th: 'อนุมัติ' },
+  approve: { en: 'Confirm', th: 'ยืนยัน' },
+  moreActions: { en: 'More', th: 'เพิ่มเติม' },
+  sendNow: { en: 'Send', th: 'ส่ง' },
+  sendComposerTitle: { en: 'Send quotation', th: 'ส่งใบเสนอราคา' },
+  emailTo: { en: 'To', th: 'ถึง' },
+  emailSubject: { en: 'Subject', th: 'เรื่อง' },
+  noPartnerEmail: { en: 'No email on this customer. LINE send still works if they verified.', th: 'ลูกค้ายังไม่มีอีเมล ส่งทาง LINE ได้ถ้ายืนยันตัวตนแล้ว' },
+  nextPage: { en: 'Next 5', th: 'ถัดไป 5 รายการ' },
+  filterDates: { en: 'Filter dates', th: 'กรองวันที่' },
   // Kept short deliberately — this button often sits half-width next to
   // "Download PDF", and a longer label gets visually clipped by the LINE
   // client itself (its width-based clipping, not the 20-char cap below).
@@ -68,12 +76,59 @@ export const UI_STRINGS = {
   noQuotations: { en: "No quotations found.", th: 'ไม่พบใบเสนอราคา' },
   moreQuotations: { en: 'More quotations exist — ask an admin to narrow the search.', th: 'มีใบเสนอราคาเพิ่มเติม — กรุณาแจ้งแอดมินให้ช่วยค้นหาแบบเจาะจงมากขึ้น' },
   messageCustomer: { en: 'Message customer', th: 'ส่งข้อความลูกค้า' },
+  home: { en: 'Home', th: 'หน้าหลัก' },
+  back: { en: 'Back', th: 'ย้อนกลับ' },
+  skip: { en: 'Skip', th: 'ข้าม' },
+  cancelForm: { en: 'Cancel', th: 'ยกเลิก' },
+  pickDate: { en: '📅 Pick date', th: '📅 เลือกวันที่' },
+  dateFrom: { en: '📅 From', th: '📅 จาก' },
+  dateTo: { en: '📅 To', th: '📅 ถึง' },
+  createQuote: { en: 'Create quote', th: 'สร้างใบเสนอราคา' },
+  searchAgain: { en: 'Search again', th: 'ค้นหาอีกครั้ง' },
+  productDetail: { en: 'Product detail', th: 'รายละเอียดสินค้า' },
+  productNext: { en: 'Review and choose the next action', th: 'ตรวจสอบข้อมูลแล้วเลือกขั้นตอนต่อไป' },
+  price: { en: 'Price', th: 'ราคา' },
+  stock: { en: 'Stock', th: 'คงเหลือ' },
+  checkOrder: { en: 'Check order', th: 'เช็คออเดอร์' },
+  retryStatus: { en: 'Check status', th: 'เช็คสถานะ' },
+  listTapHint: { en: '{n} found — tap one for details', th: 'พบ {n} รายการ — แตะเพื่อดูรายละเอียด' },
+  noQuotationsYet: { en: 'No quotations yet', th: 'ยังไม่มีใบเสนอราคา' },
+  orderKind: { en: 'Order', th: 'คำสั่งขาย' },
+  needsAttention: { en: 'Needs attention', th: 'ต้องตรวจสอบ' },
+  notice: { en: 'Notice', th: 'แจ้งเตือน' },
+  done: { en: 'Done', th: 'สำเร็จ' },
+  nextStepHint: { en: 'Use the buttons below for the next step.', th: 'ใช้ปุ่มด้านล่างเพื่อไปขั้นตอนถัดไป' },
+  tapOptionOrType: { en: 'Tap an option below, or type your own answer.', th: 'แตะเลือกตัวเลือกด้านล่าง หรือพิมพ์คำตอบเอง' },
+  pickDateOrType: { en: 'Pick a date, or type YYYY-MM-DD.', th: 'เลือกวันที่ หรือพิมพ์ YYYY-MM-DD' },
+  typeAnswer: { en: 'Please type your answer in the chat box.', th: 'กรุณาพิมพ์คำตอบในช่องแชท' },
+  stepOf: { en: 'Step {current} of {total}', th: 'ขั้นตอน {current} จาก {total}' },
+  optionalSummaryHint: { en: 'Optional — tap any to fill, or finalize as-is', th: 'ไม่บังคับ — แตะเพื่อกรอก หรือสร้างได้เลย' },
+  tapService: { en: 'Tap a service to continue', th: 'เลือกบริการเพื่อเริ่มใช้งาน' },
+  chooseAction: { en: 'Choose one action', th: 'เลือกสิ่งที่ต้องการทำ' },
+  languageToggle: { en: 'Language', th: 'ภาษา' },
+  guide: { en: 'Guide', th: 'คู่มือ' },
+  invoiceField: { en: 'Invoice', th: 'ใบแจ้งหนี้' },
+  invoiceToInvoice: { en: 'To invoice', th: 'รอเปิดบิล' },
+  invoiceInvoiced: { en: 'Invoiced', th: 'เปิดบิลแล้ว' },
+  invoiceUpselling: { en: 'Upselling', th: 'เสนอเพิ่ม' },
+  myData: { en: 'My data', th: 'ข้อมูลของฉัน' },
+  deleteMyData: { en: 'Delete my data', th: 'ลบข้อมูล' },
 } as const;
 
 export type UiStringKey = keyof typeof UI_STRINGS;
 
 /** Same shape as the existing `tr(language, th, en)` helper repeated in every handler file, just table-driven. */
 export const t = (key: UiStringKey, language: Lang): string => UI_STRINGS[key][language];
+
+export const tFill = (key: UiStringKey, language: Lang, vars: Record<string, string | number>): string =>
+  Object.entries(vars).reduce((acc, [name, value]) => acc.split(`{${name}}`).join(String(value)), t(key, language));
+
+export const invoiceStatusLabel = (status: string | undefined, language: Lang): string => {
+  if (status === 'to invoice') return t('invoiceToInvoice', language);
+  if (status === 'invoiced') return t('invoiceInvoiced', language);
+  if (status === 'upselling') return t('invoiceUpselling', language);
+  return '';
+};
 
 export const stateLabel = (state: string, language: Lang): string => {
   const entry = ODOO_STATE_LABELS[state as OdooSaleOrderState];

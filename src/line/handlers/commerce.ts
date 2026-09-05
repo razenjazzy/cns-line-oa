@@ -10,13 +10,14 @@ import { parseDemoQuotePayload } from '../command-validators';
 import {
   findPaymentTermByName,
   findProductByQuery,
+  getProductById,
   getPartnerByPhone,
   getSaleOrderById,
   getSaleOrderPortalLink,
   getSaleOrderPdfLink,
   seedOdooSampleSalesData,
 } from '../../services/odoo';
-import { recordAuditEvent } from '../../services/firestore';
+import { recordAuditEvent, setLastProductContext } from '../../services/firestore';
 import type { UserLanguage } from '../../services/firestore';
 import { getErpAdapter } from '../../erp/registry';
 import { getPlatformStatus } from '../../platform/status';
@@ -30,12 +31,13 @@ const inferTone = (value: string): 'info' | 'success' | 'warning' | 'error' => {
   return 'info';
 };
 
-const botText = (value: string, language: UserLanguage) =>
+const botText = (value: string, language: UserLanguage, actions?: { label: string; text: string; style?: 'primary' | 'secondary' }[]) =>
   createBotTextFlexMessage({
     title: tr(language, 'ผู้ช่วย Cloudnex', 'Cloudnex assistant'),
     body: value,
     language,
     tone: inferTone(value),
+    actions,
   });
 
 // PRODUCT FIND [query] — lookup product in Odoo; no query → guided form
@@ -43,7 +45,7 @@ const demoProductHandler: CommandHandler = {
   name: 'commerce-product-find',
   match: (u) => u === 'PRODUCT FIND' || u.startsWith('PRODUCT FIND '),
   handle: async (ctx) => {
-    const { userLanguage, text } = ctx;
+    const { userLanguage, text, userId } = ctx;
     const query = text.trim().replace(/^PRODUCT FIND\s*/i, '').trim();
     if (!query) {
       const { resolveCommandReply } = await import('../command-router');
@@ -51,12 +53,19 @@ const demoProductHandler: CommandHandler = {
     }
     const products = await getErpAdapter().searchProducts(query, 5);
     if (!products.length) {
-      return [botText(tr(userLanguage, `ไม่พบสินค้าที่ตรงกับ "${query}" ลองใช้ชื่อสินค้าอื่นดูนะคะ`, `No product matched "${query}". Try a different product name?`), userLanguage)];
+      return [botText(tr(userLanguage, `ไม่พบสินค้าที่ตรงกับ "${query}"`, `No product matched "${query}".`), userLanguage, [
+        { label: tr(userLanguage, 'ค้นหาอีกครั้ง', 'Search again'), text: 'FORM PRODUCT FIND', style: 'primary' },
+      ])];
     }
     if (products.length > 1) {
       return [createProductPickerFlexMessage(products, userLanguage)];
     }
     const product = products[0];
+    await setLastProductContext(userId, {
+      productId: product.id,
+      productName: product.name,
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    });
     return [createProductCardFlexMessage(product.name, product.price || 0, product.quantity || 0, userLanguage)];
   },
 };
@@ -110,20 +119,18 @@ const demoQuoteHandler: CommandHandler = {
       return resolveCommandReply({ ...ctx, text: 'FORM QUOTE CREATE' });
     }
 
-    const { productName, qty, customerName, phone, customerReference, discountPercent, validityDate, note, paymentTerm } = parsed;
+    const { productName, qty, customerName, phone, customerReference, discountPercent, validityDate, note, paymentTerm, productId: parsedProductId } = parsed;
 
-    // createQuotationFromLine collapses every failure (no product match, a
-    // genuine Odoo error, anything) into a single null, so a real error was
-    // indistinguishable from a simple typo in the product name — both showed
-    // the same "check product name" message. Check the product separately
-    // first so the two cases get a message that actually points at the
-    // right fix.
-    const product = await findProductByQuery(productName);
+    const product = parsedProductId
+      ? await getProductById(parsedProductId)
+      : await findProductByQuery(productName);
     if (!product) {
       return [botText(tr(userLanguage,
-        `ไม่พบสินค้าที่ตรงกับ "${productName}" ลองพิมพ์ PRODUCT FIND ${productName} เพื่อตรวจสอบชื่อที่ถูกต้องก่อนนะคะ`,
-        `No product matched "${productName}". Try PRODUCT FIND ${productName} first to check the exact name in the catalog.`,
-      ), userLanguage)];
+        `ไม่พบสินค้าที่ตรงกับ "${productName}"`,
+        `No product matched "${productName}".`,
+      ), userLanguage, [
+        { label: tr(userLanguage, 'ค้นหาสินค้า', 'Find product'), text: 'FORM PRODUCT FIND', style: 'primary' },
+      ])];
     }
 
     // If an admin is quoting for a phone that's already a real Odoo
@@ -144,13 +151,14 @@ const demoQuoteHandler: CommandHandler = {
       else paymentTermNotFound = true;
     }
 
-    const quotation = await getErpAdapter().createQuotation(customerName, phone, productName, qty, {
+    const quotation = await getErpAdapter().createQuotation(customerName, phone, product.name, qty, {
       partnerId: existingPartner?.id,
       customerRef: customerReference,
       discountPercent,
       validityDate,
       note,
       paymentTermId,
+      productId: product.id,
     });
     if (!quotation) {
       // Product genuinely exists, so this is a real failure (partner
@@ -172,7 +180,9 @@ const demoQuoteHandler: CommandHandler = {
       return [botText(tr(userLanguage,
         `สร้างใบเสนอราคา ${quotation.name} สำเร็จแล้ว (${formatMoney(quotation.total, 'th')})`,
         `Created quotation ${quotation.name} (${formatMoney(quotation.total, 'en')}).`,
-      ), userLanguage)];
+      ), userLanguage, [
+        { label: tr(userLanguage, 'เช็คสถานะ', 'Check status'), text: `QUOTE STATUS ${quotation.id}`, style: 'primary' },
+      ])];
     }
 
     const [portalLink, pdfLink] = await Promise.all([

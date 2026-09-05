@@ -115,6 +115,8 @@ export type DemoQuoteInput = {
   note?: string;
   /** Free text, resolved to an id via findPaymentTermByName by the caller — this validator only checks shape. */
   paymentTerm?: string;
+  /** When set, skip name search in Odoo and load this product.product id. */
+  productId?: number;
 };
 
 const isIsoDateLike = (value: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(value);
@@ -132,8 +134,11 @@ export const parseDemoQuotePayload = (payload: string): DemoQuoteInput | null =>
   const customerName = normalize(customerNameRaw || '');
   const phone = normalize(phoneRaw || '', 24);
   const qty = Number(qtyRaw || '');
+  const productIdMatch = /^id:(\d+)$/i.exec(productName);
+  const productId = productIdMatch ? Number(productIdMatch[1]) : undefined;
 
   if (!productName || !customerName || !phone || !isValidPhone(phone)) return null;
+  if (productId !== undefined && (!Number.isFinite(productId) || productId <= 0)) return null;
   if (Number.isNaN(qty) || qty <= 0 || qty > 10000) return null;
 
   const customerReference = normalize(customerRefRaw || '', 64);
@@ -149,6 +154,7 @@ export const parseDemoQuotePayload = (payload: string): DemoQuoteInput | null =>
     qty,
     customerName,
     phone,
+    ...(productId ? { productId } : {}),
     ...(customerReference ? { customerReference } : {}),
     ...(discountPercent !== undefined ? { discountPercent } : {}),
     ...(validityDate ? { validityDate } : {}),

@@ -159,6 +159,15 @@ export const resolveServiceForCommand = (upperText: string): ServiceKey | null =
 export const isOtpGatedCommand = (upperText: string): boolean =>
   COMMAND_PREFIX_SERVICE_MAP.some(m => m.requiresOtp && upperText.startsWith(m.prefix));
 
+export const isCommandDisabled = (upperText: string): boolean => {
+  const raw = process.env.DISABLED_COMMANDS?.trim();
+  if (!raw) return false;
+  return raw.split(',')
+    .map(value => value.trim().toUpperCase())
+    .filter(Boolean)
+    .some(prefix => upperText === prefix || upperText.startsWith(`${prefix} `));
+};
+
 export const getServiceDefinition = (key: string): ServiceDefinition | null => {
   return SERVICE_CATALOG.find(svc => svc.key === key) || null;
 };
@@ -175,7 +184,7 @@ export const isServiceEnabledForChannel = (service: ServiceKey, channel?: Channe
 };
 
 export const getVisibleCommands = (service: ServiceDefinition, isAdmin: boolean): ServiceCommand[] => {
-  return service.commands.filter(c => !c.requiresAdmin || isAdmin);
+  return service.commands.filter(c => (!c.requiresAdmin || isAdmin) && !isCommandDisabled(c.text.toUpperCase()));
 };
 
 /**

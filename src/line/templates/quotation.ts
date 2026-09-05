@@ -1,7 +1,8 @@
 import { messagingApi } from '@line/bot-sdk';
 import type { OdooSaleOrder } from '../../services/odoo/types';
-import { t, stateLabel, type Lang } from '../../services/i18n';
-import { BRAND, createMessageActionButton, createPrefillButton, createUriActionButton, formatMoney, truncate } from './shared';
+import { t, tFill, stateLabel, invoiceStatusLabel, type Lang } from '../../services/i18n';
+import { bindPostbackData } from '../postback';
+import { BRAND, createDatePickerButton, createMessageActionButton, createPrefillButton, createUriActionButton, formatMoney, truncate } from './shared';
 
 const QUOTATION_STATE_SEQUENCE = ['draft', 'sent', 'sale'] as const;
 
@@ -23,6 +24,18 @@ export const createQuotationJourneyFlexMessage = (
   const isCancelled = order.state === 'cancel';
   const currentIndex = isCancelled ? -1 : QUOTATION_STATE_SEQUENCE.indexOf(order.state as typeof QUOTATION_STATE_SEQUENCE[number]);
 
+  const invoiceLabel = invoiceStatusLabel(order.invoice_status, language);
+  const invoiceChip: messagingApi.FlexBox | null = invoiceLabel ? {
+    type: 'box',
+    layout: 'horizontal',
+    backgroundColor: BRAND.paper,
+    cornerRadius: BRAND.radius,
+    paddingAll: 'sm',
+    contents: [
+      { type: 'text', text: t('invoiceField', language), size: 'xs', color: BRAND.inkSoft, flex: 2 },
+      { type: 'text', text: invoiceLabel, size: 'sm', color: BRAND.tealStrong, align: 'end', flex: 3, wrap: true },
+    ],
+  } : null;
   const lines = order.lines || [];
   const visibleLines = lines.slice(0, 4);
   const extraCount = lines.length - visibleLines.length;
@@ -68,41 +81,26 @@ export const createQuotationJourneyFlexMessage = (
   // state — mirrors Odoo web's own button visibility per state.
   const footerRows: messagingApi.FlexButton[][] = [];
   const canStillAct = !isCancelled && order.state !== 'sale';
-  // Matches Odoo web's own Create Invoice button condition exactly
-  // (sale.order.form: invisible="invoice_status != 'to invoice'").
-  const canInvoice = !isCancelled && order.state === 'sale' && order.invoice_status === 'to invoice';
-  // Odoo's own convention: cancellation and invoicing are manager-level
-  // actions. Only an explicitly-resolved 'salesperson' tier loses them —
-  // undefined (no linked Odoo user, today's default) and 'sales_manager'
-  // both keep today's full admin action set. See findOdooSalesTierByPartnerId.
-  const isRestrictedToSalesperson = options.salesTier === 'salesperson';
 
   if (options.role === 'admin') {
     if (canStillAct) {
       footerRows.push([
         createMessageActionButton(t('confirm', language), `QUOTE CONFIRM ${order.id}`, 'primary', BRAND.teal),
-        createMessageActionButton(t('sendToCustomer', language), `QUOTE SEND ${order.id}`, 'secondary', BRAND.tealTint),
+        createMessageActionButton(t('sendNow', language), `QUOTE SEND ${order.id}`, 'secondary', BRAND.tealTint),
       ]);
-      const lineActionButtons = [
-        createPrefillButton(t('addItem', language), `QUOTE ADD ${order.id} `, 'secondary', BRAND.tealTint),
-        createPrefillButton(t('editItem', language), `QUOTE EDIT ${order.id} `, 'secondary', BRAND.tealTint),
-        ...(isRestrictedToSalesperson ? [] : [createMessageActionButton(t('cancelQuote', language), `QUOTE CANCEL ${order.id}`, 'secondary', BRAND.goldTint)]),
-      ];
-      footerRows.push(lineActionButtons);
     }
-    if (canInvoice && !isRestrictedToSalesperson) {
-      footerRows.push([createMessageActionButton(t('createInvoice', language), `QUOTE INVOICE ${order.id}`, 'primary', BRAND.teal)]);
-    }
-    footerRows.push([createPrefillButton(t('messageCustomer', language), `QUOTE MESSAGE ${order.id} `, 'secondary', BRAND.tealTint)]);
     if (options.portalLink || options.pdfLink) {
       footerRows.push([
         ...(options.portalLink ? [createUriActionButton(t('preview', language), options.portalLink, 'secondary', BRAND.goldTint)] : []),
         ...(options.pdfLink ? [createUriActionButton(t('downloadPdf', language), options.pdfLink, 'secondary', BRAND.goldTint)] : []),
       ]);
     }
+    footerRows.push([
+      createMessageActionButton(t('moreActions', language), `QUOTE MORE ${order.id}`, 'secondary', BRAND.tealTint),
+    ]);
   } else {
     if (canStillAct) {
-      footerRows.push([createMessageActionButton(t('approve', language), `QUOTE APPROVE ${order.id}`, 'primary', BRAND.teal)]);
+      footerRows.push([createMessageActionButton(t('confirm', language), `QUOTE APPROVE ${order.id}`, 'primary', BRAND.teal)]);
     }
     if (options.portalLink || options.pdfLink) {
       footerRows.push([
@@ -114,7 +112,7 @@ export const createQuotationJourneyFlexMessage = (
   // Compactness: Home rides along on the last row if there's still room
   // for a third button (rows stay legible up to 2 across; a row already
   // at 2 gets Home as its own row rather than cramming to 3).
-  const homeButton = createMessageActionButton(language === 'en' ? 'Home' : 'หน้าหลัก', 'NAV HOME', 'secondary', BRAND.goldTint);
+  const homeButton = createMessageActionButton(t('home', language), 'NAV HOME', 'secondary', BRAND.goldTint);
   const lastRow = footerRows[footerRows.length - 1];
   if (lastRow && lastRow.length === 1) {
     lastRow.push(homeButton);
@@ -151,8 +149,10 @@ export const createQuotationJourneyFlexMessage = (
         type: 'box',
         layout: 'vertical',
         spacing: 'md',
+        paddingBottom: 'lg',
         contents: [
           statusRow,
+          ...(invoiceChip ? [invoiceChip] : []),
           ...(visibleLines.length ? [{
             type: 'box' as const,
             layout: 'vertical' as const,
@@ -192,6 +192,9 @@ export const createQuotationJourneyFlexMessage = (
             contents: [
               { type: 'text', text: t('total', language), size: 'xs', color: BRAND.inkSoft },
               { type: 'text', text: formatMoney(order.amount_total, language), size: 'xl', color: BRAND.tealStrong, weight: 'bold', wrap: true },
+              ...(order.amount_invoiced
+                ? [{ type: 'text' as const, text: `${t('invoiceInvoiced', language)}: ${formatMoney(order.amount_invoiced, language)}`, size: 'xs' as const, color: BRAND.inkSoft, wrap: true }]
+                : []),
             ],
           },
         ],
@@ -206,18 +209,120 @@ export const createQuotationJourneyFlexMessage = (
   };
 };
 
+export const createQuotationMoreFlexMessage = (
+  order: OdooSaleOrder,
+  options: { salesTier?: 'salesperson' | 'sales_manager' },
+  language: Lang,
+): messagingApi.FlexMessage => {
+  const canStillAct = order.state !== 'cancel' && order.state !== 'sale';
+  const canInvoice = order.state === 'sale' && order.invoice_status === 'to invoice';
+  const isRestrictedToSalesperson = options.salesTier === 'salesperson';
+  const rows: messagingApi.FlexComponent[] = [];
+  if (canStillAct) {
+    rows.push({
+      type: 'box',
+      layout: 'horizontal',
+      spacing: 'sm',
+      contents: [
+        { ...createPrefillButton(t('addItem', language), `QUOTE ADD ${order.id} `, 'secondary', BRAND.tealTint), flex: 1 },
+        { ...createPrefillButton(t('editItem', language), `QUOTE EDIT ${order.id} `, 'secondary', BRAND.tealTint), flex: 1 },
+      ],
+    });
+    if (!isRestrictedToSalesperson) {
+      rows.push(createMessageActionButton(t('cancelQuote', language), `QUOTE CANCEL ${order.id}`, 'secondary', BRAND.goldTint));
+    }
+  }
+  if (canInvoice && !isRestrictedToSalesperson) {
+    rows.push(createMessageActionButton(t('createInvoice', language), `QUOTE INVOICE ${order.id}`, 'primary', BRAND.teal));
+  }
+  rows.push(createPrefillButton(t('messageCustomer', language), `QUOTE MESSAGE ${order.id} `, 'secondary', BRAND.tealTint));
+  rows.push(createMessageActionButton(t('back', language), `QUOTE STATUS ${order.id}`, 'secondary', BRAND.goldTint));
+
+  return {
+    type: 'flex',
+    altText: truncate(`${t('moreActions', language)} ${order.name}`, 390),
+    contents: {
+      type: 'bubble',
+      styles: { header: { backgroundColor: BRAND.teal }, body: { backgroundColor: BRAND.surface }, footer: { backgroundColor: BRAND.surface } },
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: 'md',
+        contents: [
+          { type: 'text', text: t('moreActions', language), weight: 'bold', size: 'md', color: '#FFFFFF' },
+          { type: 'text', text: order.name, size: 'xs', color: '#DDEBE9', margin: 'xs' },
+        ],
+      },
+      body: { type: 'box', layout: 'vertical', spacing: 'sm', paddingBottom: 'lg', contents: rows },
+    },
+  };
+};
+
+export const createQuoteSendComposerFlexMessage = (
+  order: OdooSaleOrder,
+  email: string | undefined,
+  language: Lang,
+): messagingApi.FlexMessage => {
+  const customerName = order.partner_id?.[1] || '-';
+  const subject = language === 'en' ? `Quotation ${order.name}` : `ใบเสนอราคา ${order.name}`;
+  const body = language === 'en'
+    ? `Please review quotation ${order.name} (${formatMoney(order.amount_total, language)}). Confirm in LINE or Odoo to proceed.`
+    : `กรุณาตรวจสอบใบเสนอราคา ${order.name} (${formatMoney(order.amount_total, language)}) ยืนยันใน LINE หรือ Odoo เพื่อดำเนินการต่อ`;
+
+  return {
+    type: 'flex',
+    altText: truncate(t('sendComposerTitle', language), 390),
+    contents: {
+      type: 'bubble',
+      styles: { header: { backgroundColor: BRAND.teal }, body: { backgroundColor: BRAND.surface }, footer: { backgroundColor: BRAND.surface } },
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: 'md',
+        contents: [
+          { type: 'text', text: t('sendComposerTitle', language), weight: 'bold', size: 'md', color: '#FFFFFF' },
+          { type: 'text', text: order.name, size: 'xs', color: '#DDEBE9', margin: 'xs' },
+        ],
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        paddingBottom: 'lg',
+        contents: [
+          { type: 'text', text: `${t('emailTo', language)}: ${email || '—'}`, size: 'sm', color: BRAND.ink, wrap: true },
+          { type: 'text', text: `${t('emailSubject', language)}: ${subject}`, size: 'sm', color: BRAND.ink, wrap: true },
+          { type: 'text', text: body, size: 'xs', color: BRAND.inkSoft, wrap: true },
+          ...(!email ? [{ type: 'text' as const, text: t('noPartnerEmail', language), size: 'xs' as const, color: BRAND.gold, wrap: true }] : []),
+          { type: 'text', text: `${t('customer', language)}: ${customerName}`, size: 'xs', color: BRAND.inkSoft, wrap: true },
+        ],
+      },
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        contents: [
+          createMessageActionButton(t('sendNow', language), `QUOTE SEND CONFIRM ${order.id}`, 'primary', BRAND.teal),
+          createMessageActionButton(t('back', language), `QUOTE STATUS ${order.id}`, 'secondary', BRAND.goldTint),
+        ],
+      },
+    },
+  };
+};
+
 /**
- * "My quotations" — one tappable row per order (QUOTE STATUS <id>), capped
- * at however many the caller passed in (getSaleOrdersForPartner already
- * caps the query itself). No pagination in this pass — matches the rest of
- * this feature's "simple UX" scope; a caller with more than that many
- * orders is told to ask an admin to narrow the search instead.
+ * "My quotations" — five rows, Next 5, optional date filter.
  */
 export const createQuotationListFlexMessage = (
   orders: OdooSaleOrder[],
   hasMore: boolean,
-  language: Lang
+  language: Lang,
+  nextCursor?: string,
+  dateFrom?: string,
+  dateTo?: string,
+  userId = '',
 ): messagingApi.FlexMessage => {
+  const dateQuery = dateFrom && dateTo ? ` FROM ${dateFrom} TO ${dateTo}` : '';
   return {
     type: 'flex',
     altText: truncate(t('myQuotations', language), 390),
@@ -235,22 +340,21 @@ export const createQuotationListFlexMessage = (
         contents: [
           { type: 'text', text: t('myQuotations', language), weight: 'bold', size: 'md', color: '#FFFFFF', wrap: true },
           { type: 'text', text: orders.length
-            ? (language === 'en' ? `${orders.length} found — tap one for details` : `พบ ${orders.length} รายการ — แตะเพื่อดูรายละเอียด`)
-            : (language === 'en' ? 'No quotations yet' : 'ยังไม่มีใบเสนอราคา'), size: 'xs', color: '#DDEBE9', margin: 'xs', wrap: true },
+            ? tFill('listTapHint', language, { n: orders.length })
+            : t('noQuotationsYet', language), size: 'xs', color: '#DDEBE9', margin: 'xs', wrap: true },
         ],
       },
       body: {
         type: 'box',
         layout: 'vertical',
         spacing: 'sm',
+        paddingBottom: 'lg',
         contents: orders.length
-          ? [
-              // A tappable box (not a button — LINE buttons cap labels at
-              // 20 chars, which forced "S00023 · 1,851 THB" with no status
-              // or date, unreadable for a sales user). A box's own action
-              // makes the whole row tappable with no label-length limit at
-              // all, so status + date + total can all be shown plainly.
-              ...orders.map(order => ({
+          ? orders.map(order => {
+              const kind = order.state === 'sale' || order.state === 'done' ? t('orderKind', language) : t('quotation', language);
+              const datePart = order.date_order ? order.date_order.split(' ')[0] : '';
+              const customer = order.partner_id?.[1] || '-';
+              return {
                 type: 'box' as const,
                 layout: 'horizontal' as const,
                 backgroundColor: BRAND.paper,
@@ -263,10 +367,10 @@ export const createQuotationListFlexMessage = (
                     layout: 'vertical' as const,
                     flex: 3,
                     contents: [
-                      { type: 'text' as const, text: order.name, size: 'sm' as const, weight: 'bold' as const, color: BRAND.ink, wrap: true },
+                      { type: 'text' as const, text: order.name, size: 'sm' as const, color: BRAND.ink, wrap: true },
                       {
                         type: 'text' as const,
-                        text: `${stateLabel(order.state, language)}${order.date_order ? ` · ${order.date_order.split(' ')[0]}` : ''}`,
+                        text: `${kind}: ${datePart} | ${customer}`,
                         size: 'xs' as const, color: BRAND.inkSoft, wrap: true,
                       },
                     ],
@@ -274,19 +378,25 @@ export const createQuotationListFlexMessage = (
                   {
                     type: 'text' as const,
                     text: formatMoney(order.amount_total, language),
-                    size: 'sm' as const, weight: 'bold' as const, color: BRAND.tealStrong, align: 'end' as const, flex: 2, gravity: 'center' as const,
+                    size: 'sm' as const, color: BRAND.tealStrong, align: 'end' as const, flex: 2, gravity: 'center' as const,
                   },
                 ],
-              })),
-              ...(hasMore ? [{ type: 'text' as const, text: t('moreQuotations', language), size: 'xs' as const, color: BRAND.inkSoft, wrap: true }] : []),
-            ]
+              };
+            })
           : [{ type: 'text', text: t('noQuotations', language), size: 'sm', color: BRAND.inkSoft, wrap: true }],
       },
       footer: {
         type: 'box',
         layout: 'vertical',
         spacing: 'sm',
-        contents: [createMessageActionButton(language === 'en' ? 'Home' : 'หน้าหลัก', 'NAV HOME', 'secondary', BRAND.goldTint)],
+        contents: [
+          { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
+            { ...createDatePickerButton(t('dateFrom', language), bindPostbackData('quote.list.from', userId)), flex: 1 },
+            { ...createDatePickerButton(t('dateTo', language), bindPostbackData('quote.list.to', userId)), flex: 1 },
+          ] },
+          ...(hasMore && nextCursor ? [createMessageActionButton(t('nextPage', language), `QUOTE LIST CURSOR ${nextCursor}${dateQuery}`, 'secondary', BRAND.tealTint)] : []),
+          createMessageActionButton(t('home', language), 'NAV HOME', 'secondary', BRAND.goldTint),
+        ],
       },
     },
   };

@@ -16,6 +16,8 @@ export {
   setUserOdooPartner,
   setUserOdooVerificationStatus,
   setUserPendingFlow,
+  setLastProductContext,
+  setLastQuoteListFrom,
   setUserRole,
   updateUserScore,
 } from '../firestore';

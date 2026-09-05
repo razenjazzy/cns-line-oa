@@ -1,5 +1,6 @@
 import { messagingApi } from '@line/bot-sdk';
 import { DEFAULT_CHANNEL_ID, resolveChannelConfig } from './channels';
+import { appLogger } from '../services/logger';
 
 // Reuses the same channel resolver as webhook.ts so channel credentials
 // have a single source of truth. Defaults to the backward-compatible
@@ -13,8 +14,7 @@ const getClient = (channelId: string): messagingApi.MessagingApiClient | null =>
 const sendTargetedMessages = async (userIds: string[], messages: messagingApi.Message[], channelId: string = DEFAULT_CHANNEL_ID) => {
   const client = getClient(channelId);
   if (!client) {
-    console.warn(`LINE Client not initialized for channel "${channelId}". Cannot send targeted messages.`);
-    console.log(`[DRY RUN] Would send to ${userIds.length} users: ${JSON.stringify(messages)}`);
+    appLogger.warn('line_client_missing_for_targeted_send', { channelId, userCount: userIds.length });
     return;
   }
 
@@ -27,9 +27,9 @@ const sendTargetedMessages = async (userIds: string[], messages: messagingApi.Me
   for (const chunk of chunks) {
       try {
           await client.multicast({ to: chunk, messages });
-          console.log(`Sent targeted message to ${chunk.length} users on channel "${channelId}".`);
+          appLogger.info('line_multicast_sent', { channelId, userCount: chunk.length });
       } catch (error) {
-          console.error(`Error sending multicast message on channel "${channelId}":`, error);
+          appLogger.error('line_multicast_failed', { channelId, error: String(error) });
       }
   }
 };

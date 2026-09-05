@@ -1,4 +1,5 @@
 import { messagingApi } from '@line/bot-sdk';
+import { t } from '../../services/i18n';
 import { BRAND, createMessageActionButton, createTapRow, formatMoney, truncate, type ReportLanguage } from './shared';
 
 /**
@@ -45,7 +46,7 @@ export const createProductPickerFlexMessage = (
     footer: {
       type: 'box',
       layout: 'vertical',
-      contents: [createMessageActionButton(language === 'en' ? 'Home' : 'หน้าหลัก', 'NAV HOME', 'secondary', BRAND.goldTint)],
+      contents: [createMessageActionButton(t('home', language), 'NAV HOME', 'secondary', BRAND.goldTint)],
     },
   },
 });
@@ -66,14 +67,15 @@ export const createProductCardFlexMessage = (productName: string, price: number,
         layout: 'vertical',
         paddingAll: 'md',
         contents: [
-          { type: 'text', text: language === 'en' ? 'Product detail' : 'รายละเอียดสินค้า', color: '#FFFFFF', weight: 'bold', size: 'md', wrap: true },
-          { type: 'text', text: language === 'en' ? 'Review and choose the next action' : 'ตรวจสอบข้อมูลแล้วเลือกขั้นตอนต่อไป', color: '#DDEBE9', size: 'xs', margin: 'xs', wrap: true },
+          { type: 'text', text: t('productDetail', language), color: '#FFFFFF', weight: 'bold', size: 'md', wrap: true },
+          { type: 'text', text: t('productNext', language), color: '#DDEBE9', size: 'xs', margin: 'xs', wrap: true },
         ],
       },
       body: {
         type: 'box',
         layout: 'vertical',
         spacing: 'md',
+        paddingBottom: 'lg',
         contents: [
           { type: 'text', text: productName, weight: 'bold', size: 'xl', color: BRAND.ink, wrap: true },
           {
@@ -89,7 +91,7 @@ export const createProductCardFlexMessage = (productName: string, price: number,
                 cornerRadius: BRAND.radius,
                 paddingAll: 'sm',
                 contents: [
-                  { type: 'text', text: language === 'en' ? 'Price' : 'ราคา', size: 'xs', color: BRAND.inkSoft },
+                  { type: 'text', text: t('price', language), size: 'xs', color: BRAND.inkSoft },
                   { type: 'text', text: formatMoney(price, language), size: 'sm', color: BRAND.tealStrong, weight: 'bold', wrap: true },
                 ],
               },
@@ -101,7 +103,7 @@ export const createProductCardFlexMessage = (productName: string, price: number,
                 cornerRadius: BRAND.radius,
                 paddingAll: 'sm',
                 contents: [
-                  { type: 'text', text: language === 'en' ? 'Stock' : 'คงเหลือ', size: 'xs', color: BRAND.inkSoft },
+                  { type: 'text', text: t('stock', language), size: 'xs', color: BRAND.inkSoft },
                   { type: 'text', text: String(stock), size: 'sm', color: BRAND.ink, weight: 'bold', wrap: true },
                 ],
               },
@@ -114,14 +116,14 @@ export const createProductCardFlexMessage = (productName: string, price: number,
         layout: 'vertical',
         spacing: 'sm',
         contents: [
-          createMessageActionButton(language === 'en' ? 'Create quote' : 'สร้างใบเสนอราคา', 'FORM QUOTE CREATE', 'primary', BRAND.teal),
+          createMessageActionButton(t('createQuote', language), 'FORM QUOTE CREATE FROM CARD', 'primary', BRAND.teal),
           {
             type: 'box',
             layout: 'horizontal',
             spacing: 'xs',
             contents: [
-              { ...createMessageActionButton(language === 'en' ? 'Search again' : 'ค้นหาอีกครั้ง', 'FORM PRODUCT FIND', 'secondary', BRAND.tealTint), flex: 1 },
-              { ...createMessageActionButton(language === 'en' ? 'Home' : 'หน้าหลัก', 'NAV HOME', 'secondary', BRAND.goldTint), flex: 1 },
+              { ...createMessageActionButton(t('searchAgain', language), 'FORM PRODUCT FIND', 'secondary', BRAND.tealTint), flex: 1 },
+              { ...createMessageActionButton(t('home', language), 'NAV HOME', 'secondary', BRAND.goldTint), flex: 1 },
             ],
           },
         ],
@@ -130,7 +132,7 @@ export const createProductCardFlexMessage = (productName: string, price: number,
   };
 };
 
-export const createOrderSummaryFlexMessage = (total: number, language: ReportLanguage): messagingApi.FlexMessage => {
+export const createOrderSummaryFlexMessage = (total: number, language: ReportLanguage, orderId?: number): messagingApi.FlexMessage => {
   return {
     type: 'flex',
     altText: language === 'en' ? 'Order summary' : 'สรุปคำสั่งซื้อ',
@@ -154,6 +156,7 @@ export const createOrderSummaryFlexMessage = (total: number, language: ReportLan
         type: 'box',
         layout: 'vertical',
         spacing: 'md',
+        paddingBottom: 'lg',
         contents: [
           {
             type: 'box',
@@ -162,7 +165,7 @@ export const createOrderSummaryFlexMessage = (total: number, language: ReportLan
             cornerRadius: BRAND.radius,
             paddingAll: 'md',
             contents: [
-              { type: 'text', text: language === 'en' ? 'Total' : 'ยอดรวม', size: 'xs', color: BRAND.inkSoft },
+              { type: 'text', text: t('total', language), size: 'xs', color: BRAND.inkSoft },
               { type: 'text', text: formatMoney(total, language), size: 'xl', color: BRAND.tealStrong, weight: 'bold', wrap: true },
             ],
           },
@@ -174,8 +177,13 @@ export const createOrderSummaryFlexMessage = (total: number, language: ReportLan
         layout: 'vertical',
         spacing: 'sm',
         contents: [
-          createMessageActionButton(language === 'en' ? 'Check order' : 'เช็คออเดอร์', 'FORM ORDER STATUS', 'primary', BRAND.teal),
-          createMessageActionButton(language === 'en' ? 'Home' : 'หน้าหลัก', 'NAV HOME', 'secondary', BRAND.goldTint),
+          createMessageActionButton(
+            t('checkOrder', language),
+            orderId ? `QUOTE STATUS ${orderId}` : 'FORM ORDER STATUS',
+            'primary',
+            BRAND.teal,
+          ),
+          createMessageActionButton(t('home', language), 'NAV HOME', 'secondary', BRAND.goldTint),
         ],
       },
     },

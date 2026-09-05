@@ -23,6 +23,7 @@ export type OdooSaleOrder = {
   access_token?: string;
   lines?: OdooSaleOrderLine[];
   invoice_status?: string;
+  amount_invoiced?: number;
   note?: string;
 };
 

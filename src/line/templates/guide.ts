@@ -1,5 +1,6 @@
 import { messagingApi } from '@line/bot-sdk';
-import { BRAND, buttonLabel, createMessageActionButton, createPrefillButton, truncate, type ReportLanguage } from './shared';
+import { t } from '../../services/i18n';
+import { BRAND, createMessageActionButton, createPrefillButton, createTapRow, truncate, type ReportLanguage } from './shared';
 import { SERVICE_ICON } from './navigation';
 import {
   GUIDE_CATEGORY_LABELS,
@@ -45,26 +46,19 @@ export const createGuideCategoriesFlexMessage = (language: ReportLanguage, agent
         { type: 'text', text: language === 'en' ? 'Tap a topic to see its commands' : 'แตะหัวข้อเพื่อดูคำสั่ง', size: 'xs', color: '#DDEBE9', margin: 'xs', wrap: true },
       ],
     },
-    body: {
-      type: 'box',
-      layout: 'vertical',
-      spacing: 'sm',
-      contents: GUIDE_CATEGORY_ORDER.map(category => ({
-        type: 'button',
-        style: 'primary',
-        height: 'md',
-        color: BRAND.teal,
-        action: {
-          type: 'message',
-          label: buttonLabel(`${CATEGORY_ICON[category]} ${GUIDE_CATEGORY_LABELS[category][language]}`),
-          text: `GUIDE ${category}`,
-        },
-      })),
-    },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        paddingBottom: 'lg',
+        contents: GUIDE_CATEGORY_ORDER.map(category =>
+          createTapRow(`${CATEGORY_ICON[category]} ${GUIDE_CATEGORY_LABELS[category][language]}`, `GUIDE ${category}`),
+        ),
+      },
     footer: {
       type: 'box',
       layout: 'vertical',
-      contents: [createMessageActionButton(language === 'en' ? 'Home' : 'หน้าหลัก', 'NAV HOME', 'secondary', BRAND.goldTint)],
+      contents: [createMessageActionButton(t('home', language), 'NAV HOME', 'secondary', BRAND.goldTint)],
     },
   },
 });
@@ -105,7 +99,11 @@ export const createGuideCategoryFlexMessage = (category: CommandCategoryKey, lan
         spacing: 'sm',
         contents: [
           ...(note ? [{ type: 'text' as const, text: note, size: 'xs' as const, color: BRAND.inkSoft, wrap: true, margin: 'md' as const }] : []),
-          ...commands.map(cmd => createPrefillButton(cmd.key, cmd.example, 'secondary', BRAND.tealTint)),
+          ...commands.map(cmd => (
+            cmd.example.trim().toUpperCase() === cmd.key.trim().toUpperCase()
+              ? createMessageActionButton(cmd.key, cmd.example, 'secondary', BRAND.tealTint)
+              : createPrefillButton(cmd.key, cmd.example, 'secondary', BRAND.tealTint)
+          )),
         ],
       },
       footer: {
@@ -114,7 +112,7 @@ export const createGuideCategoryFlexMessage = (category: CommandCategoryKey, lan
         spacing: 'sm',
         contents: [
           { ...createMessageActionButton(language === 'en' ? 'Back' : 'ย้อนกลับ', 'GUIDE', 'secondary', BRAND.goldTint), flex: 1 },
-          { ...createMessageActionButton(language === 'en' ? 'Home' : 'หน้าหลัก', 'NAV HOME', 'secondary', BRAND.goldTint), flex: 1 },
+          { ...createMessageActionButton(t('home', language), 'NAV HOME', 'secondary', BRAND.goldTint), flex: 1 },
         ],
       },
     },

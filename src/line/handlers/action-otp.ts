@@ -71,15 +71,16 @@ const actionOtpGateHandler: CommandHandler = {
       )];
     }
 
-    return [botText(
-      tr(userLanguage, 'ยืนยันก่อนดำเนินการ', 'Confirm before continuing'),
-      tr(userLanguage,
-        `เพื่อความปลอดภัย กรุณายืนยันด้วยรหัส: ${otpCode}\nพิมพ์: ACTION VERIFY ${otpCode}`,
-        `For your security, confirm with this code: ${otpCode}\nReply: ACTION VERIFY ${otpCode}`,
+    return [createBotTextFlexMessage({
+      title: tr(userLanguage, 'ยืนยันก่อนดำเนินการ', 'Confirm before continuing'),
+      body: tr(userLanguage,
+        `เพื่อความปลอดภัย กรุณายืนยันด้วยรหัส: ${otpCode}`,
+        `For your security, confirm with this code: ${otpCode}`,
       ),
-      userLanguage,
-      'warning',
-    )];
+      language: userLanguage,
+      tone: 'warning',
+      actions: [{ label: tr(userLanguage, 'ยืนยัน', 'Verify'), text: `ACTION VERIFY ${otpCode}` }],
+    })];
   },
 };
 

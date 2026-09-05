@@ -1,11 +1,11 @@
----
-description: LINE Flex visual consistency for menus, buttons, and cards
-globs: src/line/templates/**/*.ts
-alwaysApply: false
----
-
 # LINE Flex UX
 
 Keep the Cloudnex palette and bubble anatomy in `src/line/templates/shared.ts`.
 
-NAV HOME / service action lists keep the committed `createTapRow` box (teal, 12px radius, icon in the label string). The only UI-feedback delta vs that commit is type `md` without bold — not `lg`+bold, and not a new icon-column layout. Do not switch those rows back to `type: 'button'` (LINE chrome). Footers stay `createMessageActionButton`. Product pickers use the same box at `sm` on `tealTint`.
+Three action kinds only:
+
+1. **List row** (`createTapRow`): teal or tint fill, 12px radius, icon in the label, size `sm`, not bold. Home, service menus, GUIDE topics, pickers, quote rows, optional fields. Never `type: button` on these lists (LINE chrome). Never `lg`+bold.
+2. **Footer CTA** (`createMessageActionButton`): 1–2 actions. `primary`+dark / `secondary`+tint.
+3. **Input**: prefill keyboard or datetimepicker only when the user must supply a new value.
+
+Do not re-ask a value the current card already established (seed `pendingFlow` / last product). Body uses `paddingBottom: lg`. Related actions stay in one bubble; extra quote ops go under More.

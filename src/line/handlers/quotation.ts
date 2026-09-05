@@ -1,5 +1,5 @@
 import type { CommandHandler } from './index';
-import { createBotTextFlexMessage, createQuotationJourneyFlexMessage, createQuotationListFlexMessage } from '../templates';
+import { createBotTextFlexMessage, createQuotationJourneyFlexMessage, createQuotationListFlexMessage, createQuotationMoreFlexMessage, createQuoteSendComposerFlexMessage } from '../templates';
 import {
   getSaleOrderById,
   getSaleOrderPortalLink,
@@ -16,7 +16,7 @@ import {
   getPartnerByPhone,
 } from '../../services/odoo/partners';
 import type { OdooSaleOrder } from '../../services/odoo/types';
-import { findVerifiedUserIdByPhone, getUserLanguage, recordAuditEvent } from '../../services/firestore';
+import { findVerifiedUserIdByPhone, getUserLanguage, recordAuditEvent, setLastQuoteListFrom } from '../../services/firestore';
 import type { UserLanguage } from '../../services/firestore';
 import { createApprovalRecord } from '../../services/approval-policy';
 import { saveApprovalRecord, transitionStoredApproval } from '../../services/firestore';
@@ -24,6 +24,7 @@ import { t } from '../../services/i18n';
 import { sendTargetedMessage, sendTargetedFlexMessage } from '../messaging';
 import { DEFAULT_CHANNEL_ID } from '../channels';
 import { getErpAdapter } from '../../erp/registry';
+import { decodeQuoteListCursor, encodeQuoteListCursor } from '../quote-list-cursor';
 
 const tr = (language: UserLanguage, th: string, en: string): string => (language === 'en' ? en : th);
 
@@ -34,13 +35,18 @@ const inferTone = (value: string): 'info' | 'success' | 'warning' | 'error' => {
   return 'info';
 };
 
-const botText = (value: string, language: UserLanguage) =>
+const botText = (value: string, language: UserLanguage, actions?: { label: string; text: string; style?: 'primary' | 'secondary' }[]) =>
   createBotTextFlexMessage({
     title: tr(language, 'ผู้ช่วย Cloudnex', 'Cloudnex assistant'),
     body: value,
     language,
     tone: inferTone(value),
+    actions,
   });
+
+const statusRetryActions = (orderId: number, language: UserLanguage) => [
+  { label: t('retryStatus', language), text: `QUOTE STATUS ${orderId}`, style: 'primary' as const },
+];
 
 const adminOnlyReply = (language: UserLanguage) =>
   botText(tr(language, 'คำสั่งนี้สำหรับแอดมินเท่านั้น', 'This command is admin-only.'), language);
@@ -185,7 +191,11 @@ const quoteConfirmHandler: CommandHandler = {
     // confirmed it).
     const order = await getSaleOrderById(orderId);
     if (!order) {
-      return [botText(tr(userLanguage, `ยืนยันคำสั่งซื้อ #${orderId} สำเร็จแล้ว แต่โหลดรายละเอียดล่าสุดไม่สำเร็จ พิมพ์ QUOTE STATUS ${orderId} เพื่อตรวจสอบอีกครั้ง`, `Order #${orderId} confirmed, but reloading its details failed. Try QUOTE STATUS ${orderId} to check it.`), userLanguage)];
+      return [botText(
+        tr(userLanguage, `ยืนยันคำสั่งซื้อ #${orderId} สำเร็จแล้ว แต่โหลดรายละเอียดล่าสุดไม่สำเร็จ`, `Order #${orderId} confirmed, but reloading its details failed.`),
+        userLanguage,
+        statusRetryActions(orderId, userLanguage),
+      )];
     }
 
     notifyCustomerOfOrderUpdate(order, channel?.channelId)
@@ -204,12 +214,27 @@ const quoteConfirmHandler: CommandHandler = {
 // guessing why nothing happened.
 const quoteSendHandler: CommandHandler = {
   name: 'quote-send',
-  match: (u) => u.startsWith('QUOTE SEND'),
+  match: (u) => u.startsWith('QUOTE SEND') && !u.startsWith('QUOTE SEND CONFIRM'),
+  handle: async (ctx) => {
+    const { userLanguage, profile, text } = ctx;
+    if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
+    const orderId = parseOrderId(text, 'QUOTE SEND');
+    if (!orderId) return [notFoundReply(userLanguage)];
+    const order = await getSaleOrderById(orderId);
+    if (!order || !order.partner_id) return [notFoundReply(userLanguage)];
+    const partner = await getPartnerById(order.partner_id[0]);
+    return [createQuoteSendComposerFlexMessage(order, partner?.email, userLanguage)];
+  },
+};
+
+const quoteSendConfirmHandler: CommandHandler = {
+  name: 'quote-send-confirm',
+  match: (u) => u.startsWith('QUOTE SEND CONFIRM'),
   handle: async (ctx) => {
     const { userLanguage, userId, profile, channel, requestId, text } = ctx;
     if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
 
-    const orderId = parseOrderId(text, 'QUOTE SEND');
+    const orderId = parseOrderId(text, 'QUOTE SEND CONFIRM');
     if (!orderId) return [notFoundReply(userLanguage)];
 
     const order = await getSaleOrderById(orderId);
@@ -218,23 +243,55 @@ const quoteSendHandler: CommandHandler = {
     const partner = await getPartnerById(order.partner_id[0]);
     const customerUserId = partner?.phone ? await findVerifiedUserIdByPhone(partner.phone) : null;
 
-    if (!customerUserId) {
-      recordAuditEvent({ action: 'quote_send', outcome: 'failure', actorUserId: userId, channelId: channel?.channelId, requestId, targetId: String(orderId), detail: 'customer_not_linked' });
-      return [botText(t('quoteNotLinked', userLanguage), userLanguage)];
+    await markSaleOrderSent(orderId);
+    if (partner?.email) {
+      const subject = userLanguage === 'en' ? `Quotation ${order.name}` : `ใบเสนอราคา ${order.name}`;
+      const body = userLanguage === 'en'
+        ? `Please review quotation ${order.name}. Confirm in LINE to proceed.`
+        : `กรุณาตรวจสอบใบเสนอราคา ${order.name} ยืนยันใน LINE เพื่อดำเนินการต่อ`;
+      await getErpAdapter().sendQuotationEmail(orderId, partner.email, subject, body);
     }
 
-    await markSaleOrderSent(orderId);
     const sentOrder = (await getSaleOrderById(orderId)) || order;
     const { portalLink, pdfLink } = await getOrderLinks(orderId);
     const customerCard = createQuotationJourneyFlexMessage(sentOrder, { role: 'customer', portalLink, pdfLink }, userLanguage);
 
-    // Best-effort: a delivery failure here shouldn't hide the fact that
-    // the order was already marked sent in Odoo, so it's logged but not
-    // surfaced as a hard failure to the admin beyond the audit record.
-    await sendTargetedFlexMessage([customerUserId], customerCard, channel?.channelId || DEFAULT_CHANNEL_ID);
+    if (customerUserId) {
+      await sendTargetedFlexMessage([customerUserId], customerCard, channel?.channelId || DEFAULT_CHANNEL_ID);
+    }
 
-    recordAuditEvent({ action: 'quote_send', outcome: 'success', actorUserId: userId, channelId: channel?.channelId, requestId, targetId: String(orderId) });
-    return [botText(t('quoteSentToAdmin', userLanguage), userLanguage)];
+    recordAuditEvent({
+      action: 'quote_send',
+      outcome: customerUserId || partner?.email ? 'success' : 'failure',
+      actorUserId: userId,
+      channelId: channel?.channelId,
+      requestId,
+      targetId: String(orderId),
+      detail: customerUserId ? 'line' : (partner?.email ? 'email_only' : 'customer_not_linked'),
+    });
+
+    if (!customerUserId && !partner?.email) {
+      return [botText(t('quoteNotLinked', userLanguage), userLanguage), createQuotationJourneyFlexMessage(sentOrder, { role: 'admin', salesTier: profile.salesTier, portalLink, pdfLink }, userLanguage)];
+    }
+
+    return [
+      botText(t('quoteSentToAdmin', userLanguage), userLanguage),
+      createQuotationJourneyFlexMessage(sentOrder, { role: 'admin', salesTier: profile.salesTier, portalLink, pdfLink }, userLanguage),
+    ];
+  },
+};
+
+const quoteMoreHandler: CommandHandler = {
+  name: 'quote-more',
+  match: (u) => u.startsWith('QUOTE MORE'),
+  handle: async (ctx) => {
+    const { userLanguage, profile, text } = ctx;
+    if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
+    const orderId = parseOrderId(text, 'QUOTE MORE');
+    if (!orderId) return [notFoundReply(userLanguage)];
+    const order = await getSaleOrderById(orderId);
+    if (!order) return [notFoundReply(userLanguage)];
+    return [createQuotationMoreFlexMessage(order, { salesTier: profile.salesTier }, userLanguage)];
   },
 };
 
@@ -293,7 +350,12 @@ const quoteApproveHandler: CommandHandler = {
       ).catch(err => console.warn('quote-approve: admin notify failed (non-fatal):', err));
     }
 
-    return [botText(t('quoteApproved', userLanguage), userLanguage)];
+    const confirmed = (await getSaleOrderById(orderId)) || order;
+    const { portalLink, pdfLink } = await getOrderLinks(orderId);
+    return [
+      botText(t('quoteApproved', userLanguage), userLanguage),
+      createQuotationJourneyFlexMessage(confirmed, { role: 'customer', portalLink, pdfLink }, userLanguage),
+    ];
   },
 };
 
@@ -456,7 +518,11 @@ const quoteCancelHandler: CommandHandler = {
 
     const order = await getSaleOrderById(orderId);
     if (!order) {
-      return [botText(tr(userLanguage, `ยกเลิกใบเสนอราคา #${orderId} สำเร็จแล้ว แต่โหลดรายละเอียดล่าสุดไม่สำเร็จ`, `Quotation #${orderId} cancelled, but reloading its details failed.`), userLanguage)];
+      return [botText(
+        tr(userLanguage, `ยกเลิกใบเสนอราคา #${orderId} สำเร็จแล้ว แต่โหลดรายละเอียดล่าสุดไม่สำเร็จ`, `Quotation #${orderId} cancelled, but reloading its details failed.`),
+        userLanguage,
+        statusRetryActions(orderId, userLanguage),
+      )];
     }
 
     notifyCustomerOfOrderUpdate(order, channel?.channelId)
@@ -500,7 +566,11 @@ const quoteInvoiceHandler: CommandHandler = {
 
     const order = await getSaleOrderById(orderId);
     if (!order) {
-      return [botText(tr(userLanguage, `สร้างใบแจ้งหนี้สำหรับ #${orderId} สำเร็จแล้ว แต่โหลดรายละเอียดล่าสุดไม่สำเร็จ`, `Invoice created for #${orderId}, but reloading its details failed.`), userLanguage)];
+      return [botText(
+        tr(userLanguage, `สร้างใบแจ้งหนี้สำหรับ #${orderId} สำเร็จแล้ว แต่โหลดรายละเอียดล่าสุดไม่สำเร็จ`, `Invoice created for #${orderId}, but reloading its details failed.`),
+        userLanguage,
+        statusRetryActions(orderId, userLanguage),
+      )];
     }
 
     const { portalLink, pdfLink } = await getOrderLinks(orderId);
@@ -517,11 +587,35 @@ const quoteListHandler: CommandHandler = {
   name: 'quote-list',
   match: (u) => u === 'QUOTE LIST' || u.startsWith('QUOTE LIST '),
   handle: async (ctx) => {
-    const { userLanguage, profile, text } = ctx;
-    const phoneArg = text.trim().replace(/^QUOTE LIST\s*/i, '').trim();
+    const { userLanguage, profile, text, userId } = ctx;
+    const rest = text.trim().replace(/^QUOTE LIST\s*/i, '').trim();
+    const cursorMatch = rest.match(/^CURSOR\s+(\S+)\s*(.*)$/i);
+    const offsetMatch = cursorMatch ? null : rest.match(/^OFFSET\s+(\d+)\s*(.*)$/i);
+    const offset = offsetMatch ? Number(offsetMatch[1]) : 0;
+    const cursor = cursorMatch ? (decodeQuoteListCursor(cursorMatch[1]) || undefined) : undefined;
+    const afterOffset = (cursorMatch ? cursorMatch[2] : offsetMatch ? offsetMatch[2] : rest).trim();
+    const rangeMatch = afterOffset.match(/^FROM\s+(\d{4}-\d{2}-\d{2})(?:\s+TO\s+(\d{4}-\d{2}-\d{2}))?\s*(.*)$/i);
+    const toOnlyMatch = afterOffset.match(/^TO\s+(\d{4}-\d{2}-\d{2})\s*(.*)$/i);
+
+    let dateFrom: string | undefined;
+    let dateTo: string | undefined;
+    let phoneArg = afterOffset;
+
+    if (rangeMatch) {
+      dateFrom = rangeMatch[1];
+      dateTo = rangeMatch[2];
+      phoneArg = (rangeMatch[3] || '').trim();
+      await setLastQuoteListFrom(ctx.userId, dateFrom);
+    } else if (toOnlyMatch) {
+      dateTo = toOnlyMatch[1];
+      dateFrom = ctx.profile.lastQuoteListFrom;
+      phoneArg = (toOnlyMatch[2] || '').trim();
+    } else if (/^\d{4}-\d{2}-\d{2}$/.test(afterOffset)) {
+      phoneArg = '';
+    }
 
     let partnerId: number | undefined;
-    if (phoneArg) {
+    if (phoneArg && !phoneArg.startsWith('OFFSET') && !phoneArg.startsWith('FROM')) {
       if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
       const partner = await getPartnerByPhone(phoneArg);
       partnerId = partner?.id;
@@ -533,12 +627,18 @@ const quoteListHandler: CommandHandler = {
       return [botText(t('quoteNotLinked', userLanguage), userLanguage)];
     }
 
-    // Fetch one extra beyond the display cap purely to detect "there's
-    // more" — no pagination in this pass, so an exact total isn't needed.
-    const DISPLAY_LIMIT = 8;
-    const fetched = await getSaleOrdersForPartner(partnerId, DISPLAY_LIMIT + 1);
+    const DISPLAY_LIMIT = 5;
+    const fetched = await getSaleOrdersForPartner(partnerId, {
+      limit: DISPLAY_LIMIT + 1,
+      offset: cursor ? 0 : offset,
+      cursor,
+      dateFrom,
+      dateTo,
+    });
     const hasMore = fetched.length > DISPLAY_LIMIT;
-    return [createQuotationListFlexMessage(fetched.slice(0, DISPLAY_LIMIT), hasMore, userLanguage)];
+    const page = fetched.slice(0, DISPLAY_LIMIT);
+    const nextCursor = hasMore && page.length ? encodeQuoteListCursor(page[page.length - 1]) : undefined;
+    return [createQuotationListFlexMessage(page, hasMore, userLanguage, nextCursor, dateFrom, dateTo, userId)];
   },
 };
 
@@ -578,7 +678,9 @@ const quoteMessageHandler: CommandHandler = {
 export const quotationHandlers: CommandHandler[] = [
   quoteStatusHandler,
   quoteConfirmHandler,
+  quoteSendConfirmHandler,
   quoteSendHandler,
+  quoteMoreHandler,
   quoteApproveHandler,
   quoteAddHandler,
   quoteEditHandler,

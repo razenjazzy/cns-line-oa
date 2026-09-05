@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   getAvailableServices,
   getVisibleCommands,
+  isCommandDisabled,
   isServiceEnabledForChannel,
   resolveServiceForCommand,
   SERVICE_CATALOG,
@@ -85,5 +86,19 @@ describe('getVisibleCommands', () => {
   it('shows every command to an admin', () => {
     const directory = SERVICE_CATALOG.find(s => s.key === 'directory')!;
     expect(getVisibleCommands(directory, true)).toEqual(directory.commands);
+  });
+});
+
+describe('isCommandDisabled', () => {
+  it('is off when DISABLED_COMMANDS is empty', () => {
+    delete process.env.DISABLED_COMMANDS;
+    expect(isCommandDisabled('QUOTE ADD 1 Widget,2')).toBe(false);
+  });
+
+  it('matches a prefix from DISABLED_COMMANDS', () => {
+    process.env.DISABLED_COMMANDS = 'QUOTE ADD,QUOTE EDIT';
+    expect(isCommandDisabled('QUOTE ADD 1 Widget,2')).toBe(true);
+    expect(isCommandDisabled('QUOTE LIST')).toBe(false);
+    delete process.env.DISABLED_COMMANDS;
   });
 });

@@ -1,11 +1,14 @@
 import { listProducts, listServiceCatalogItems } from './odoo/catalog';
+import { listPaymentTerms } from './odoo/sales';
+import { loadOdooFieldSkills, type OdooFieldLoader } from './odoo-field-skills';
 
 // Dedupe by name — Odoo can have multiple product.product records sharing a
 // display name (variants of the same template), which would otherwise show
 // the same tappable chip label twice with no way to tell them apart.
 const dedupeNames = (names: string[]): string[] => Array.from(new Set(names));
-const loadProductOptions = async (): Promise<string[]> => dedupeNames((await listProducts(10)).map(p => p.name));
+const loadProductOptions = async (): Promise<string[]> => dedupeNames((await listProducts(12)).map(p => p.name));
 const loadServiceOptions = async (): Promise<string[]> => dedupeNames((await listServiceCatalogItems(10)).map(s => s.name));
+const loadPaymentTermOptions = async (): Promise<string[]> => dedupeNames((await listPaymentTerms(12)).map(term => term.name));
 
 export type FlowKey =
   | 'USER_CREATE'
@@ -40,6 +43,7 @@ export type FlowFieldSpec = {
    * separate value/label distinction needed.
    */
   loadOptions?: () => Promise<string[]>;
+  widget?: 'text' | 'list' | 'date' | 'toggle';
   /**
    * Pre-fills this field the moment a flow enters grouped optional-fields
    * summary mode (see FlowSpec.optionalSummaryStartIndex) — shown as
@@ -239,10 +243,13 @@ export const FLOW_SPECS: Record<FlowKey, FlowSpec> = {
       { key: 'discountPercent', promptTh: 'ส่วนลด % (ถ้ามี)?', promptEn: 'Discount %, if any?', optional: true, validate: isPercent, summaryLabelTh: 'ส่วนลด %', summaryLabelEn: 'Discount %' },
       { key: 'validityDate', promptTh: 'วันหมดอายุใบเสนอราคา (YYYY-MM-DD, ถ้ามี)?', promptEn: 'Quotation expiration date (YYYY-MM-DD), if any?', optional: true, validate: isIsoDate, summaryLabelTh: 'วันหมดอายุ', summaryLabelEn: 'Valid until', defaultValue: () => isoDatePlusDays(30) },
       { key: 'note', promptTh: 'หมายเหตุ (ถ้ามี)?', promptEn: 'Note, if any?', optional: true, validate: isCommaFreeText, summaryLabelTh: 'หมายเหตุ', summaryLabelEn: 'Note' },
-      { key: 'paymentTerm', promptTh: 'เงื่อนไขการชำระเงิน (เช่น 30 Days, ถ้ามี)?', promptEn: 'Payment term (e.g. 30 Days), if any?', optional: true, validate: isCommaFreeText, summaryLabelTh: 'เงื่อนไขชำระเงิน', summaryLabelEn: 'Payment term' },
+      { key: 'paymentTerm', promptTh: 'เงื่อนไขการชำระเงิน (เช่น 30 Days, ถ้ามี)?', promptEn: 'Payment term (e.g. 30 Days), if any?', optional: true, validate: isCommaFreeText, summaryLabelTh: 'เงื่อนไขชำระเงิน', summaryLabelEn: 'Payment term', loadOptions: loadPaymentTermOptions },
     ],
     optionalSummaryStartIndex: 4,
-    buildFinalCommand: (c) => `QUOTE CREATE ${c.productName},${c.qty},${c.customerName},${c.phone},${c.customerReference || ''},${c.discountPercent || ''},${c.validityDate || ''},${c.note || ''},${c.paymentTerm || ''}`,
+    buildFinalCommand: (c) => {
+      const productToken = c.productId && /^\d+$/.test(c.productId) ? `id:${c.productId}` : c.productName;
+      return `QUOTE CREATE ${productToken},${c.qty},${c.customerName},${c.phone},${c.customerReference || ''},${c.discountPercent || ''},${c.validityDate || ''},${c.note || ''},${c.paymentTerm || ''}`;
+    },
   },
   MESSAGE_CUSTOMER: {
     key: 'MESSAGE_CUSTOMER',
@@ -260,6 +267,25 @@ export const FLOW_SPECS: Record<FlowKey, FlowSpec> = {
     buildFinalCommand: (c) => `MESSAGE CUSTOMER ${c.phone} ${c.message}`,
   },
 };
+
+const LOADERS: Record<OdooFieldLoader, () => Promise<string[]>> = {
+  products: loadProductOptions,
+  services: loadServiceOptions,
+  paymentTerms: loadPaymentTermOptions,
+};
+
+const applyOdooFieldSkills = (): void => {
+  for (const skill of loadOdooFieldSkills()) {
+    const spec = FLOW_SPECS[skill.flow as FlowKey];
+    if (!spec) continue;
+    const field = spec.fields.find(item => item.key === skill.flowField);
+    if (!field) continue;
+    field.widget = skill.widget;
+    if (skill.loader) field.loadOptions = LOADERS[skill.loader];
+  }
+};
+
+applyOdooFieldSkills();
 
 export const getFlowByStartCommand = (upperText: string): FlowSpec | null => {
   return Object.values(FLOW_SPECS).find(f => f.startCommand === upperText) || null;

@@ -57,6 +57,12 @@ export type UserRole = 'admin' | 'user';
  */
 export type OdooSalesTier = 'salesperson' | 'sales_manager';
 
+export type LastProductContext = {
+    productId: number;
+    productName: string;
+    expiresAt: string;
+};
+
 export type UserProfile = {
     language: UserLanguage;
     role: UserRole;
@@ -66,6 +72,8 @@ export type UserProfile = {
     displayName?: string;
     phone?: string;
     pendingFlow?: PendingFlowState;
+    lastProductContext?: LastProductContext;
+    lastQuoteListFrom?: string;
     firstMessageAt?: string;
     consentNoticeShownAt?: string;
     marketingOptIn: boolean;

@@ -62,7 +62,9 @@ Prefer existing LINE-native patterns:
 
 Keep text-command compatibility where practical.
 
-Nav Home / action lists keep the committed `createTapRow` boxes (icon in the label). Only change vs that commit: `md` regular text, not `lg`+bold and not a new layout. Footer Language/Guide stay `createMessageActionButton`.
+Nav Home / action lists / GUIDE topics use `createTapRow` (`sm`, icon in the label, no bold). Footer Language/Guide/Home stay `createMessageActionButton`. Prefill or date picker only when the user must type a new value. Do not re-ask a product (or other field) the current card already showed.
+
+For Odoo field → LINE widget maps (not chat commands), see `skills/odoo-fields/`.
 
 ## Verification
 

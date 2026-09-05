@@ -101,16 +101,14 @@ export const createPrefillButton = (
 });
 
 /**
- * Rounded, borderless tappable row (same box as HEAD / 6babb2c1).
- * Only the type scale differs from that commit: `md` regular, not `lg`+bold.
- * Pass icon in `label` (e.g. "🛍️ Products") — do not restyle as a new layout.
+ * Rounded, borderless tappable row. Lists use size `sm` without bold.
  */
 export const createTapRow = (
   label: string,
   actionText: string,
   color: string = BRAND.teal,
   textColor: string = '#FFFFFF',
-  size: 'sm' | 'md' = 'md',
+  size: 'sm' | 'md' = 'sm',
 ): messagingApi.FlexBox => ({
   type: 'box',
   layout: 'vertical',
@@ -121,6 +119,24 @@ export const createTapRow = (
   contents: [
     { type: 'text', text: label, size, color: textColor, wrap: true },
   ],
+});
+
+export const createDatePickerButton = (
+  label: string,
+  data: string,
+  style: 'primary' | 'secondary' = 'secondary',
+  color: string = BRAND.tealTint,
+): messagingApi.FlexButton => ({
+  type: 'button',
+  style,
+  height: 'md',
+  color,
+  action: {
+    type: 'datetimepicker',
+    label: buttonLabel(label),
+    data,
+    mode: 'date',
+  },
 });
 
 export const truncate = (value: string, maxLength: number): string => {

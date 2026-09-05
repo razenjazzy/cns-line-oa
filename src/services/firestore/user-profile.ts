@@ -1,4 +1,4 @@
-import type { PendingFlowState, UserLanguage, UserProfile, UserRole } from './types';
+import type { LastProductContext, PendingFlowState, UserLanguage, UserProfile, UserRole } from './types';
 
 type CachedProfileState = {
     language?: UserLanguage;
@@ -9,6 +9,8 @@ type CachedProfileState = {
     displayName?: string;
     phone?: string;
     pendingFlow?: PendingFlowState;
+    lastProductContext?: LastProductContext;
+    lastQuoteListFrom?: string;
     firstMessageAt?: string;
     consentNoticeShownAt?: string;
     marketingOptIn?: boolean;
@@ -31,6 +33,8 @@ export const buildFallbackUserProfile = (
     displayName: cached.displayName,
     phone: cached.phone,
     pendingFlow: isPendingFlowActive(cached.pendingFlow) ? cached.pendingFlow : undefined,
+    lastProductContext: cached.lastProductContext,
+    lastQuoteListFrom: cached.lastQuoteListFrom,
     firstMessageAt: cached.firstMessageAt,
     consentNoticeShownAt: cached.consentNoticeShownAt,
     marketingOptIn: cached.marketingOptIn || false,
@@ -47,6 +51,16 @@ export const buildFallbackUserProfile = (
  * null-as-clear-marker convention `salesTier` already uses), so this reads
  * that back as "not editing" rather than passing a stale index through.
  */
+const parseLastProductContext = (raw: unknown): LastProductContext | undefined => {
+    if (!raw || typeof raw !== 'object') return undefined;
+    const value = raw as Record<string, unknown>;
+    if (typeof value.productId !== 'number' || typeof value.productName !== 'string' || typeof value.expiresAt !== 'string') {
+        return undefined;
+    }
+    if (new Date(value.expiresAt).getTime() <= Date.now()) return undefined;
+    return { productId: value.productId, productName: value.productName, expiresAt: value.expiresAt };
+};
+
 const sanitizePendingFlow = (raw: PendingFlowState | undefined): PendingFlowState | undefined => {
     if (!raw) return raw;
     if (typeof raw.editingFieldIndex !== 'number') {
@@ -70,6 +84,8 @@ export const parseStoredUserProfile = (
         displayName: typeof data.displayName === 'string' ? data.displayName : undefined,
         phone: typeof data.phone === 'string' ? data.phone : undefined,
         pendingFlow: isPendingFlowActive(rawPendingFlow) ? rawPendingFlow : undefined,
+        lastProductContext: parseLastProductContext(data.lastProductContext),
+        lastQuoteListFrom: typeof data.lastQuoteListFrom === 'string' ? data.lastQuoteListFrom : undefined,
         firstMessageAt: typeof data.firstMessageAt === 'string' ? data.firstMessageAt : undefined,
         consentNoticeShownAt: typeof data.consentNoticeShownAt === 'string' ? data.consentNoticeShownAt : undefined,
         marketingOptIn: data.marketingOptIn === true,

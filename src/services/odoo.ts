@@ -54,6 +54,7 @@ const parseOrder = (row: Record<string, unknown>): OdooSaleOrder => {
     date_order: str(row.date_order),
     access_token: typeof row.access_token === 'string' ? row.access_token : undefined,
     invoice_status: typeof row.invoice_status === 'string' ? row.invoice_status : undefined,
+    amount_invoiced: row.amount_invoiced !== undefined ? num(row.amount_invoiced) : undefined,
     note: typeof row.note === 'string' && row.note ? row.note : undefined,
   };
 };
@@ -129,6 +130,24 @@ export const findProductByQuery = async (query: string): Promise<OdooProduct | n
     }
   );
 
+  if (!rows.length) return null;
+  return parseProduct(rows[0]);
+};
+
+export const getProductById = async (productId: number): Promise<OdooProduct | null> => {
+  if (!Number.isFinite(productId) || productId <= 0) return null;
+  const config = getConfig();
+  if (!config) return null;
+  const uid = await loginRead(config);
+  if (!uid) return null;
+  const rows = await executeKwRead<Record<string, unknown>[]>(
+    config,
+    uid,
+    'product.product',
+    'search_read',
+    [[['id', '=', productId]]],
+    { fields: ['id', 'name', 'list_price', 'qty_available', 'default_code'], limit: 1 },
+  );
   if (!rows.length) return null;
   return parseProduct(rows[0]);
 };
@@ -241,7 +260,7 @@ export const getSaleOrderById = async (orderId: number): Promise<OdooSaleOrder |
     'sale.order',
     'search_read',
     [[['id', '=', orderId]]],
-    { fields: ['id', 'name', 'state', 'amount_total', 'partner_id', 'access_token', 'invoice_status', 'note'], limit: 1 }
+    { fields: ['id', 'name', 'state', 'amount_total', 'partner_id', 'access_token', 'invoice_status', 'amount_invoiced', 'note'], limit: 1 }
   );
   if (!rows.length) return null;
   const order = parseOrder(rows[0]);
@@ -299,20 +318,41 @@ export const getSaleOrderPdfLink = async (orderId: number): Promise<string | nul
 };
 
 /** Powers "my quotations" — most recent orders for a given customer, newest first. */
-export const getSaleOrdersForPartner = async (partnerId: number, limit = 8): Promise<OdooSaleOrder[]> => {
+export const getSaleOrdersForPartner = async (
+  partnerId: number,
+  limitOrOpts: number | {
+    limit?: number;
+    offset?: number;
+    dateFrom?: string;
+    dateTo?: string;
+    cursor?: { dateOrder: string; id: number };
+  } = 8,
+): Promise<OdooSaleOrder[]> => {
+  const opts = typeof limitOrOpts === 'number' ? { limit: limitOrOpts } : limitOrOpts;
+  const limit = opts.limit ?? 8;
+  const offset = opts.cursor ? 0 : (opts.offset ?? 0);
+  const domain: unknown[] = [['partner_id', '=', partnerId]];
+  if (opts.dateFrom) domain.push(['date_order', '>=', opts.dateFrom]);
+  if (opts.dateTo) domain.push(['date_order', '<=', `${opts.dateTo} 23:59:59`]);
+  if (opts.cursor) {
+    domain.push('|');
+    domain.push(['date_order', '<', opts.cursor.dateOrder]);
+    domain.push('&');
+    domain.push(['date_order', '=', opts.cursor.dateOrder]);
+    domain.push(['id', '<', opts.cursor.id]);
+  }
+
   const config = getConfig();
   if (!config) return [];
-
   const uid = await loginRead(config);
   if (!uid) return [];
-
   const rows = await executeKwRead<Record<string, unknown>[]>(
     config,
     uid,
     'sale.order',
     'search_read',
-    [[['partner_id', '=', partnerId]]],
-    { fields: ['id', 'name', 'state', 'amount_total', 'partner_id', 'date_order'], order: 'date_order desc', limit }
+    [domain],
+    { fields: ['id', 'name', 'state', 'amount_total', 'partner_id', 'date_order'], order: 'date_order desc, id desc', limit, offset }
   );
   return rows.map(parseOrder);
 };
@@ -338,6 +378,22 @@ export const findPaymentTermByName = async (query: string): Promise<{ id: number
   );
   if (!rows.length) return null;
   return { id: num(rows[0].id), name: str(rows[0].name) };
+};
+
+export const listPaymentTerms = async (limit = 12): Promise<{ id: number; name: string }[]> => {
+  const config = getConfig();
+  if (!config) return [];
+  const uid = await loginRead(config);
+  if (!uid) return [];
+  const rows = await executeKwRead<Record<string, unknown>[]>(
+    config,
+    uid,
+    'account.payment.term',
+    'search_read',
+    [[]],
+    { fields: ['id', 'name'], limit },
+  );
+  return rows.map(row => ({ id: num(row.id), name: str(row.name) })).filter(row => row.name);
 };
 
 /** Quotation -> Sales Order. */
@@ -382,6 +438,27 @@ export const markSaleOrderSent = async (orderId: number): Promise<boolean> => {
     return true;
   } catch (error) {
     console.error('markSaleOrderSent failed:', error);
+    return false;
+  }
+};
+
+export const sendQuotationEmail = async (orderId: number, email: string, subject: string, body: string): Promise<boolean> => {
+  const config = getConfig();
+  if (!config || !email.trim()) return false;
+  try {
+    const uid = await login(config);
+    if (!uid) return false;
+    const mailId = await executeKw<number>(config, uid, 'mail.mail', 'create', [{
+      email_to: email.trim(),
+      subject,
+      body_html: `<p>${body.replace(/</g, '&lt;').replace(/\n/g, '<br/>')}</p>`,
+    }]);
+    if (mailId) {
+      await executeKw<boolean>(config, uid, 'mail.mail', 'send', [[mailId]]);
+    }
+    return true;
+  } catch (error) {
+    console.warn('sendQuotationEmail failed (non-fatal):', error);
     return false;
   }
 };
@@ -569,7 +646,7 @@ export const createQuotationFromLine = async (
    * from the create payload entirely, so a caller that provides none of
    * these gets byte-for-byte today's behavior.
    */
-  extra?: { customerRef?: string; discountPercent?: number; validityDate?: string; note?: string; paymentTermId?: number }
+  extra?: { customerRef?: string; discountPercent?: number; validityDate?: string; note?: string; paymentTermId?: number; productId?: number }
 ): Promise<{ orderName: string; total: number; orderId: number } | null> => {
   const config = getConfig();
   if (!config) return null;
@@ -578,7 +655,9 @@ export const createQuotationFromLine = async (
     const uid = await login(config);
     if (!uid) return null;
 
-    const product = await findProductByQuery(productQuery);
+    const product = extra?.productId
+      ? await getProductById(extra.productId)
+      : await findProductByQuery(productQuery);
     if (!product) return null;
 
     const partnerId = explicitPartnerId || await findOrCreatePartner(config, uid, customerName, customerPhone);

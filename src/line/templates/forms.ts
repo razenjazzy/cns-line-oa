@@ -1,5 +1,6 @@
 import { messagingApi } from '@line/bot-sdk';
-import { BRAND, buttonLabel, createMessageActionButton, truncate, type ReportLanguage } from './shared';
+import { t, tFill } from '../../services/i18n';
+import { BRAND, buttonLabel, createDatePickerButton, createMessageActionButton, createTapRow, truncate, type ReportLanguage } from './shared';
 
 export const createFormPromptFlexMessage = (params: {
   title: string;
@@ -16,10 +17,12 @@ export const createFormPromptFlexMessage = (params: {
    * Capped so the combined quick-reply list never exceeds LINE's 13-item limit.
    */
   options?: string[];
+  contextNote?: string;
+  datePickerData?: string;
 }): messagingApi.FlexMessage => {
   const actions = [
-    ...(params.optional ? [{ label: params.language === 'en' ? 'Skip' : 'ข้าม', text: 'SKIP' }] : []),
-    { label: params.language === 'en' ? 'Cancel' : 'ยกเลิก', text: 'CANCEL' },
+    ...(params.optional ? [{ label: t('skip', params.language), text: 'SKIP' }] : []),
+    { label: t('cancelForm', params.language), text: 'CANCEL' },
   ];
   const optionItems = (params.options || []).slice(0, 13 - actions.length).map(value => ({
     type: 'action' as const,
@@ -51,13 +54,14 @@ export const createFormPromptFlexMessage = (params: {
         paddingAll: 'md',
         contents: [
           { type: 'text', text: params.title, weight: 'bold', size: 'md', color: '#FFFFFF', wrap: true },
-          { type: 'text', text: params.language === 'en' ? `Step ${params.stepIndex + 1} of ${params.totalSteps}` : `ขั้นตอน ${params.stepIndex + 1} จาก ${params.totalSteps}`, size: 'xs', color: '#DDEBE9', margin: 'xs', wrap: true },
+          { type: 'text', text: tFill('stepOf', params.language, { current: params.stepIndex + 1, total: params.totalSteps }), size: 'xs', color: '#DDEBE9', margin: 'xs', wrap: true },
         ],
       },
       body: {
         type: 'box',
         layout: 'vertical',
         spacing: 'md',
+        paddingBottom: 'lg',
         contents: [
           {
             type: 'box',
@@ -69,20 +73,27 @@ export const createFormPromptFlexMessage = (params: {
               {
                 type: 'text',
                 text: params.options?.length
-                  ? (params.language === 'en' ? 'Tap an option below, or type your own answer.' : 'แตะเลือกตัวเลือกด้านล่าง หรือพิมพ์คำตอบเอง')
-                  : (params.language === 'en' ? 'Please type your answer in the chat box.' : 'กรุณาพิมพ์คำตอบในช่องแชท'),
+                  ? t('tapOptionOrType', params.language)
+                  : params.datePickerData
+                    ? t('pickDateOrType', params.language)
+                    : t('typeAnswer', params.language),
                 size: 'xs', color: BRAND.inkSoft, wrap: true,
               },
+              ...(params.contextNote ? [{ type: 'text' as const, text: params.contextNote, size: 'sm' as const, color: BRAND.tealStrong, wrap: true, margin: 'sm' as const }] : []),
               { type: 'text', text: params.prompt, size: 'md', color: BRAND.ink, weight: 'bold', margin: 'sm', wrap: true },
             ],
           },
+          ...((params.options || []).slice(0, 8).map(value => createTapRow(value, value, BRAND.tealTint, BRAND.tealStrong))),
         ],
       },
       footer: {
         type: 'box',
-        layout: params.optional ? 'horizontal' : 'vertical',
+        layout: 'vertical',
         spacing: 'sm',
-        contents: actions.map(action => createMessageActionButton(action.label, action.text, action.text === 'CANCEL' ? 'secondary' : 'primary', action.text === 'CANCEL' ? BRAND.goldTint : BRAND.teal)),
+        contents: [
+          ...(params.datePickerData ? [createDatePickerButton(t('pickDate', params.language), params.datePickerData)] : []),
+          ...actions.map(action => createMessageActionButton(action.label, action.text, action.text === 'CANCEL' ? 'secondary' : 'primary', action.text === 'CANCEL' ? BRAND.goldTint : BRAND.teal)),
+        ],
       },
     },
   };
@@ -124,30 +135,48 @@ export const createOptionalSummaryFlexMessage = (params: {
         paddingAll: 'md',
         contents: [
           { type: 'text', text: params.title, weight: 'bold', size: 'md', color: '#FFFFFF', wrap: true },
-          { type: 'text', text: params.language === 'en' ? 'Optional — tap any to fill, or finalize as-is' : 'ไม่บังคับ — แตะเพื่อกรอก หรือสร้างได้เลย', size: 'xs', color: '#DDEBE9', margin: 'xs', wrap: true },
+          { type: 'text', text: t('optionalSummaryHint', params.language), size: 'xs', color: '#DDEBE9', margin: 'xs', wrap: true },
         ],
       },
       body: {
         type: 'box',
         layout: 'vertical',
         spacing: 'sm',
+        paddingBottom: 'lg',
         contents: params.fields.map(f => ({
           type: 'box' as const,
           layout: 'horizontal' as const,
+          spacing: 'md' as const,
           backgroundColor: BRAND.paper,
           cornerRadius: BRAND.radius,
           paddingAll: 'sm' as const,
           action: { type: 'message' as const, text: `FORM FIELD ${f.index}` },
           contents: [
-            { type: 'text' as const, text: `${f.value ? '☑' : '☐'} ${f.label}`, size: 'sm' as const, weight: 'bold' as const, color: f.value ? BRAND.tealStrong : BRAND.ink, flex: 2, wrap: true },
             {
-              type: 'text' as const,
-              text: f.value || (params.language === 'en' ? '(not set)' : '(ยังไม่ระบุ)'),
-              size: 'sm' as const,
-              color: f.value ? BRAND.tealStrong : BRAND.inkSoft,
-              align: 'end' as const,
-              flex: 3,
-              wrap: true,
+              type: 'box' as const,
+              layout: 'vertical' as const,
+              flex: 0,
+              width: '28px',
+              height: '28px',
+              cornerRadius: '14px',
+              backgroundColor: f.value ? '#1B7F3A' : BRAND.paper,
+              justifyContent: 'center' as const,
+              alignItems: 'center' as const,
+              contents: [
+                { type: 'text' as const, text: f.value ? '✓' : '○', size: 'sm' as const, color: f.value ? '#FFFFFF' : BRAND.inkSoft, align: 'center' as const },
+              ],
+            },
+            {
+              type: 'box' as const,
+              layout: 'vertical' as const,
+              flex: 1,
+              spacing: 'xs' as const,
+              contents: [
+                { type: 'text' as const, text: f.label, size: 'sm' as const, color: BRAND.ink, wrap: true },
+                ...(f.value
+                  ? [{ type: 'text' as const, text: f.value, size: 'xs' as const, color: BRAND.tealStrong, wrap: true }]
+                  : []),
+              ],
             },
           ],
         })),

@@ -1,4 +1,5 @@
 import { messagingApi } from '@line/bot-sdk';
+import { t } from '../../services/i18n';
 import { getAgentName } from '../channels';
 import { BRAND, createMessageActionButton, createUriActionButton, formatMoney, truncate, type ReportLanguage } from './shared';
 
@@ -18,6 +19,8 @@ export const createBotTextFlexMessage = (params: {
    * action.
    */
   linkAction?: { label: string; uri: string };
+  /** Extra tappable commands named in the body — Home is appended if missing. */
+  actions?: { label: string; text: string; style?: 'primary' | 'secondary' }[];
 }): messagingApi.FlexMessage => {
   const tone = params.tone || 'info';
   const toneColor = tone === 'error'
@@ -28,11 +31,11 @@ export const createBotTextFlexMessage = (params: {
         ? BRAND.teal
         : BRAND.tealStrong;
   const titlePrefix = tone === 'error'
-    ? (params.language === 'en' ? 'Needs attention' : 'ต้องตรวจสอบ')
+    ? t('needsAttention', params.language)
     : tone === 'warning'
-      ? (params.language === 'en' ? 'Notice' : 'แจ้งเตือน')
+      ? t('notice', params.language)
       : tone === 'success'
-        ? (params.language === 'en' ? 'Done' : 'สำเร็จ')
+        ? t('done', params.language)
         : params.title;
 
   return {
@@ -66,6 +69,7 @@ export const createBotTextFlexMessage = (params: {
         type: 'box',
         layout: 'vertical',
         spacing: 'md',
+        paddingBottom: 'lg',
         contents: [
           {
             type: 'box',
@@ -77,7 +81,7 @@ export const createBotTextFlexMessage = (params: {
               { type: 'text', text: params.body, color: tone === 'error' ? '#7A271A' : BRAND.ink, size: 'sm', wrap: true },
             ],
           },
-          { type: 'text', text: params.language === 'en' ? 'Use the buttons below for the next step.' : 'ใช้ปุ่มด้านล่างเพื่อไปขั้นตอนถัดไป', size: 'xs', color: toneColor, wrap: true },
+          { type: 'text', text: t('nextStepHint', params.language), size: 'xs', color: toneColor, wrap: true },
         ],
       },
       footer: {
@@ -86,13 +90,23 @@ export const createBotTextFlexMessage = (params: {
         spacing: 'sm',
         contents: [
           ...(params.linkAction ? [createUriActionButton(params.linkAction.label, params.linkAction.uri, 'primary', BRAND.teal)] : []),
-          createMessageActionButton(
-            params.primaryAction?.label || (params.language === 'en' ? 'Home' : 'หน้าหลัก'),
-            params.primaryAction?.text || 'NAV HOME',
-            params.linkAction ? 'secondary' : 'primary',
-            params.linkAction ? BRAND.goldTint : BRAND.teal
-          ),
+          ...(params.actions?.length
+            ? params.actions.slice(0, 4).map((action, index) => createMessageActionButton(
+              action.label,
+              action.text,
+              action.style || (index === 0 && !params.linkAction ? 'primary' : 'secondary'),
+              action.style === 'secondary' || params.linkAction || index > 0 ? BRAND.goldTint : BRAND.teal,
+            ))
+            : [createMessageActionButton(
+              params.primaryAction?.label || t('home', params.language),
+              params.primaryAction?.text || 'NAV HOME',
+              params.linkAction ? 'secondary' : 'primary',
+              params.linkAction ? BRAND.goldTint : BRAND.teal,
+            )]),
           ...(params.secondaryAction ? [createMessageActionButton(params.secondaryAction.label, params.secondaryAction.text, 'secondary', BRAND.goldTint)] : []),
+          ...(params.actions?.length && !params.actions.some(action => action.text === 'NAV HOME')
+            ? [createMessageActionButton(t('home', params.language), 'NAV HOME', 'secondary', BRAND.goldTint)]
+            : []),
         ],
       },
     },

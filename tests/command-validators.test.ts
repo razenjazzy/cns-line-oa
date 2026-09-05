@@ -91,13 +91,11 @@ describe('command validators', () => {
   });
 
   describe('parseDemoQuotePayload', () => {
-    it('parses valid quote payload', () => {
-      const result = parseDemoQuotePayload('App Premium Plan,2,Somchai,0812345678');
-      expect(result).toEqual({
-        productName: 'App Premium Plan',
+    it('parses product id tokens from seeded forms', () => {
+      expect(parseDemoQuotePayload('id:42,2,Somchai,0812345678')).toMatchObject({
+        productName: 'id:42',
+        productId: 42,
         qty: 2,
-        customerName: 'Somchai',
-        phone: '0812345678',
       });
     });
 

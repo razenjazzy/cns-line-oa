@@ -66,15 +66,21 @@ const verifyStatusHandler: CommandHandler = {
   match: (u) => u === 'VERIFY STATUS',
   handle: async (ctx) => {
     const { userLanguage, profile, agentName } = ctx;
-    return [botText(tr(
-      userLanguage,
-      profile.odooVerified
-        ? `${agentName} บัญชี Odoo ของคุณยืนยันแล้ว${profile.odooVerifiedAt ? ` เมื่อ ${profile.odooVerifiedAt}` : ''}`
-        : `${agentName} บัญชี Odoo ของคุณยังไม่ยืนยัน\nเริ่มด้วย: VERIFY START <เบอร์โทร>`,
-      profile.odooVerified
-        ? `${agentName} your Odoo account is verified${profile.odooVerifiedAt ? ` at ${profile.odooVerifiedAt}` : ''}`
-        : `${agentName} your Odoo account is not verified yet\nStart with: VERIFY START <phone>`,
-    ), userLanguage)];
+    return [createBotTextFlexMessage({
+      title: tr(userLanguage, 'ผู้ช่วย Cloudnex', 'Cloudnex assistant'),
+      body: tr(
+        userLanguage,
+        profile.odooVerified
+          ? `${agentName} บัญชี Odoo ของคุณยืนยันแล้ว${profile.odooVerifiedAt ? ` เมื่อ ${profile.odooVerifiedAt}` : ''}`
+          : `${agentName} บัญชี Odoo ของคุณยังไม่ยืนยัน`,
+        profile.odooVerified
+          ? `${agentName} your Odoo account is verified${profile.odooVerifiedAt ? ` at ${profile.odooVerifiedAt}` : ''}`
+          : `${agentName} your Odoo account is not verified yet`,
+      ),
+      language: userLanguage,
+      tone: 'info',
+      ...(profile.odooVerified ? {} : { actions: [{ label: tr(userLanguage, 'ยืนยันตัวตน', 'Verify account'), text: 'FORM VERIFY' }] }),
+    })];
   },
 };
 

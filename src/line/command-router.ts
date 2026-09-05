@@ -28,7 +28,7 @@ import {
   UserLanguage,
   UserProfile,
 } from '../services/firestore';
-import { isServiceConfigured, isServiceEnabledForChannel } from '../services/service-catalog';
+import { isServiceConfigured, isServiceEnabledForChannel, isCommandDisabled } from '../services/service-catalog';
 import { resolveServiceForCommand } from '../services/service-catalog';
 import { FLOW_SPECS, getFlowByStartCommand } from '../services/guided-forms';
 import { createBotTextFlexMessage, createFormPromptFlexMessage, createOptionalSummaryFlexMessage, createServiceHomeFlexMessage } from './templates';
@@ -39,6 +39,7 @@ import { COMMAND_HANDLERS } from './handlers/index';
 import { buildKeywordGuidanceMessages } from './handlers/help';
 import { handleChatFallback } from './handlers/chat-fallback';
 import { checkMessagesAgainstLineLimits } from './message-limits';
+import { bindPostbackData } from './postback';
 import { withSpan } from '../observability/tracing';
 import { appLogger } from '../services/logger';
 
@@ -74,12 +75,18 @@ const inferTone = (value: string): 'info' | 'success' | 'warning' | 'error' => {
 
 const inferLanguage = (value: string): UserLanguage => /[\u0E00-\u0E7F]/.test(value) ? 'th' : 'en';
 
-export const text = (value: string, language: UserLanguage = inferLanguage(value), title?: string): messagingApi.Message =>
+export const text = (
+  value: string,
+  language: UserLanguage = inferLanguage(value),
+  title?: string,
+  actions?: { label: string; text: string; style?: 'primary' | 'secondary' }[],
+): messagingApi.Message =>
   createBotTextFlexMessage({
     title: title || tr(language, 'ผู้ช่วย Cloudnex', 'Cloudnex assistant'),
     body: value,
     language,
     tone: inferTone(value),
+    actions,
   });
 
 export const buildHomeMenuMessage = (
@@ -108,11 +115,11 @@ const buildFormPromptMessage = async (
   agentName: string,
   flowSpec: FlowSpec,
   stepIndex: number,
+  userId: string,
   promptOverride?: string,
+  contextNote?: string,
 ): Promise<messagingApi.Message> => {
   const field = flowSpec.fields[stepIndex];
-  // Best-effort: a picker-options load failure shouldn't block the step
-  // itself — falls back to free-text entry (field.validate still applies).
   const options = field.loadOptions
     ? await field.loadOptions().catch(err => { console.warn('buildFormPromptMessage: loadOptions failed (non-fatal):', err); return []; })
     : undefined;
@@ -124,6 +131,8 @@ const buildFormPromptMessage = async (
     language,
     optional: field.optional,
     options,
+    contextNote,
+    datePickerData: field.widget === 'date' ? bindPostbackData(`form.date.${field.key}`, userId) : undefined,
   });
 };
 
@@ -203,7 +212,7 @@ const handleGuidedFormStep = async (ctx: CommandReplyContext): Promise<messaging
       const idx = Number(fieldMatch[1]);
       if (flowSpec.fields[idx]) {
         await setUserPendingFlow(userId, { ...pending, editingFieldIndex: idx, expiresAt: buildFlowExpiry() });
-        return [await buildFormPromptMessage(userLanguage, agentName, flowSpec, idx)];
+        return [await buildFormPromptMessage(userLanguage, agentName, flowSpec, idx, userId)];
       }
     }
 
@@ -214,7 +223,7 @@ const handleGuidedFormStep = async (ctx: CommandReplyContext): Promise<messaging
 
       if (!isSkip && !field.validate(value)) {
         return [await buildFormPromptMessage(
-          userLanguage, agentName, flowSpec, pending.editingFieldIndex,
+          userLanguage, agentName, flowSpec, pending.editingFieldIndex, userId,
           tr(userLanguage,
             `ค่าที่กรอกไม่ถูกต้อง กรุณาลองใหม่\n${field.promptTh}`,
             `That doesn't look right, please try again.\n${field.promptEn}`,
@@ -245,7 +254,7 @@ const handleGuidedFormStep = async (ctx: CommandReplyContext): Promise<messaging
 
   if (!isSkip && !field.validate(value)) {
     return [await buildFormPromptMessage(
-      userLanguage, agentName, flowSpec, pending.stepIndex,
+      userLanguage, agentName, flowSpec, pending.stepIndex, userId,
       tr(userLanguage,
         `ค่าที่กรอกไม่ถูกต้อง กรุณาลองใหม่\n${field.promptTh}`,
         `That doesn't look right, please try again.\n${field.promptEn}`,
@@ -280,7 +289,7 @@ const handleGuidedFormStep = async (ctx: CommandReplyContext): Promise<messaging
     collected,
     expiresAt: buildFlowExpiry(),
   });
-  return [await buildFormPromptMessage(userLanguage, agentName, flowSpec, nextIndex)];
+  return [await buildFormPromptMessage(userLanguage, agentName, flowSpec, nextIndex, userId)];
 };
 
 // ---------------------------------------------------------------------------
@@ -292,6 +301,39 @@ const handleFormCommand = async (ctx: CommandReplyContext): Promise<messagingApi
   const upperText = ctx.text.trim().toUpperCase();
 
   if (!upperText.startsWith('FORM ')) return null;
+
+  if (upperText === 'FORM QUOTE CREATE FROM CARD') {
+    const product = profile.lastProductContext;
+    const flowSpec = FLOW_SPECS.QUOTE_CREATE;
+    if (!product?.productName) {
+      return handleFormCommand({ ...ctx, text: 'FORM QUOTE CREATE' });
+    }
+    if (flowSpec.requiresAdmin && profile.role !== 'admin') {
+      return [text(tr(userLanguage, 'คำสั่งนี้สำหรับแอดมินเท่านั้น', 'This command is admin-only.'))];
+    }
+    if (ctx.isGroupContext) {
+      return [text(tr(userLanguage,
+        `${agentName} แบบฟอร์มทีละขั้นใช้ไม่ได้ในแชทกลุ่ม กรุณาใช้คำสั่งบรรทัดเดียวแทน`,
+        `${agentName} step-by-step forms aren't available in group chats.`,
+      ))];
+    }
+    const qtyIndex = Math.max(flowSpec.fields.findIndex(field => field.key === 'qty'), 1);
+    await setUserPendingFlow(userId, {
+      flow: flowSpec.key,
+      stepIndex: qtyIndex,
+      collected: { productName: product.productName, productId: String(product.productId) },
+      expiresAt: buildFlowExpiry(),
+    });
+    return [await buildFormPromptMessage(
+      userLanguage,
+      agentName,
+      flowSpec,
+      qtyIndex,
+      userId,
+      undefined,
+      tr(userLanguage, `ใช้สินค้า: ${product.productName}`, `Using: ${product.productName}`),
+    )];
+  }
 
   const flowSpec = getFlowByStartCommand(upperText);
   if (!flowSpec) {
@@ -315,7 +357,7 @@ const handleFormCommand = async (ctx: CommandReplyContext): Promise<messagingApi
     collected: {},
     expiresAt: buildFlowExpiry(),
   });
-  return [await buildFormPromptMessage(userLanguage, agentName, flowSpec, 0)];
+  return [await buildFormPromptMessage(userLanguage, agentName, flowSpec, 0, userId)];
 };
 
 // ---------------------------------------------------------------------------
@@ -341,9 +383,12 @@ const dispatchCommandReply = async (ctx: CommandReplyContext): Promise<messaging
     await markConsentNoticeShown(userId);
     return [
       text(tr(userLanguage,
-        `ก่อนเริ่มใช้งาน ${agentName} ขอเก็บข้อมูลที่คุณให้ไว้ (เช่น เบอร์โทร ชื่อ) เพื่อยืนยันตัวตนและให้บริการเท่านั้น\nพิมพ์ MY DATA เพื่อดูข้อมูลของคุณ หรือ DELETE MY DATA เพื่อขอลบข้อมูลได้ทุกเมื่อ`,
-        `Before we begin: ${agentName} stores what you share (like your phone number and name) only to verify your identity and provide service.\nType MY DATA anytime to see what's stored, or DELETE MY DATA to request erasure.`,
-      ), userLanguage),
+        `ก่อนเริ่มใช้งาน ${agentName} ขอเก็บข้อมูลที่คุณให้ไว้ (เช่น เบอร์โทร ชื่อ) เพื่อยืนยันตัวตนและให้บริการเท่านั้น`,
+        `Before we begin: ${agentName} stores what you share (like your phone number and name) only to verify your identity and provide service.`,
+      ), userLanguage, undefined, [
+        { label: tr(userLanguage, 'ข้อมูลของฉัน', 'My data'), text: 'MY DATA', style: 'primary' },
+        { label: tr(userLanguage, 'ลบข้อมูล', 'Delete my data'), text: 'DELETE MY DATA', style: 'secondary' },
+      ]),
       buildHomeMenuMessage(userLanguage, agentName, ctx.channel, profile.role === 'admin'),
     ];
   }
@@ -354,6 +399,13 @@ const dispatchCommandReply = async (ctx: CommandReplyContext): Promise<messaging
     return [text(tr(userLanguage,
       `${agentName} บริการนี้ไม่เปิดใช้งานสำหรับช่องทางนี้`,
       `${agentName} this service is not available on this channel.`,
+    ))];
+  }
+
+  if (isCommandDisabled(upperText)) {
+    return [text(tr(userLanguage,
+      `${agentName} คำสั่งนี้ถูกปิดใช้งาน`,
+      `${agentName} this command is disabled.`,
     ))];
   }
 

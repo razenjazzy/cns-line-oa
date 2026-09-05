@@ -2,11 +2,13 @@ import { messagingApi, webhook } from '@line/bot-sdk';
 import type { Readable } from 'node:stream';
 import { classifyIntent, transcribeAudioToText } from '../services/vertexai';
 import { resolveCommandReply } from './command-router';
+import { resolvePostbackToText } from './postback';
 import { getEscalationState, getUserLanguage, getUserProfile, updateUserScore } from '../services/firestore';
 import { ChannelConfig, getAgentName } from './channels';
 import type { ChannelContext } from './channels';
 import { appLogger } from '../services/logger';
 import { withSpan } from '../observability/tracing';
+import { createBotTextFlexMessage } from './templates';
 
 const streamToBuffer = async (stream: Readable): Promise<Buffer> => {
   const chunks: Buffer[] = [];
@@ -66,6 +68,23 @@ export const extractLineMessageJobs = (events: webhook.Event[]): Array<{
   }> = [];
 
   for (const event of events) {
+    if (event.type === 'postback') {
+      const replyToken = (event as { replyToken?: string }).replyToken;
+      const source = (event as { source?: { userId?: string; groupId?: string; roomId?: string; type?: string } }).source;
+      const conversationId = source?.userId || source?.groupId || source?.roomId;
+      const postback = (event as { postback?: { data?: string; params?: { date?: string; datetime?: string } } }).postback;
+      const text = resolvePostbackToText(postback?.data || '', postback?.params?.date || postback?.params?.datetime, conversationId);
+      if (!replyToken || !conversationId || !text) continue;
+      jobs.push({
+        replyToken,
+        conversationId,
+        sourceType: source?.type,
+        text,
+        webhookEventId: (event as { webhookEventId?: string }).webhookEventId,
+        isGroupContext: source?.type === 'group' || source?.type === 'room',
+      });
+      continue;
+    }
     if (event.type !== 'message' || (event.message.type !== 'text' && event.message.type !== 'audio')) {
       continue;
     }
@@ -121,10 +140,13 @@ export const processLineMessageJob = async (input: LineMessageJobInput): Promise
         appLogger.error('voice_transcribe_failed', { error: String(err), requestId: input.requestId });
       }
       if (!inputText) {
-        return deliverMessages(client, input, [{
-          type: 'text',
-          text: tr(userLanguage, `${agentName} ไม่สามารถแปลงข้อความเสียงได้ กรุณาลองพิมพ์คำสั่งแทน`, `${agentName} could not understand that voice message. Please try typing instead.`),
-        }]);
+        return deliverMessages(client, input, [createBotTextFlexMessage({
+          title: agentName,
+          body: tr(userLanguage, `${agentName} ไม่สามารถแปลงข้อความเสียงได้`, `${agentName} could not understand that voice message.`),
+          language: userLanguage,
+          tone: 'warning',
+          actions: [{ label: tr(userLanguage, 'หน้าหลัก', 'Home'), text: 'NAV HOME' }],
+        })]);
       }
     }
 

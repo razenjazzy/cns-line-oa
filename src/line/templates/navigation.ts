@@ -1,4 +1,5 @@
 import { messagingApi } from '@line/bot-sdk';
+import { t } from '../../services/i18n';
 import { BRAND, buttonLabel, createMessageActionButton, createTapRow, truncate, type ReportLanguage } from './shared';
 
 export const SERVICE_ICON: Record<string, string> = {
@@ -31,13 +32,14 @@ export const createServiceHomeFlexMessage = (
         paddingAll: 'md',
         contents: [
           { type: 'text', text: language === 'en' ? `${agentName} menu` : `เมนู ${agentName}`, weight: 'bold', size: 'md', color: '#FFFFFF', wrap: true },
-          { type: 'text', text: language === 'en' ? 'Tap a service to continue' : 'เลือกบริการเพื่อเริ่มใช้งาน', size: 'xs', color: '#DDEBE9', margin: 'xs', wrap: true },
+          { type: 'text', text: t('tapService', language), size: 'xs', color: '#DDEBE9', margin: 'xs', wrap: true },
         ],
       },
       body: {
         type: 'box',
         layout: 'vertical',
         spacing: 'sm',
+        paddingBottom: 'lg',
         contents: services.slice(0, 10).map(service =>
           createTapRow(`${SERVICE_ICON[service.key] || ''} ${service.label}`.trim(), `NAV ${service.key}`)
         ),
@@ -53,7 +55,7 @@ export const createServiceHomeFlexMessage = (
             height: 'md',
             flex: 1,
             color: BRAND.tealTint,
-            action: { type: 'message', label: language === 'en' ? 'Language' : 'ภาษา', text: language === 'en' ? 'LANG TH' : 'LANG EN' },
+            action: { type: 'message', label: t('languageToggle', language), text: language === 'en' ? 'LANG TH' : 'LANG EN' },
           },
           {
             type: 'button',
@@ -61,7 +63,7 @@ export const createServiceHomeFlexMessage = (
             height: 'md',
             flex: 1,
             color: BRAND.tealTint,
-            action: { type: 'message', label: language === 'en' ? 'Guide' : 'คู่มือ', text: 'GUIDE' },
+            action: { type: 'message', label: t('guide', language), text: 'GUIDE' },
           },
         ],
       },
@@ -90,22 +92,21 @@ export const createServiceActionFlexMessage = (
         paddingAll: 'md',
         contents: [
           { type: 'text', text: serviceLabel, weight: 'bold', size: 'md', wrap: true, color: '#FFFFFF' },
-          { type: 'text', text: language === 'en' ? 'Choose one action' : 'เลือกสิ่งที่ต้องการทำ', size: 'xs', color: '#DDEBE9', margin: 'xs', wrap: true },
+          { type: 'text', text: t('chooseAction', language), size: 'xs', color: '#DDEBE9', margin: 'xs', wrap: true },
         ],
       },
       body: {
         type: 'box',
         layout: 'vertical',
         spacing: 'sm',
+        paddingBottom: 'lg',
         contents: actions.slice(0, 10).map(action => createTapRow(action.label, action.text)),
       },
       footer: {
         type: 'box',
         layout: 'vertical',
         contents: [
-          {
-            ...createMessageActionButton(language === 'en' ? 'Home' : 'หน้าหลัก', 'NAV HOME', 'primary', BRAND.gold),
-          },
+          createMessageActionButton(t('home', language), 'NAV HOME', 'secondary', BRAND.goldTint),
         ],
       },
     },
@@ -137,7 +138,7 @@ export const createAdminConfigFlexMessage = (
       })),
     },
     footer: {
-      type: 'box', layout: 'vertical', contents: [createMessageActionButton(language === 'en' ? 'Back' : 'ย้อนกลับ', 'NAV HOME', 'secondary', BRAND.gold)],
+      type: 'box', layout: 'vertical', contents: [createMessageActionButton(t('back', language), 'NAV HOME', 'secondary', BRAND.goldTint)],
     },
   },
 });

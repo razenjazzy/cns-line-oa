@@ -26,6 +26,7 @@ import type {
     OdooVerificationChallenge,
     OdooVerificationChallengeResult,
     PendingFlowState,
+    LastProductContext,
     UserLanguage,
     UserRole,
 } from './firestore/types';
@@ -44,6 +45,8 @@ type CachedUserState = {
     phone?: string;
     escalatedToHuman?: boolean;
     pendingFlow?: PendingFlowState;
+    lastProductContext?: LastProductContext;
+    lastQuoteListFrom?: string;
     firstMessageAt?: string;
     consentNoticeShownAt?: string;
     marketingOptIn?: boolean;
@@ -414,6 +417,8 @@ export const filterMarketingOptedInUserIds = async (userIds: string[]): Promise<
 export const recordChatFeedback = communicationRepository.recordChatFeedback;
 
 export const setUserPendingFlow = userProfileRepository.setPendingFlow;
+export const setLastProductContext = userProfileRepository.setLastProductContext;
+export const setLastQuoteListFrom = userProfileRepository.setLastQuoteListFrom;
 
 export const setUserRole = userProfileRepository.setRole;
 

@@ -88,19 +88,32 @@ Every Flex message is a single `bubble` with the same three-part shape:
 - **header** — colored background (tone accent or `teal`/`tealStrong`
   depending on message type), bold white title, an `xs`-size soft-white
   (`#DDEBE9`) subtitle line beneath it.
-- **body** — white (`surface`) background; a highlight box in the tone's
-  tint color for the main message; supporting rows in `ink`/`inkSoft`.
-- **footer** — one or more full-width buttons, following the contrast rule
-  above. The first/primary action always uses `teal`; a same-row secondary
-  action uses the matching tint.
+- **body** — white (`surface`) background; `paddingBottom: lg` so copy is
+  not flush against footer buttons; highlight box in the tone tint; chips
+  and labeled fields in `paper` / `tealTint` rounded boxes.
+- **footer** — 1–2 primary CTAs. Secondary quote actions use More (quick
+  replies or a second bubble), not a wall of tiny buttons.
+
+## Action kinds
+
+1. **List row** (`createTapRow`) — rounded 12px box, icon in the label,
+   size `sm`, not bold. Home, service menus, GUIDE topics, pickers, quote
+   list, optional-field rows. Not LINE `type: button` (that draws a border).
+2. **Footer CTA** — LINE `button`, contrast rule above. Complete commands
+   send immediately (`message` action).
+3. **Input** — prefill keyboard or LINE `datetimepicker` only when the user
+   must enter a **new** value. Date is a LINE date sheet, not a drawn clock.
+
+Never re-ask a field the current card already established. Seed
+`pendingFlow` / last-product context instead.
 
 ## Type scale
 
-Only three text sizes appear anywhere: `xs` (captions, subtitles), `sm`
-(body text and picker rows), `md`/`xl` (titles, hero numbers like a price or
-total). NAV HOME / action lists reuse the committed rounded `box` tiles
-(`cornerRadius` 12px, icon in the label). Type is `md` regular — not
-`lg`+bold. LINE `button` components are for footers and GUIDE categories.
+`xs` captions, `sm` lists and body, `md` titles, `xl` hero numbers.
+Do not use `lg`+bold on menu rows.
+
+LINE has no native dropdown: Odoo lists are tap rows + quick replies
+(max 13). Button labels cap at 20 characters.
 
 ## Quick replies
 

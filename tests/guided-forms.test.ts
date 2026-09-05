@@ -139,6 +139,13 @@ describe('QUOTE_CREATE flow', () => {
     expect(spec.requiresAdmin).toBe(false);
   });
 
+  it('builds the final command with a product id when seeded from a card', () => {
+    const cmd = spec.buildFinalCommand({
+      productName: 'App, Premium', productId: '99', qty: '1', customerName: 'Somchai', phone: '0812345678',
+    });
+    expect(cmd).toBe('QUOTE CREATE id:99,1,Somchai,0812345678,,,,,');
+  });
+
   it('builds the final command with skipped optional fields left blank', () => {
     const cmd = spec.buildFinalCommand({ productName: 'App Premium Plan', qty: '1', customerName: 'Somchai', phone: '0812345678' });
     expect(cmd).toBe('QUOTE CREATE App Premium Plan,1,Somchai,0812345678,,,,,');
