@@ -1,0 +1,17 @@
+{
+  "name": "CNS LINE OA",
+  "install": "npm ci",
+  "terminals": [
+    {
+      "name": "dev-server",
+      "command": "npm run dev",
+      "description": "LINE OA Express backend with hot reload (ts-node + nodemon) on http://localhost:8080. Boots on safe defaults (development mode); Firestore/Odoo gracefully no-op when unconfigured. Health: GET /healthz, GET /readyz. Demo control panel: GET /demo. Bot engine: POST /demo/chat."
+    }
+  ],
+  "ports": [
+    {
+      "name": "backend",
+      "port": 8080
+    }
+  ]
+}
