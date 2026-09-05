@@ -93,39 +93,51 @@ export const SERVICE_CATALOG: ServiceDefinition[] = [
   },
 ];
 
-const COMMAND_PREFIX_SERVICE_MAP: { prefix: string; service: ServiceKey }[] = [
+type CommandPrefixMapping = { prefix: string; service: ServiceKey; requiresOtp?: boolean };
+
+/**
+ * `requiresOtp` marks the raw (non-`FORM`-prefixed) commands that mutate a
+ * quote or a directory/catalog record, or send a customer-facing message —
+ * this is the single source of truth src/line/handlers/action-otp.ts's
+ * step-up gate consults (via isOtpGatedCommand below), replacing a
+ * previously separate, hand-maintained prefix list that had to be kept in
+ * sync with this one by hand. `FORM X` entry points aren't marked: they
+ * only start a guided flow, and the gate re-applies naturally once the flow
+ * reconstructs and re-enters the real `X ...` command on completion.
+ */
+const COMMAND_PREFIX_SERVICE_MAP: CommandPrefixMapping[] = [
   { prefix: 'PRODUCT FIND', service: 'commerce' },
-  { prefix: 'QUOTE CREATE', service: 'commerce' },
+  { prefix: 'QUOTE CREATE', service: 'commerce', requiresOtp: true },
   { prefix: 'ORDER STATUS', service: 'commerce' },
   { prefix: 'FORM PRODUCT FIND', service: 'commerce' },
   { prefix: 'FORM QUOTE CREATE', service: 'commerce' },
   { prefix: 'FORM ORDER STATUS', service: 'commerce' },
   { prefix: 'QUOTE STATUS', service: 'commerce' },
-  { prefix: 'QUOTE CONFIRM', service: 'commerce' },
-  { prefix: 'QUOTE SEND', service: 'commerce' },
-  { prefix: 'QUOTE APPROVE', service: 'commerce' },
-  { prefix: 'QUOTE ADD', service: 'commerce' },
-  { prefix: 'QUOTE EDIT', service: 'commerce' },
-  { prefix: 'QUOTE REMOVE', service: 'commerce' },
-  { prefix: 'QUOTE CANCEL', service: 'commerce' },
-  { prefix: 'QUOTE INVOICE', service: 'commerce' },
+  { prefix: 'QUOTE CONFIRM', service: 'commerce', requiresOtp: true },
+  { prefix: 'QUOTE SEND', service: 'commerce', requiresOtp: true },
+  { prefix: 'QUOTE APPROVE', service: 'commerce', requiresOtp: true },
+  { prefix: 'QUOTE ADD', service: 'commerce', requiresOtp: true },
+  { prefix: 'QUOTE EDIT', service: 'commerce', requiresOtp: true },
+  { prefix: 'QUOTE REMOVE', service: 'commerce', requiresOtp: true },
+  { prefix: 'QUOTE CANCEL', service: 'commerce', requiresOtp: true },
+  { prefix: 'QUOTE INVOICE', service: 'commerce', requiresOtp: true },
   { prefix: 'QUOTE LIST', service: 'commerce' },
-  { prefix: 'QUOTE MESSAGE', service: 'commerce' },
-  { prefix: 'MESSAGE CUSTOMER', service: 'commerce' },
+  { prefix: 'QUOTE MESSAGE', service: 'commerce', requiresOtp: true },
+  { prefix: 'MESSAGE CUSTOMER', service: 'commerce', requiresOtp: true },
   { prefix: 'FORM MESSAGE CUSTOMER', service: 'commerce' },
-  { prefix: 'USER CREATE', service: 'directory' },
+  { prefix: 'USER CREATE', service: 'directory', requiresOtp: true },
   { prefix: 'USER READ', service: 'directory' },
-  { prefix: 'USER UPDATE', service: 'directory' },
-  { prefix: 'USER DELETE', service: 'directory' },
+  { prefix: 'USER UPDATE', service: 'directory', requiresOtp: true },
+  { prefix: 'USER DELETE', service: 'directory', requiresOtp: true },
   { prefix: 'FORM USER CREATE', service: 'directory' },
   { prefix: 'FORM USER READ', service: 'directory' },
   { prefix: 'FORM USER UPDATE', service: 'directory' },
   { prefix: 'FORM USER DELETE', service: 'directory' },
   { prefix: 'SERVICE LIST', service: 'catalog' },
   { prefix: 'SERVICE READ', service: 'catalog' },
-  { prefix: 'SERVICE CREATE', service: 'catalog' },
-  { prefix: 'SERVICE UPDATE', service: 'catalog' },
-  { prefix: 'SERVICE DELETE', service: 'catalog' },
+  { prefix: 'SERVICE CREATE', service: 'catalog', requiresOtp: true },
+  { prefix: 'SERVICE UPDATE', service: 'catalog', requiresOtp: true },
+  { prefix: 'SERVICE DELETE', service: 'catalog', requiresOtp: true },
   { prefix: 'FORM SERVICE CREATE', service: 'catalog' },
   { prefix: 'FORM SERVICE READ', service: 'catalog' },
   { prefix: 'FORM SERVICE UPDATE', service: 'catalog' },
@@ -143,6 +155,9 @@ export const resolveServiceForCommand = (upperText: string): ServiceKey | null =
   const match = COMMAND_PREFIX_SERVICE_MAP.find(m => upperText.startsWith(m.prefix));
   return match ? match.service : null;
 };
+
+export const isOtpGatedCommand = (upperText: string): boolean =>
+  COMMAND_PREFIX_SERVICE_MAP.some(m => m.requiresOtp && upperText.startsWith(m.prefix));
 
 export const getServiceDefinition = (key: string): ServiceDefinition | null => {
   return SERVICE_CATALOG.find(svc => svc.key === key) || null;

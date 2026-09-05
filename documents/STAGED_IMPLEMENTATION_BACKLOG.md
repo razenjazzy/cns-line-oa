@@ -225,12 +225,40 @@ This backlog converts the enterprise architecture plan into small, reversible im
 - Acceptance: unavailable ERP operations fail clearly and no provider credentials are hardcoded.
 - Check: adapter contract tests and build.
 
-### C2. Registry-to-menu projection
+### C2. Registry-to-menu projection — closed 2026-09-05, by retiring the registry
 
-- Project command metadata into LINE Flex menus only after the mapping review in A1.
-- Continue sending real command text to the existing router.
-- Acceptance: menus obey channel and role visibility, while typed commands retain current behavior.
-- Check: command registry tests, template tests, and staging click-through.
+- Investigated wiring `src/ux/command-registry.ts` + `src/services/command-policy.ts`
+  into LINE Flex menus as literally spec'd above. Found: that foundation
+  (7 hardcoded commands from the 2026-09-04 A1 pass) was never wired into
+  anything and had drifted out of sync with `src/services/service-catalog.ts`,
+  which had since become the actual single source of truth for both NAV
+  menus and command gating (per `CLAUDE.md`) with ~43 mapped command
+  prefixes. Building C2 as spec'd would have meant re-syncing the stale
+  registry to all 43 entries and rendering menus off it instead — a second,
+  parallel menu/gating system exactly where there should be one.
+- Decision (user-confirmed): merge the one field with a real consumer
+  (`requiresOtp`) into `service-catalog.ts`'s `COMMAND_PREFIX_SERVICE_MAP`,
+  exposed as `isOtpGatedCommand`; `src/line/handlers/action-otp.ts`'s
+  step-up gate (`isGatedMutation`) now delegates to it directly, replacing
+  a second hand-maintained prefix list that had to be kept in sync by hand
+  — closing the exact class of drift bug Track A3 found with `DAILY
+  REPORT`/`SEGMENT CUSTOMERS`. `approvalRequired`/`action`/`handlerName`/
+  per-command `channels` were not carried over: none had a real consumer
+  even in the original scaffolding (approval branches directly inside
+  `quotation.ts`'s handlers, not off a declarative flag), so merging them
+  would only add inert metadata.
+- Deleted: `src/ux/command-registry.ts`, `src/ux/index.ts`,
+  `src/services/command-policy.ts`, `tests/command-registry.test.ts`,
+  `tests/command-policy.test.ts`. Also removed the now-fully-dead
+  `CommandDefinition`/`CommandRegistry`/`ErpCommandContext` types from
+  `src/erp/adapter.ts` (nothing referenced them once the registry was gone).
+- Acceptance (met): menus still obey channel and role visibility unchanged
+  (service-catalog.ts's logic untouched); typed commands retain current
+  behavior — `tests/action-otp-gate.test.ts` passes unmodified against the
+  new `isOtpGatedCommand`-backed implementation, proving the gate's
+  true/false outcomes for every prefix are identical to before.
+- Check: `npm run build && npm test` — 37 files / 203 tests passing (down
+  from 39/212, the two deleted dead-code test files' own tests).
 
 ### C3. Future ERP provider spike
 

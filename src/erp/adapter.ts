@@ -92,15 +92,6 @@ export type ErpAdapterCapabilities = {
   supportsDailyReport: boolean;
 };
 
-export type ErpCommandContext = {
-  userId: string;
-  channelId?: string;
-  channel?: 'line' | 'web' | 'ops' | 'admin';
-  language: 'th' | 'en';
-  isAdmin: boolean;
-  provider: ErpProviderName;
-};
-
 export type ErpAdapter = {
   name: ErpProviderName;
   capabilities: ErpAdapterCapabilities;
@@ -125,26 +116,4 @@ export type ErpAdapter = {
   getDailySnapshot: () => Promise<ErpDailySnapshotRow[]>;
   getDailySummary: () => Promise<string | null>;
   permissionFor: (action: ErpWriteAction) => ErpPermission;
-};
-
-export type CommandDefinition = {
-  id: string;
-  commandText: string;
-  handlerName: string;
-  labelTh: string;
-  labelEn: string;
-  category: 'commerce' | 'directory' | 'catalog' | 'reporting' | 'admin';
-  serviceKey?: string;
-  requiresAdmin?: boolean;
-  approvalRequired?: boolean;
-  requiresOtp?: boolean;
-  enabled: boolean;
-  action: ErpWriteAction | 'read' | 'menu';
-  channels?: Array<'line' | 'web' | 'ops' | 'admin'>;
-};
-
-export type CommandRegistry = {
-  commands: CommandDefinition[];
-  getById: (id: string) => CommandDefinition | undefined;
-  getVisible: (ctx: Pick<ErpCommandContext, 'isAdmin' | 'channel'>) => CommandDefinition[];
 };
