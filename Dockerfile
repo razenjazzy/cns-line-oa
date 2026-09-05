@@ -10,7 +10,10 @@ ENV PUPPETEER_SKIP_DOWNLOAD=true
 COPY package*.json ./
 
 # Install all dependencies (including devDependencies for tsc)
-RUN npm ci --ignore-scripts
+# --legacy-peer-deps: bullmq@5.81.4's peerOptional redis@>=5.0.0 conflicts
+# with the redis@4.x client still used for rate limiting; ignore the peer
+# conflict rather than failing the build.
+RUN npm ci --ignore-scripts --legacy-peer-deps
 
 # Copy the source code
 COPY tsconfig.json ./
@@ -31,7 +34,7 @@ ENV PUPPETEER_SKIP_DOWNLOAD=true
 COPY package*.json ./
 
 # Install only production dependencies
-RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+RUN npm ci --omit=dev --ignore-scripts --legacy-peer-deps && npm cache clean --force
 
 # Copy the compiled JS files from the builder stage
 COPY --from=builder /usr/src/app/dist ./dist
