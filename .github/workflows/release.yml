@@ -8,7 +8,11 @@ name: release
 # file is genuinely still unconfigured — see the (all-unchecked) "GitHub
 # Environment Configuration" section of documents/PRODUCTION_READINESS_CHECKLIST.md.
 # Configuring them in GitHub → Settings → Environments → staging/production
-# is what clears the warning; no workflow-file change can.
+# is what clears the warning; no workflow-file change can. There is also no
+# extension setting to suppress this diagnostic (github/vscode-github-actions
+# issues #123, #222, #533 — open/unresolved). If this comment disappears
+# again on its own, something other than this session is rewriting the file;
+# check for another tool (e.g. GitHub Copilot) editing it concurrently.
 
 on:
   push:
