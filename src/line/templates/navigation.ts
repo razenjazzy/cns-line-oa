@@ -131,7 +131,7 @@ export const createAdminConfigFlexMessage = (
   altText: language === 'en' ? `Service configuration: ${channelId}` : `ตั้งค่าบริการ: ${channelId}`,
   contents: {
     type: 'bubble',
-    styles: { header: { backgroundColor: BRAND.tealStrong }, body: { backgroundColor: BRAND.surface }, footer: { backgroundColor: BRAND.surface } },
+    styles: { header: { backgroundColor: BRAND.teal }, body: { backgroundColor: BRAND.surface }, footer: { backgroundColor: BRAND.surface } },
     header: {
       type: 'box', layout: 'vertical', paddingAll: 'md',
       contents: [

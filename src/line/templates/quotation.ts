@@ -225,6 +225,9 @@ export const createQuotationListFlexMessage = (
         paddingAll: 'md',
         contents: [
           { type: 'text', text: t('myQuotations', language), weight: 'bold', size: 'md', color: '#FFFFFF', wrap: true },
+          { type: 'text', text: orders.length
+            ? (language === 'en' ? `${orders.length} found — tap one for details` : `พบ ${orders.length} รายการ — แตะเพื่อดูรายละเอียด`)
+            : (language === 'en' ? 'No quotations yet' : 'ยังไม่มีใบเสนอราคา'), size: 'xs', color: '#DDEBE9', margin: 'xs', wrap: true },
         ],
       },
       body: {

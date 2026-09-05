@@ -116,14 +116,16 @@ export const createDailyReportFlexMessage = (reportData: any, insights: string, 
     contents: {
       type: 'bubble',
       styles: {
-        header: { backgroundColor: BRAND.tealStrong },
+        header: { backgroundColor: BRAND.teal },
         body: { backgroundColor: BRAND.surface },
       },
       header: {
         type: 'box',
         layout: 'vertical',
+        paddingAll: 'md',
         contents: [
           { type: 'text', text: language === 'en' ? `Daily report by ${agentName}` : `รายงานประจำวันโดย ${agentName}`, weight: 'bold', size: 'md', color: '#FFFFFF', wrap: true },
+          { type: 'text', text: language === 'en' ? 'Sales, revenue, and stock at a glance' : 'สรุปยอดขาย รายได้ และสต็อกสินค้า', size: 'xs', color: '#DDEBE9', margin: 'xs', wrap: true },
         ],
       },
       body: {
