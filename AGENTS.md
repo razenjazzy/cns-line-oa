@@ -19,10 +19,13 @@ This repository is optimized for low-token, low-cost agent work. Follow these ru
        env). `src/index.ts` itself is now a ~35-line orchestrator that only
        wires app.use()/registerXRoutes() calls — look in `src/http/` for
        actual route logic, not `src/index.ts`.
-   - Planned but not yet split (`src/line/templates.ts`, `src/demo/page.ts`
-     are still single flat files today) — see
-     `documents/STAGED_IMPLEMENTATION_BACKLOG.md` Track B4 before assuming
-     a `src/line/templates/*` directory exists.
+     - `src/line/templates.ts` -> split into `src/line/templates/*` by
+       domain (shared, bot, catalog, navigation, forms, quotation) + barrel.
+       `src/line/templates.ts` itself is now a 6-line compatibility
+       re-export — look in `src/line/templates/` for actual builder logic.
+   - Planned but not yet split: `src/demo/page.ts` (909 lines, static demo
+     assets) — see `documents/STAGED_IMPLEMENTATION_BACKLOG.md` Track B4
+     for the remaining, smaller half of this track.
 
 3. Prefer targeted verification.
    - Run the smallest relevant test before and after a fix.

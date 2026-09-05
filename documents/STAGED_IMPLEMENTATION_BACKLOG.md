@@ -68,6 +68,7 @@ This backlog converts the enterprise architecture plan into small, reversible im
 - Step-up OTP extended to USER/SERVICE CRUD, closing the last named security gap.
 - Odoo-native sales-tier permissions (salesTier) shipped as an additive layer, fail-safe to today's behavior with no linked Odoo user.
 - Track B3 HTTP route extraction complete: src/index.ts split into src/http/* (env, runtime-state, middleware, demo-session, and one file per route group). Verified via build/lint/test plus a live local smoke test.
+- Track B4 Flex-builder split complete: src/line/templates.ts split into src/line/templates/* by domain (shared/bot/catalog/navigation/forms/quotation), compatibility barrel preserved. Demo asset extraction (src/demo/page.ts) is the smaller remaining half of B4, not started.
 
 ## Track A: security and policy
 
@@ -184,10 +185,22 @@ This backlog converts the enterprise architecture plan into small, reversible im
 
 ### B4. LINE template and demo asset split
 
-- Split Flex builders under `src/line/templates/` with a compatibility barrel.
-- Move static demo assets out of the large page module.
-- Acceptance: generated LINE message shapes and demo rendering remain unchanged.
-- Check: `npm run build && npm test`.
+- **Flex-builder half completed 2026-09-05.** `src/line/templates.ts`
+  (975 lines, 11 builders) split into `src/line/templates/` by domain:
+  `shared.ts` (brand palette, button builders, `formatMoney`/`truncate`),
+  `bot.ts`, `catalog.ts`, `navigation.ts`, `forms.ts`, `quotation.ts`, plus
+  a barrel `index.ts`. `src/line/templates.ts` is now a 6-line compatibility
+  re-export — same pattern as B1/B2/B3, no import-site changes needed.
+  Verified via `npm run build`/`lint`/`test` (39 files / 212 tests) plus a
+  live local smoke test hitting `/webhook-test` for `GUIDE`/`HELP`
+  (navigation.ts), `PRODUCT FIND` (catalog.ts), and a fresh-user PDPA
+  notice (bot.ts) — all rendered correctly.
+- **Demo asset extraction not started.** `src/demo/page.ts` (909 lines)
+  is untouched — a separate, smaller piece of B4 than the templates split
+  was. Revisit if/when it becomes a real hotspot; not urgent on its own.
+- Acceptance: generated LINE message shapes and demo rendering remain
+  unchanged — confirmed for the templates half.
+- Check: `npm run build && npm test` — done for the templates half.
 
 ## Track C: provider and UX expansion
 
