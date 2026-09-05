@@ -16,14 +16,11 @@ name: release
 
 on:
   # Deliberately manual-only (workflow_dispatch), not push -- Railway
-  # (railway.json's Dockerfile builder) is the actual staging/production
-  # target and needs no GitHub Action of its own. This Cloud Run pipeline
-  # was kept for a possible future need but its secrets
-  # (DEPLOY_ENV_STAGING_YAML, GCP_SERVICE_ACCOUNT, etc. -- see
-  # documents/PRODUCTION_READINESS_CHECKLIST.md's "GitHub Environment
-  # Configuration" section) were never configured, so running it on every
-  # push to main just produced a permanent, misleading red check. Run it
-  # by hand from the Actions tab once those secrets are actually filled in.
+  # (railway.json + Dockerfile) is STAGING. This Cloud Run pipeline is the
+  # production delivery path once GCP environment secrets exist
+  # (DEPLOY_ENV_PRODUCTION_YAML, etc. -- see documents/ENVIRONMENTS.md).
+  # Running it on every push produced a permanent red check while those
+  # secrets were empty. Dispatch by hand after staging signoff.
   workflow_dispatch:
     inputs:
       deploy_production:

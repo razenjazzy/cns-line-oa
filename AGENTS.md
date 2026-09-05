@@ -10,6 +10,7 @@ This repository is optimized for low-token, low-cost agent work. Follow these ru
    - Prefer narrow reads around known ranges, not whole files.
 
 2. Do not re-explore known hotspots.
+   - Deployment lanes: `APP_ENV=development` (local), `staging` (Railway), `production` (final). See `documents/ENVIRONMENTS.md`.
    - Already split, treat as source of truth (do not re-derive these shapes):
      - `src/services/firestore.ts` -> split into `src/services/firestore/*` + barrel
      - `src/services/odoo.ts` -> split into `src/services/odoo/*` + barrel

@@ -8,7 +8,7 @@ LINE HMAC webhook → Firestore profile → one `resolveCommandReply` → Flex. 
 
 ## Image facts (source of truth)
 
-- `NODE_ENV=production` is set in the Dockerfile. Demo, `/webhook-test`, GraphQL, and `/api-docs` stay **off** unless you set the `ENABLE_*` flags below.
+- `NODE_ENV=production` is set in the Dockerfile. Set `APP_ENV=staging` or the process fail-closes as delivery production (demo off). Then set `ENABLE_*` for `/demo`, `/webhook-test`, GraphQL, `/api-docs`.
 - Process is `node dist/index.js` so Railway SIGTERM hits the Express shutdown handler.
 - `skills/` is copied into the image (markdown skills). `.dockerignore` must not exclude it.
 - `/healthz` is liveness only. `/readyz` is the full platform snapshot (LINE, Firestore, Odoo, rate limiter required; Mongo/queues optional).
@@ -19,6 +19,7 @@ Set these in the Railway service. Do not commit values.
 
 | Variable | Staging |
 |---|---|
+| `APP_ENV` | **Must be `staging`.** Unset + image `NODE_ENV=production` fail-closes to delivery production and turns demo off. |
 | `LINE_CHANNEL_SECRET`, `LINE_CHANNEL_ACCESS_TOKEN` | Test OA, not production |
 | `GOOGLE_CLOUD_PROJECT` | Firestore project |
 | `GOOGLE_APPLICATION_CREDENTIALS_JSON` | Single-line service account JSON (Railway has no GCP ADC) |

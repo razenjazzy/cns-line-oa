@@ -97,8 +97,10 @@ Every Flex message is a single `bubble` with the same three-part shape:
 ## Type scale
 
 Only three text sizes appear anywhere: `xs` (captions, subtitles), `sm`
-(body text, buttons), `md`/`xl` (titles, hero numbers like a price or
-total). There's no `lg` in use — don't introduce one without a reason.
+(body text and picker rows), `md`/`xl` (titles, hero numbers like a price or
+total). NAV HOME / action lists reuse the committed rounded `box` tiles
+(`cornerRadius` 12px, icon in the label). Type is `md` regular — not
+`lg`+bold. LINE `button` components are for footers and GUIDE categories.
 
 ## Quick replies
 

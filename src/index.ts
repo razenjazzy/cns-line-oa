@@ -16,7 +16,7 @@ import { registerOpenApiRoutes } from './http/openapi-routes';
 import { registerGraphqlRoutes } from './http/graphql-routes';
 import { initTracing, shutdownTracing } from './observability/tracing';
 import { startQueueWorkers } from './jobs/workers';
-import { isBullmqWorkerEnabled } from './http/env';
+import { appEnv, isBullmqWorkerEnabled } from './http/env';
 import { appLogger } from './services/logger';
 import { closeMongo } from './infra/mongo/base-repository';
 import { closeQueues } from './jobs/queue';
@@ -47,7 +47,7 @@ const startServer = async () => {
     await ensureDemoSessionStateLoaded();
     const workers = isBullmqWorkerEnabled ? startQueueWorkers() : [];
     const server = app.listen(port, () => {
-        appLogger.info('server_listening', { port });
+        appLogger.info('server_listening', { port, appEnv, nodeEnv: process.env.NODE_ENV || 'development' });
     });
 
     const shutdown = (signal: string) => {

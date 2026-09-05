@@ -6,6 +6,7 @@ describe('platform flags', () => {
     const flags = getPlatformFlags();
     expect(flags.erpProvider).toBe('odoo');
     expect(flags).toEqual(expect.objectContaining({
+      appEnv: expect.stringMatching(/development|staging|production/),
       lineConfigured: expect.any(Boolean),
       firestoreProjectConfigured: expect.any(Boolean),
       odooConfigured: expect.any(Boolean),

@@ -101,19 +101,16 @@ export const createPrefillButton = (
 });
 
 /**
- * A tappable full-width row using an explicit text `size`, instead of a
- * `type: 'button'` component — LINE renders every button's label at a
- * fixed client-controlled system font with no `size` property at all, so
- * this is the only way to make menu text genuinely bigger/more legible
- * (also removes buttonLabel()'s 20-char truncation, a free side benefit,
- * since this is a text component, not a button label). Same "tappable box"
- * mechanism createQuotationListFlexMessage's order rows already use.
+ * Rounded, borderless tappable row (same box as HEAD / 6babb2c1).
+ * Only the type scale differs from that commit: `md` regular, not `lg`+bold.
+ * Pass icon in `label` (e.g. "🛍️ Products") — do not restyle as a new layout.
  */
 export const createTapRow = (
   label: string,
   actionText: string,
   color: string = BRAND.teal,
-  textColor: string = '#FFFFFF'
+  textColor: string = '#FFFFFF',
+  size: 'sm' | 'md' = 'md',
 ): messagingApi.FlexBox => ({
   type: 'box',
   layout: 'vertical',
@@ -122,7 +119,7 @@ export const createTapRow = (
   paddingAll: 'md',
   action: { type: 'message', text: actionText },
   contents: [
-    { type: 'text', text: label, size: 'lg', weight: 'bold', color: textColor, wrap: true },
+    { type: 'text', text: label, size, color: textColor, wrap: true },
   ],
 });
 

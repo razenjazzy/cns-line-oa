@@ -1,0 +1,27 @@
+---
+description: CNS LINE OA architecture, 3-env deploy, and agent budget
+alwaysApply: true
+---
+
+# CNS LINE OA
+
+LINE HMAC webhook → Firestore profile → one `resolveCommandReply` → Flex.
+Do not add a second router. Do not put LINE events on GraphQL. Do not store users or Odoo data in Mongo.
+
+Admin chain (fail closed): LINE id → profile → `odooVerified` → `ADMIN_USER_ID` → Odoo admin capability → `role=admin`.
+
+## Environments
+
+| `APP_ENV` | Host | Purpose |
+|---|---|---|
+| `development` | laptop | Local + `/webhook-test` + `/demo` |
+| `staging` | Railway | Demo; set ENABLE_* flags; `NODE_ENV=production` |
+| `production` | final delivery | Demo and webhook-test off even if ENABLE_* is set |
+
+Unset `APP_ENV` with `NODE_ENV=production` is treated as production.
+
+Optional adapters (Swagger, GraphQL, Mongo RAG, BullMQ) are ops add-ons, not the bot.
+
+## Agent budget
+
+Read `CLAUDE.md` then the exact file. Grep before full-file reads. No new dependencies. Smallest test first.

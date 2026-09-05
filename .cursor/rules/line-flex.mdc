@@ -1,0 +1,11 @@
+---
+description: LINE Flex visual consistency for menus, buttons, and cards
+globs: src/line/templates/**/*.ts
+alwaysApply: false
+---
+
+# LINE Flex UX
+
+Keep the Cloudnex palette and bubble anatomy in `src/line/templates/shared.ts`.
+
+NAV HOME / service action lists keep the committed `createTapRow` box (teal, 12px radius, icon in the label string). The only UI-feedback delta vs that commit is type `md` without bold — not `lg`+bold, and not a new icon-column layout. Do not switch those rows back to `type: 'button'` (LINE chrome). Footers stay `createMessageActionButton`. Product pickers use the same box at `sm` on `tealTint`.

@@ -4,6 +4,7 @@ export const healthzResponseSchema = z.object({
   ok: z.boolean(),
   service: z.string(),
   environment: z.string(),
+  appEnv: z.enum(['development', 'staging', 'production']).optional(),
   timestamp: z.string(),
 });
 

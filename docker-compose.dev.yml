@@ -47,6 +47,7 @@ services:
     environment:
       PORT: "8080"
       NODE_ENV: "development"
+      APP_ENV: "development"
       RATE_LIMIT_STORE: "redis"
       REDIS_URL: "redis://redis:6379"
       CLAWFRAMEWORK_ENABLED: "true"

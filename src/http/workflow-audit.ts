@@ -2,6 +2,7 @@ import { getRateStore } from './runtime-state';
 import {
     allowDemoHeaderTokenFallbackInProd,
     demoControlToken,
+    isDeliveryProduction,
     isDemoControlEnabled,
     isProduction,
     isWebhookTestEnabled,
@@ -49,11 +50,11 @@ export const buildWorkflowAudit = async () => {
 
     const failures: string[] = [];
     if (!audit.checks.security.opsTokenConfigured) failures.push('OPS_API_TOKEN is not configured');
-    if (isProduction && !audit.checks.security.demoControlTokenConfigured) failures.push('DEMO_CONTROL_TOKEN is not configured for production');
-    if (isProduction && !audit.checks.security.demoSessionSecretConfigured) failures.push('DEMO_SESSION_SECRET (or DEMO_CONTROL_TOKEN fallback) is not configured for production');
-    if (isProduction && allowDemoHeaderTokenFallbackInProd) failures.push('ALLOW_DEMO_HEADER_TOKEN_FALLBACK should be disabled in production for session-only access');
-    if (isProduction && isDemoControlEnabled) failures.push('Demo control panel (ENABLE_DEMO_CONTROL_PANEL) is enabled in production — confirm this is intentional and time-boxed, then disable it again.');
-    if (!audit.checks.security.webhookTestProductionSafe) failures.push('ENABLE_WEBHOOK_TEST is active in production without WEBHOOK_TEST_TOKEN');
+    if (isDemoControlEnabled && !audit.checks.security.demoControlTokenConfigured) failures.push('DEMO_CONTROL_TOKEN is not configured while the demo panel is enabled');
+    if (isDemoControlEnabled && !audit.checks.security.demoSessionSecretConfigured) failures.push('DEMO_SESSION_SECRET (or DEMO_CONTROL_TOKEN fallback) is not configured while the demo panel is enabled');
+    if (isProduction && allowDemoHeaderTokenFallbackInProd) failures.push('ALLOW_DEMO_HEADER_TOKEN_FALLBACK should be disabled outside local development');
+    if (isDeliveryProduction && isDemoControlEnabled) failures.push('Demo control panel cannot be enabled when APP_ENV=production');
+    if (!audit.checks.security.webhookTestProductionSafe) failures.push('ENABLE_WEBHOOK_TEST is active without WEBHOOK_TEST_TOKEN');
     failures.push(...collectProbeFailures(runtimeChecks));
 
     return {

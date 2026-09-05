@@ -3,7 +3,7 @@ import { getDefaultLanguage, type AppLanguage } from './app-config';
 import { getAgentName } from '../line/channels';
 import { pingMongo } from '../infra/mongo/base-repository';
 import { getDemoDayScript, getServiceModules, type ServiceModule } from '../platform/service-modules';
-import { isMongoVectorEnabled } from '../http/env';
+import { appEnv, isDemoControlEnabled, isDeliveryProduction, isMongoVectorEnabled } from '../http/env';
 import {
   createPartnerFromLine,
   createQuotationFromLine,
@@ -109,9 +109,6 @@ const isOdooConfigured = (): boolean => {
   return Boolean(url && db && username && apiKey);
 };
 
-const isProduction = process.env.NODE_ENV === 'production';
-const isDemoControlEnabled = !isProduction || /^(1|true|yes|on)$/i.test(process.env.ENABLE_DEMO_CONTROL_PANEL || '');
-
 const normalizeBaseUrl = (baseUrl?: string): string => {
   const fallbackPort = process.env.PORT || '8080';
   return (baseUrl || `http://localhost:${fallbackPort}`).replace(/\/$/, '');
@@ -141,7 +138,7 @@ export const getDemoOverview = async (baseUrl?: string): Promise<DemoOverview> =
     generatedAt: new Date().toISOString(),
     app: {
       status: 'ready',
-      environment: process.env.NODE_ENV?.trim() || 'development',
+      environment: appEnv,
       endpoints: {
         demoPage: `${resolvedBaseUrl}/demo`,
         connections: `${resolvedBaseUrl}/demo/connections`,
@@ -184,7 +181,7 @@ export const getDemoOverview = async (baseUrl?: string): Promise<DemoOverview> =
     demo: {
       accessControl: {
         enabled: isDemoControlEnabled,
-        productionProtected: !isProduction || Boolean((process.env.DEMO_CONTROL_TOKEN || process.env.OPS_API_TOKEN || '').trim()),
+        productionProtected: isDeliveryProduction || Boolean((process.env.DEMO_CONTROL_TOKEN || process.env.OPS_API_TOKEN || '').trim()),
       },
       recommendedJourney: getDemoDayScript(),
       sampleLinePayload: {

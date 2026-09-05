@@ -1,11 +1,56 @@
 const envFlag = (value: string | undefined): boolean => /^(1|true|yes|on)$/i.test(value || '');
 
+export type AppEnv = 'development' | 'staging' | 'production';
+
+/**
+ * Deployment lane. Independent of NODE_ENV.
+ * - development: local + API tests
+ * - staging: Railway demo
+ * - production: final delivery (demo and webhook-test stay off)
+ *
+ * Unset APP_ENV + NODE_ENV=production fails closed to production.
+ */
+export const resolveAppEnv = (env: NodeJS.ProcessEnv = process.env): AppEnv => {
+  const explicit = env.APP_ENV?.trim().toLowerCase();
+  if (explicit === 'development' || explicit === 'staging' || explicit === 'production') {
+    return explicit;
+  }
+  if (env.NODE_ENV === 'production') return 'production';
+  return 'development';
+};
+
+const stagingOrDevFlag = (appEnv: AppEnv, flag: string | undefined): boolean => {
+  if (appEnv === 'production') return false;
+  if (appEnv === 'development') return true;
+  return envFlag(flag);
+};
+
+const opsSurfaceFlag = (appEnv: AppEnv, flag: string | undefined): boolean => {
+  if (appEnv === 'development') return true;
+  return envFlag(flag);
+};
+
+export const resolveDemoEnabled = (env: NodeJS.ProcessEnv = process.env): boolean =>
+  stagingOrDevFlag(resolveAppEnv(env), env.ENABLE_DEMO_CONTROL_PANEL);
+
+export const resolveWebhookTestEnabled = (env: NodeJS.ProcessEnv = process.env): boolean =>
+  stagingOrDevFlag(resolveAppEnv(env), env.ENABLE_WEBHOOK_TEST);
+
+export const resolveGraphqlEnabled = (env: NodeJS.ProcessEnv = process.env): boolean =>
+  opsSurfaceFlag(resolveAppEnv(env), env.ENABLE_GRAPHQL);
+
+export const appEnv = resolveAppEnv();
+export const isStaging = appEnv === 'staging';
+export const isDeliveryProduction = appEnv === 'production';
+/** Node production mode (secure cookies, no Claw). True on Railway staging and delivery. */
 export const isProduction = process.env.NODE_ENV === 'production';
-export const isWebhookTestEnabled = !isProduction || envFlag(process.env.ENABLE_WEBHOOK_TEST);
-export const isDemoControlEnabled = !isProduction || envFlag(process.env.ENABLE_DEMO_CONTROL_PANEL);
-export const allowDemoHeaderTokenFallbackInProd = !isProduction && envFlag(process.env.ALLOW_DEMO_HEADER_TOKEN_FALLBACK);
-export const isApiDocsEnabled = !isProduction || envFlag(process.env.ENABLE_API_DOCS);
-export const isGraphqlEnabled = !isProduction || envFlag(process.env.ENABLE_GRAPHQL);
+
+export const isWebhookTestEnabled = resolveWebhookTestEnabled();
+export const isDemoControlEnabled = resolveDemoEnabled();
+export const allowDemoHeaderTokenFallbackInProd = appEnv === 'development' && envFlag(process.env.ALLOW_DEMO_HEADER_TOKEN_FALLBACK);
+export const isApiDocsEnabled = opsSurfaceFlag(appEnv, process.env.ENABLE_API_DOCS);
+export const isGraphqlEnabled = resolveGraphqlEnabled();
+export const isGraphiqlEnabled = isGraphqlEnabled && !isDeliveryProduction;
 export const isOpsJobsAsync = envFlag(process.env.OPS_JOBS_ASYNC);
 export const isLineWebhookAsync = envFlag(process.env.LINE_WEBHOOK_ASYNC);
 export const isBullmqWorkerEnabled = envFlag(process.env.RUN_BULLMQ_WORKER);

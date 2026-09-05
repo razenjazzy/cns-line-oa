@@ -9,7 +9,7 @@ credentials or secret values in this repository.
 
 - [x] `npm test`, `npm run lint`, `npx tsc --noEmit` pass locally before push.
 - [x] Dockerfile copies `dist/` and `skills/`, runs `node dist/index.js`, healthchecks `/healthz`.
-- [ ] Railway service has LINE, Firestore JSON credentials, sandbox Odoo, `ADMIN_USER_ID`, `OPS_API_TOKEN`.
+- [ ] Railway service has `APP_ENV=staging`, LINE, Firestore JSON credentials, sandbox Odoo, `ADMIN_USER_ID`, `OPS_API_TOKEN`.
 - [ ] Staging demo flags: `ENABLE_DEMO_CONTROL_PANEL`, `ENABLE_WEBHOOK_TEST` (+ token), optional `ENABLE_GRAPHQL` / `ENABLE_API_DOCS`.
 - [ ] `LINE_WEBHOOK_ASYNC` remains false unless Redis + a worker process exist.
 - [ ] After deploy: `/healthz` 200, `/readyz` 200, `scripts/validate-railway.sh`.

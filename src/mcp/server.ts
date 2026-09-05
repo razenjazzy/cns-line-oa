@@ -24,6 +24,7 @@ import {
   getKpiSnapshot,
   getReadyz,
   getWorkflowAudit,
+  getPlatformStatus,
   OpsClientError,
   resolveOpsClientConfig,
   rotateAuditLog,
@@ -80,10 +81,18 @@ server.registerTool(
 );
 
 server.registerTool(
+  'get_platform_status',
+  { title: 'Get platform status', description: 'Full APP_ENV flags, probes, and service modules from GET /ops/platform. Read-only. Requires OPS_API_TOKEN.' },
+  async () => {
+    try { return asToolResult(await getPlatformStatus(config)); } catch (error) { return asErrorResult(error); }
+  }
+);
+
+server.registerTool(
   'send_test_chat_message',
   {
     title: 'Send a test chat message',
-    description: 'Sends one message through the exact same command router real LINE users hit, via the signature-free /webhook-test dev endpoint, and returns the bot\'s reply. For local/staging testing only — this endpoint is disabled in production unless explicitly enabled there.',
+    description: 'Sends one message through the exact same command router real LINE users hit, via the signature-free /webhook-test endpoint. Local and Railway staging only. Disabled when APP_ENV=production.',
     inputSchema: { text: z.string().min(1), userId: z.string().optional() },
   },
   async ({ text, userId }) => {

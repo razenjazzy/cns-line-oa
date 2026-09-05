@@ -101,6 +101,9 @@ export const getKpiSnapshot = (config: OpsClientConfig) =>
 export const getWorkflowAudit = (config: OpsClientConfig) =>
   request<Record<string, unknown>>(config, 'GET', '/ops/workflow-audit', { token: requireToken(config.opsApiToken, 'OPS_API_TOKEN') });
 
+export const getPlatformStatus = (config: OpsClientConfig) =>
+  request<Record<string, unknown>>(config, 'GET', '/ops/platform', { token: requireToken(config.opsApiToken, 'OPS_API_TOKEN') });
+
 export const rotateDemoSession = (config: OpsClientConfig, newSecret: string, graceMinutes?: number) =>
   request<Record<string, unknown>>(config, 'POST', '/ops/demo-session/rotate', {
     token: requireToken(config.opsApiToken, 'OPS_API_TOKEN'),

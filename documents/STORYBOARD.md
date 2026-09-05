@@ -214,10 +214,9 @@ turned out to be real, confirmed, previously-unreported bugs; two were
 confirmed working-as-designed with an explanation; the rest were shipped
 as scoped enhancements.
 
-- ✅ **Nav menu font size** — LINE's `type: 'button'` component has no
-  `size` property at all (client-controlled fixed font); converted the
-  Home menu and per-service action menus to tappable text rows
-  (`createTapRow`, `size: 'lg'`) instead.
+- ✅ **Nav menu font size** — keep the committed rounded teal `box` (no
+  LINE button border, icon in the label). Only change vs that commit: `md`
+  regular instead of `lg`+bold. Footers stay buttons.
 - ✅ **Verify link broken** — real bug: no `app.set('trust proxy', ...)`
   meant `req.protocol` reported the reverse proxy's internal `http` hop
   instead of the real public `https`, so the magic link came out dead on

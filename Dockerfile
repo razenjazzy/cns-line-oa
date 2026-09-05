@@ -41,7 +41,8 @@ COPY skills ./skills
 RUN apk add --no-cache wget \
   && addgroup -S app && adduser -S -G app app && chown -R app:app /usr/src/app
 
-# Set standard Node.js environment variables
+# Staging vs production is APP_ENV (injected by the host), not this file.
+# Unset APP_ENV + NODE_ENV=production fails closed to delivery production.
 ENV NODE_ENV=production
 ENV PORT=8080
 

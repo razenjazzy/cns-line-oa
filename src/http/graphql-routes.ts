@@ -2,7 +2,7 @@ import type { Express, Request } from 'express';
 import { graphqlSchema, type GraphqlContext } from '../graphql/schema';
 import { isValidAdminToken } from '../services/admin-token-auth';
 import { getOpsBearerOrHeaderToken, isValidOpsToken } from '../services/ops-token-auth';
-import { isGraphqlEnabled, isProduction } from './env';
+import { isGraphqlEnabled, isGraphiqlEnabled } from './env';
 import { appLogger } from '../services/logger';
 
 const contextFromRequest = (req: Request): GraphqlContext => {
@@ -21,7 +21,7 @@ export const registerGraphqlRoutes = async (app: Express): Promise<void> => {
   const yoga = createYoga({
     schema: graphqlSchema,
     graphqlEndpoint: '/graphql',
-    graphiql: !isProduction,
+    graphiql: isGraphiqlEnabled,
     context: ({ request }) => {
       const authorization = request.headers.get('authorization') || '';
       const xOps = request.headers.get('x-ops-token') || '';

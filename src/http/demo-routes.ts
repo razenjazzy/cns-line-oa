@@ -201,8 +201,8 @@ export const registerDemoRoutes = (app: Express): void => {
 
         const failures: string[] = [];
         if (!opsApiToken) failures.push('OPS_API_TOKEN is not configured');
-        if (isProduction && !demoControlToken) failures.push('DEMO_CONTROL_TOKEN is not configured for production');
-        if (isProduction && isWebhookTestEnabled && !webhookTestToken) failures.push('WEBHOOK_TEST_TOKEN should be configured when ENABLE_WEBHOOK_TEST is enabled in production');
+        if (isDemoControlEnabled && !demoControlToken) failures.push('DEMO_CONTROL_TOKEN is not configured while the demo panel is enabled');
+        if (isWebhookTestEnabled && isProduction && !webhookTestToken) failures.push('WEBHOOK_TEST_TOKEN should be configured when ENABLE_WEBHOOK_TEST is enabled on a NODE_ENV=production host');
 
         const runtimeChecks = await runRuntimeProbes(getRateStore(), readyzTimeoutMs);
 

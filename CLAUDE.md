@@ -14,7 +14,7 @@ LINE event
 → service integrations
 → LINE reply messages / Flex UI.
 
-Optional ops adapters (not the LINE path): schema-driven `/api-docs`, `POST /graphql` (ops/jobs only), Mongo RAG embeddings, BullMQ webhook/jobs when env-gated. Firestore remains identity SoR. See `documents/ENTERPRISE_STANDARD.md` section 8. Demo-day presenter script: `documents/DEMO_DAY.md`. Railway staging: `documents/RAILWAY_STAGING.md`. Module inventory: `src/platform/service-modules.ts` (`GET /demo/platform`). Full runtime snapshot: `GET /readyz`, `GET /ops/platform`.
+Optional ops adapters (not the LINE path): schema-driven `/api-docs`, `POST /graphql` (ops/jobs only), Mongo RAG embeddings, BullMQ webhook/jobs when env-gated. Firestore remains identity SoR. See `documents/ENTERPRISE_STANDARD.md` section 8. Environments: `documents/ENVIRONMENTS.md`. Demo-day presenter script: `documents/DEMO_DAY.md`. Railway staging: `documents/RAILWAY_STAGING.md`. Module inventory: `src/platform/service-modules.ts` (`GET /demo/platform`). Full runtime snapshot: `GET /readyz`, `GET /ops/platform`.
 
 ### Important existing areas
 

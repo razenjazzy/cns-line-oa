@@ -62,6 +62,8 @@ Prefer existing LINE-native patterns:
 
 Keep text-command compatibility where practical.
 
+Nav Home / action lists keep the committed `createTapRow` boxes (icon in the label). Only change vs that commit: `md` regular text, not `lg`+bold and not a new layout. Footer Language/Guide stay `createMessageActionButton`.
+
 ## Verification
 
 Run targeted tests first.

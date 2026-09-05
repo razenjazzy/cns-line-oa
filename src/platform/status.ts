@@ -1,12 +1,15 @@
 import {
+  appEnv,
   isApiDocsEnabled,
   isBullmqWorkerEnabled,
+  isDeliveryProduction,
   isDemoControlEnabled,
   isGraphqlEnabled,
   isLineWebhookAsync,
   isMongoVectorEnabled,
   isOpsJobsAsync,
   isProduction,
+  isStaging,
   isWebhookTestEnabled,
   mongoUri,
   opsApiToken,
@@ -18,12 +21,16 @@ import { isQueueBackendReady } from '../jobs/queue';
 import { runRuntimeProbes, type ProbeResult } from '../services/runtime-probes';
 import { loadSkills } from '../services/skill-loader';
 import { getServiceModules } from './service-modules';
+import { auditEnvParams } from '../http/env-params';
 
 export type PlatformCheck = ProbeResult & { required: boolean };
 
 export type PlatformFlags = {
+  appEnv: 'development' | 'staging' | 'production';
   environment: string;
   production: boolean;
+  deliveryProduction: boolean;
+  staging: boolean;
   erpProvider: string;
   lineConfigured: boolean;
   firestoreProjectConfigured: boolean;
@@ -62,8 +69,11 @@ const isOdooConfigured = (): boolean => Boolean(
 );
 
 export const getPlatformFlags = (): PlatformFlags => ({
+  appEnv,
   environment: process.env.NODE_ENV?.trim() || 'development',
   production: isProduction,
+  deliveryProduction: isDeliveryProduction,
+  staging: isStaging,
   erpProvider: process.env.ERP_PROVIDER?.trim().toLowerCase() || 'odoo',
   lineConfigured: isLineConfigured(),
   firestoreProjectConfigured: Boolean(process.env.GOOGLE_CLOUD_PROJECT?.trim()),
@@ -96,8 +106,11 @@ const collectWarnings = (flags: PlatformFlags, checks: PlatformCheck[]): string[
   if (flags.opsJobsAsync && !flags.redisConfigured) {
     warnings.push('OPS_JOBS_ASYNC is on but REDIS_URL is missing; jobs run in-process.');
   }
-  if (flags.production && flags.demoPanelEnabled && !flags.demoControlTokenConfigured) {
-    warnings.push('Demo panel is enabled in production without DEMO_CONTROL_TOKEN / OPS_API_TOKEN.');
+  if (flags.deliveryProduction && flags.demoPanelEnabled) {
+    warnings.push('Demo panel cannot be enabled in APP_ENV=production.');
+  }
+  if (isProduction && !process.env.APP_ENV?.trim()) {
+    warnings.push('APP_ENV is unset with NODE_ENV=production; process is fail-closed as delivery production. Set APP_ENV=staging on Railway.');
   }
   if (flags.production && flags.webhookTestEnabled && !process.env.WEBHOOK_TEST_TOKEN?.trim() && !flags.opsTokenConfigured) {
     warnings.push('ENABLE_WEBHOOK_TEST is on in production without WEBHOOK_TEST_TOKEN.');
@@ -110,6 +123,10 @@ const collectWarnings = (flags: PlatformFlags, checks: PlatformCheck[]): string[
   }
   if (flags.production && flags.clawEnabled) {
     warnings.push('CLAWFRAMEWORK_ENABLED in production is unsupported; keep it off.');
+  }
+  const envAudit = auditEnvParams(flags.appEnv);
+  for (const key of envAudit.missingRequired) {
+    warnings.push(`Missing ${flags.appEnv} config: ${key}`);
   }
   for (const check of checks) {
     if (check.required && !check.ok) warnings.push(`${check.name}: ${check.message}`);
@@ -143,10 +160,12 @@ export const getPlatformStatus = async () => {
     },
   ];
 
+  const envAudit = auditEnvParams(flags.appEnv);
   return {
     ready: checks.filter(check => check.required).every(check => check.ok),
     flags,
     checks,
+    env: envAudit,
     modules: getServiceModules(),
     warnings: collectWarnings(flags, checks),
     identityChain: 'LINE identity -> Firestore profile -> odooVerified -> ADMIN_USER_ID -> Odoo admin capability -> role',

@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "cns-line-oa": {
+      "command": "npx",
+      "args": ["ts-node", "--transpile-only", "src/mcp/server.ts"],
+      "env": {
+        "CNS_BASE_URL": "http://127.0.0.1:8080"
+      }
+    }
+  }
+}

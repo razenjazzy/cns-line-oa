@@ -39,6 +39,7 @@ export const createProductPickerFlexMessage = (
         `PRODUCT FIND ${product.name}`,
         BRAND.tealTint,
         BRAND.tealStrong,
+        'sm',
       )),
     },
     footer: {
