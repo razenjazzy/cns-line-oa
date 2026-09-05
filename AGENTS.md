@@ -13,10 +13,16 @@ This repository is optimized for low-token, low-cost agent work. Follow these ru
    - Already split, treat as source of truth (do not re-derive these shapes):
      - `src/services/firestore.ts` -> split into `src/services/firestore/*` + barrel
      - `src/services/odoo.ts` -> split into `src/services/odoo/*` + barrel
-   - Planned but not yet split (`src/index.ts`, `src/line/templates.ts`,
-     `src/demo/page.ts` are still single flat files today) — see
-     `documents/STAGED_IMPLEMENTATION_BACKLOG.md` Track B3/B4 before
-     assuming a `src/http/*` or `src/line/templates/*` directory exists.
+     - `src/index.ts` -> split into `src/http/*` route/middleware modules
+       (health-routes, ops-routes, verify-routes, webhook-routes,
+       jobs-routes, demo-routes, demo-session, middleware, runtime-state,
+       env). `src/index.ts` itself is now a ~35-line orchestrator that only
+       wires app.use()/registerXRoutes() calls — look in `src/http/` for
+       actual route logic, not `src/index.ts`.
+   - Planned but not yet split (`src/line/templates.ts`, `src/demo/page.ts`
+     are still single flat files today) — see
+     `documents/STAGED_IMPLEMENTATION_BACKLOG.md` Track B4 before assuming
+     a `src/line/templates/*` directory exists.
 
 3. Prefer targeted verification.
    - Run the smallest relevant test before and after a fix.

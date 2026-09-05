@@ -1,0 +1,13 @@
+export const isProduction = process.env.NODE_ENV === 'production';
+export const isWebhookTestEnabled = !isProduction || /^(1|true|yes|on)$/i.test(process.env.ENABLE_WEBHOOK_TEST || '');
+export const isDemoControlEnabled = !isProduction || /^(1|true|yes|on)$/i.test(process.env.ENABLE_DEMO_CONTROL_PANEL || '');
+export const allowDemoHeaderTokenFallbackInProd = !isProduction && /^(1|true|yes|on)$/i.test(process.env.ALLOW_DEMO_HEADER_TOKEN_FALLBACK || '');
+export const webhookTestToken = process.env.WEBHOOK_TEST_TOKEN?.trim() || '';
+export const opsApiToken = process.env.OPS_API_TOKEN?.trim() || '';
+export const demoControlToken = process.env.DEMO_CONTROL_TOKEN?.trim() || opsApiToken;
+export const initialDemoSessionSecret = process.env.DEMO_SESSION_SECRET?.trim() || demoControlToken;
+export const demoSessionTtlMinutes = Number(process.env.DEMO_SESSION_TTL_MINUTES || 30);
+export const demoSessionRotateGraceDefaultMinutes = Number(process.env.DEMO_SESSION_ROTATE_GRACE_MINUTES || 30);
+export const demoSessionCookieName = 'demo_control_session';
+export const demoSessionConfigKey = process.env.DEMO_SESSION_CONFIG_KEY?.trim() || 'demoSessionSecretsV1';
+export const readyzTimeoutMs = Number(process.env.READYZ_TIMEOUT_MS || 2500);

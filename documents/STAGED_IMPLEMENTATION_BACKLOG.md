@@ -63,6 +63,11 @@ This backlog converts the enterprise architecture plan into small, reversible im
 - Group-buy extraction validated with focused tests, full suite, build, lint, and diff checks.
 - Firestore audit document mapping extracted with request-correlation/default coverage.
 - Firestore mapping layer complete across all planned domains; persistence/cache ownership remains intentionally in the compatibility module.
+- Track A3 privileged-write audit review complete: found and fixed a real authorization gap (DAILY REPORT/SEGMENT CUSTOMERS had no admin check), closed two audit-trail gaps (QUOTE APPROVE failure path, Group-Buy Odoo-order creation).
+- QUOTE REMOVE shipped (delete a quote line entirely), closing the last named feature-completeness gap.
+- Step-up OTP extended to USER/SERVICE CRUD, closing the last named security gap.
+- Odoo-native sales-tier permissions (salesTier) shipped as an additive layer, fail-safe to today's behavior with no linked Odoo user.
+- Track B3 HTTP route extraction complete: src/index.ts split into src/http/* (env, runtime-state, middleware, demo-session, and one file per route group). Verified via build/lint/test plus a live local smoke test.
 
 ## Track A: security and policy
 
@@ -141,10 +146,41 @@ This backlog converts the enterprise architecture plan into small, reversible im
 
 ### B3. HTTP route extraction
 
-- Extract ops, demo, jobs, verification, and middleware route groups under `src/http/`.
-- Keep middleware ordering and route authentication unchanged.
-- Acceptance: health, webhook, demo, ops, and job endpoints retain existing behavior.
-- Check: `npm run build`, targeted route tests, and staging smoke check.
+- **Completed 2026-09-05.** `src/index.ts` (836 lines, 27 routes) split into:
+  `src/http/env.ts` (derived env constants), `src/http/runtime-state.ts`
+  (the rate-store singleton, reassigned once at startup — every route reads
+  the *current* value via `getRateStore()`, never a value captured at
+  import time), `src/http/middleware.ts` (CSP, request-id/logging, the 4
+  rate limiters, small shared helpers), `src/http/demo-session.ts` (the
+  demo-session mutable state + `requireDemoControlAccess`/rotate/verify
+  logic — kept as one cohesive module since ops and demo routes both need
+  it), and one file per route group: `health-routes.ts`, `ops-routes.ts`,
+  `verify-routes.ts`, `webhook-routes.ts`, `jobs-routes.ts`,
+  `demo-routes.ts`. `src/index.ts` is now ~35 lines: create the app, two
+  `app.use()` calls, six `registerXRoutes(app)` calls, `startServer()`.
+- Verified behavior-preserving two ways: `npm run build`/`lint`/`test`
+  (39 files / 212 tests) clean, **and** a live local smoke test (`node
+  dist/index.js` against real `.env` credentials — no staging deploy
+  access from this environment, so this was the closest equivalent):
+  `/healthz`, `/readyz` (real Firestore+Odoo connectivity), `/webhook-test`
+  (full `resolveCommandReply` round-trip, real Flex output), `/demo`,
+  `/demo/session/status`, `/verify/odoo` all matched expected behavior.
+  `/jobs/daily-report` correctly 401'd without a token; `/ops/kpi` and
+  `/ops/demo-session/rotate` correctly 503'd without `OPS_API_TOKEN`
+  configured, then were re-tested with a temporary token covering every
+  validation branch of the rewritten rotate logic (too-short secret,
+  valid rotation, rejecting a same-as-current secret) — all matched the
+  original handler's behavior exactly.
+- One pre-existing, unrelated behavior noted during the smoke test, not
+  introduced by this split (confirmed via `git diff` showing
+  `src/line/webhook.ts` untouched): `POST /webhook` with no LINE signature
+  header returns 500, not a clean 4xx. Out of scope for B3 (route
+  organization only) — worth a follow-up if it matters, since a malformed
+  request from a non-LINE caller probably shouldn't 500.
+- Acceptance: health, webhook, demo, ops, and job endpoints retain
+  existing behavior — confirmed.
+- Check: `npm run build`, `npm test`, and a live local smoke check (see
+  above) all pass.
 
 ### B4. LINE template and demo asset split
 
