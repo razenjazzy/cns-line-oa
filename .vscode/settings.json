@@ -4,5 +4,8 @@
     "**/.github/workflows/**/*.yaml": "yaml"
   },
   "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
-  "python.analysis.typeCheckingMode": "basic"
+  "python.analysis.typeCheckingMode": "basic",
+  "problems.exclude": {
+    "**/.github/workflows/release.yml": true
+  }
 }
