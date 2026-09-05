@@ -111,7 +111,16 @@ export const createQuotationJourneyFlexMessage = (
       ]);
     }
   }
-  footerRows.push([createMessageActionButton(language === 'en' ? 'Home' : 'หน้าหลัก', 'NAV HOME', 'secondary', BRAND.goldTint)]);
+  // Compactness: Home rides along on the last row if there's still room
+  // for a third button (rows stay legible up to 2 across; a row already
+  // at 2 gets Home as its own row rather than cramming to 3).
+  const homeButton = createMessageActionButton(language === 'en' ? 'Home' : 'หน้าหลัก', 'NAV HOME', 'secondary', BRAND.goldTint);
+  const lastRow = footerRows[footerRows.length - 1];
+  if (lastRow && lastRow.length === 1) {
+    lastRow.push(homeButton);
+  } else {
+    footerRows.push([homeButton]);
+  }
 
   const footerContents: messagingApi.FlexComponent[] = footerRows.map(row =>
     row.length === 1

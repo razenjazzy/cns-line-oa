@@ -114,8 +114,15 @@ export const createProductCardFlexMessage = (productName: string, price: number,
         spacing: 'sm',
         contents: [
           createMessageActionButton(language === 'en' ? 'Create quote' : 'สร้างใบเสนอราคา', 'FORM QUOTE CREATE', 'primary', BRAND.teal),
-          createMessageActionButton(language === 'en' ? 'Search again' : 'ค้นหาอีกครั้ง', 'FORM PRODUCT FIND', 'secondary', BRAND.tealTint),
-          createMessageActionButton(language === 'en' ? 'Home' : 'หน้าหลัก', 'NAV HOME', 'secondary', BRAND.goldTint),
+          {
+            type: 'box',
+            layout: 'horizontal',
+            spacing: 'xs',
+            contents: [
+              { ...createMessageActionButton(language === 'en' ? 'Search again' : 'ค้นหาอีกครั้ง', 'FORM PRODUCT FIND', 'secondary', BRAND.tealTint), flex: 1 },
+              { ...createMessageActionButton(language === 'en' ? 'Home' : 'หน้าหลัก', 'NAV HOME', 'secondary', BRAND.goldTint), flex: 1 },
+            ],
+          },
         ],
       },
     },
