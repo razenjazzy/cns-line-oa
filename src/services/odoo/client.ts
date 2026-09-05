@@ -1,3 +1,6 @@
+import { withSpan } from '../../observability/tracing';
+import { appLogger } from '../logger';
+
 export type OdooConfig = {
   url: string;
   db: string;
@@ -58,7 +61,7 @@ export const withReadRetry = async <T>(label: string, operation: () => Promise<T
       if (!shouldRetry) break;
 
       const backoffMs = ODOO_READ_RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
-      console.warn(`Odoo read retry ${attempt}/${maxAttempts} for ${label} after error: ${String(error)}`);
+      appLogger.warn('odoo_read_retry', { label, attempt, maxAttempts, error: String(error) });
       await delay(backoffMs);
     }
   }
@@ -84,7 +87,7 @@ export const withIdempotentWriteRetry = async <T>(label: string, operation: () =
       if (!shouldRetry) break;
 
       const backoffMs = ODOO_READ_RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
-      console.warn(`Odoo write retry ${attempt}/${maxAttempts} for ${label} after error: ${String(error)}`);
+      appLogger.warn('odoo_write_retry', { label, attempt, maxAttempts, error: String(error) });
       await delay(backoffMs);
     }
   }
@@ -93,6 +96,7 @@ export const withIdempotentWriteRetry = async <T>(label: string, operation: () =
 };
 
 const jsonRpc = async <T>(config: OdooConfig, service: string, method: string, args: unknown[]): Promise<T> => {
+  return withSpan('odoo.jsonrpc', { 'odoo.service': service, 'odoo.method': method }, async () => {
   const endpoint = `${config.url.replace(/\/$/, '')}/jsonrpc`;
   const body = {
     jsonrpc: '2.0',
@@ -139,6 +143,7 @@ const jsonRpc = async <T>(config: OdooConfig, service: string, method: string, a
   }
 
   return data.result;
+  });
 };
 
 export const login = async (config: OdooConfig): Promise<number> => {

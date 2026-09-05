@@ -35,9 +35,11 @@ RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 
 # Copy the compiled JS files from the builder stage
 COPY --from=builder /usr/src/app/dist ./dist
+COPY skills ./skills
 
-# Run with a non-root user in production.
-RUN addgroup -S app && adduser -S -G app app && chown -R app:app /usr/src/app
+# wget is used by the container HEALTHCHECK (not present on stock node:alpine).
+RUN apk add --no-cache wget \
+  && addgroup -S app && adduser -S -G app app && chown -R app:app /usr/src/app
 
 # Set standard Node.js environment variables
 ENV NODE_ENV=production
@@ -52,5 +54,5 @@ USER app
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget -qO- http://127.0.0.1:8080/healthz || exit 1
 
-# Start the application
-CMD [ "npm", "start" ]
+# Start without npm so SIGTERM reaches the Node process (Railway / Cloud Run).
+CMD [ "node", "dist/index.js" ]

@@ -33,3 +33,15 @@ export const buildCspHeader = (): string =>
     "style-src 'unsafe-inline'",
     "frame-ancestors 'none'",
   ].join('; ');
+
+/** Swagger UI needs inline scripts/styles and data: images. Applied only on /api-docs. */
+export const buildSwaggerCspHeader = (): string =>
+  [
+    "default-src 'none'",
+    "script-src 'unsafe-inline' 'unsafe-eval'",
+    "style-src 'unsafe-inline'",
+    "img-src 'self' data:",
+    "font-src 'self' data:",
+    "connect-src 'self'",
+    "frame-ancestors 'none'",
+  ].join('; ');

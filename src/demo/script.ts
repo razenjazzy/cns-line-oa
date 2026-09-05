@@ -46,6 +46,35 @@ export const DEMO_PAGE_SCRIPT = `
       return data;
     }
 
+    async function loadPlatform() {
+      const grid = document.getElementById('platform-modules');
+      const stores = document.getElementById('platform-stores');
+      const scriptOut = document.getElementById('platform-script');
+      const data = await getJson('/demo/platform');
+      stores.textContent = [
+        'Firestore: ' + data.stores.firestore,
+        'Odoo: ' + data.stores.odoo,
+        'Mongo: ' + data.stores.mongo,
+      ].join(' · ');
+      scriptOut.textContent = (data.demoDayScript || []).map((step, index) => (index + 1) + '. ' + step).join('\\n');
+      grid.innerHTML = '';
+      (data.modules || []).forEach((mod) => {
+        const card = document.createElement('div');
+        card.className = 'module-card';
+        const title = document.createElement('h3');
+        title.textContent = mod.name + ' (' + mod.status + ')';
+        const meta = document.createElement('p');
+        meta.textContent = mod.audience + ' · store: ' + mod.store;
+        const talk = document.createElement('p');
+        talk.textContent = mod.demoTalkTrack;
+        const cmds = document.createElement('code');
+        cmds.textContent = (mod.commands || []).slice(0, 4).join(' · ');
+        card.append(title, meta, talk, cmds);
+        grid.appendChild(card);
+      });
+      return data;
+    }
+
     async function loginDemoSession() {
       const output = document.getElementById('runbook-output');
       output.textContent = 'Creating authenticated demo session...';
@@ -369,7 +398,7 @@ export const DEMO_PAGE_SCRIPT = `
           return;
         }
 
-        await Promise.all([loadConnections(), loadPricingModel(), runWorkflowAudit()]);
+        await Promise.all([loadConnections(), loadPlatform(), loadPricingModel(), runWorkflowAudit()]);
       } catch (error) {
         document.getElementById('runbook-output').textContent = String(error);
       }

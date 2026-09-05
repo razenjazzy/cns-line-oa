@@ -19,6 +19,7 @@ import { buildHomeMenuMessage } from '../command-router';
 import type { CommandReplyContext } from '../command-router';
 import { getEscalationState } from '../../services/firestore';
 import type { UserLanguage } from '../../services/firestore';
+import { searchSimilarFaqs } from '../../infra/mongo/embeddings';
 
 const tr = (language: UserLanguage, th: string, en: string): string => (language === 'en' ? en : th);
 
@@ -80,8 +81,14 @@ export const handleChatFallback = async (
   const chatResult = await processChatMessage(userId, text.trim(), userLanguage);
 
   if (!chatResult.handled) {
-    // AI could not give a confident answer — show menu so user can navigate.
-    // No feedback prompt: there's nothing meaningful to rate yet.
+    const faqHits = await searchSimilarFaqs(text.trim());
+    if (faqHits.length) {
+      return materializeMessages(
+        [{ type: 'text', text: faqHits[0] }],
+        userLanguage,
+        feedbackQuickReplyActions(userLanguage),
+      );
+    }
     return [
       ...materializeMessages(chatResult.messages, userLanguage),
       buildHomeMenuMessage(userLanguage, agentName, channel, profile.role === 'admin'),

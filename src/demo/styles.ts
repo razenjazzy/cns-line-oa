@@ -86,6 +86,37 @@ export const DEMO_PAGE_STYLES = `
       gap: 16px;
     }
 
+    .module-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .module-card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 14px;
+      background: rgba(255, 255, 255, 0.7);
+    }
+
+    .module-card h3 {
+      margin: 0 0 4px;
+      font-size: 14px;
+    }
+
+    .module-card p, .module-card code {
+      margin: 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .store-note {
+      font-size: 13px;
+      color: var(--muted);
+      margin: 8px 0 0;
+    }
+
     .card { padding: 20px; }
     .span-6 { grid-column: span 6; }
     .span-12 { grid-column: span 12; }
@@ -299,5 +330,6 @@ export const DEMO_PAGE_STYLES = `
       .span-6, .span-12 { grid-column: span 12; }
       .three-up { grid-template-columns: 1fr; }
       .two-up { grid-template-columns: 1fr; }
+      .module-grid { grid-template-columns: 1fr; }
     }
 `;

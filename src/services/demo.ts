@@ -1,6 +1,9 @@
 import { getUserProfile, setUserLanguage, setUserOdooPartner } from './firestore';
 import { getDefaultLanguage, type AppLanguage } from './app-config';
 import { getAgentName } from '../line/channels';
+import { pingMongo } from '../infra/mongo/base-repository';
+import { getDemoDayScript, getServiceModules, type ServiceModule } from '../platform/service-modules';
+import { isMongoVectorEnabled } from '../http/env';
 import {
   createPartnerFromLine,
   createQuotationFromLine,
@@ -36,6 +39,9 @@ export type DemoOverview = {
       workflowAudit: string;
       simulatedLineWebhook: string;
       lineWebhook: string;
+      platform: string;
+      graphql: string;
+      apiDocs: string;
     };
   };
   connections: {
@@ -52,6 +58,16 @@ export type DemoOverview = {
       configured: boolean;
       projectId: string | null;
     };
+    mongo: {
+      configured: boolean;
+      vectorEnabled: boolean;
+      status: string;
+      note: string;
+    };
+  };
+  platform: {
+    modules: ServiceModule[];
+    demoDayScript: string[];
   };
   demo: {
     accessControl: {
@@ -119,7 +135,7 @@ const safeSeedOdoo = async (): Promise<string> => {
 
 export const getDemoOverview = async (baseUrl?: string): Promise<DemoOverview> => {
   const resolvedBaseUrl = normalizeBaseUrl(baseUrl);
-  const odooStatus = await safePingOdoo();
+  const [odooStatus, mongoPing] = await Promise.all([safePingOdoo(), pingMongo()]);
 
   return {
     generatedAt: new Date().toISOString(),
@@ -135,6 +151,9 @@ export const getDemoOverview = async (baseUrl?: string): Promise<DemoOverview> =
         workflowAudit: `${resolvedBaseUrl}/demo/workflow-audit`,
         simulatedLineWebhook: `${resolvedBaseUrl}/webhook-test`,
         lineWebhook: `${resolvedBaseUrl}/webhook`,
+        platform: `${resolvedBaseUrl}/demo/platform`,
+        graphql: `${resolvedBaseUrl}/graphql`,
+        apiDocs: `${resolvedBaseUrl}/api-docs`,
       },
     },
     connections: {
@@ -151,19 +170,23 @@ export const getDemoOverview = async (baseUrl?: string): Promise<DemoOverview> =
         configured: isFirestoreConfigured(),
         projectId: process.env.GOOGLE_CLOUD_PROJECT?.trim() || null,
       },
+      mongo: {
+        configured: Boolean(process.env.MONGODB_URI?.trim()),
+        vectorEnabled: isMongoVectorEnabled,
+        status: mongoPing.message,
+        note: 'LINE FAQ/RAG only. Partners, quotes, and users stay in Firestore and Odoo.',
+      },
+    },
+    platform: {
+      modules: getServiceModules(),
+      demoDayScript: getDemoDayScript(),
     },
     demo: {
       accessControl: {
         enabled: isDemoControlEnabled,
         productionProtected: !isProduction || Boolean((process.env.DEMO_CONTROL_TOKEN || process.env.OPS_API_TOKEN || '').trim()),
       },
-      recommendedJourney: [
-        'Open /demo to inspect connectivity and run the guided flow.',
-        'If production-gated, provide demo token in panel before loading secured API actions.',
-        'Load pricing model, tune markups/cost assumptions, and run simulation for target margin.',
-        'Use POST /webhook-test or the demo console to simulate a LINE user message.',
-        'Run the demo journey to seed Odoo, create or reuse a partner, create a quotation, and read it back.',
-      ],
+      recommendedJourney: getDemoDayScript(),
       sampleLinePayload: {
         userId: 'demo_line_user',
         text: 'PRODUCT FIND App',

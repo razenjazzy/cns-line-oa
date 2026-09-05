@@ -39,6 +39,8 @@ import { COMMAND_HANDLERS } from './handlers/index';
 import { buildKeywordGuidanceMessages } from './handlers/help';
 import { handleChatFallback } from './handlers/chat-fallback';
 import { checkMessagesAgainstLineLimits } from './message-limits';
+import { withSpan } from '../observability/tracing';
+import { appLogger } from '../services/logger';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -389,10 +391,12 @@ const dispatchCommandReply = async (ctx: CommandReplyContext): Promise<messaging
  * nothing — logged loudly rather than discovered from a support ticket.
  */
 export const resolveCommandReply = async (ctx: CommandReplyContext): Promise<messagingApi.Message[]> => {
-  const messages = await dispatchCommandReply(ctx);
-  const violations = checkMessagesAgainstLineLimits(messages);
-  if (violations.length) {
-    console.error('[line-limits] Outgoing message set violates LINE Messaging API limits and may fail to send:', violations);
-  }
-  return messages;
+  return withSpan('line.resolveCommandReply', { 'line.user_id': ctx.userId, 'http.request_id': ctx.requestId || '' }, async () => {
+    const messages = await dispatchCommandReply(ctx);
+    const violations = checkMessagesAgainstLineLimits(messages);
+    if (violations.length) {
+      appLogger.error('line_limits_violation', { requestId: ctx.requestId, violations });
+    }
+    return messages;
+  });
 };

@@ -12,15 +12,17 @@ import { registerVerifyRoutes } from './http/verify-routes';
 import { registerWebhookRoutes } from './http/webhook-routes';
 import { registerJobsRoutes } from './http/jobs-routes';
 import { registerDemoRoutes } from './http/demo-routes';
+import { registerOpenApiRoutes } from './http/openapi-routes';
+import { registerGraphqlRoutes } from './http/graphql-routes';
+import { initTracing, shutdownTracing } from './observability/tracing';
+import { startQueueWorkers } from './jobs/workers';
+import { isBullmqWorkerEnabled } from './http/env';
+import { appLogger } from './services/logger';
+import { closeMongo } from './infra/mongo/base-repository';
+import { closeQueues } from './jobs/queue';
+import { getErpAdapter } from './erp/registry';
 
 const app = express();
-// Railway (and most PaaS hosts) terminate TLS at a reverse proxy and forward
-// plain HTTP internally, so req.protocol reports 'http' even on a real
-// https:// deployment unless Express is told to trust the proxy's
-// X-Forwarded-Proto header. Without this, any link built from a request's
-// baseUrl (e.g. the VERIFY START magic link in user-verification.ts) comes
-// out as a broken http:// URL. `1` trusts exactly one hop, matching a
-// single reverse-proxy deployment shape — not a blanket "trust anything".
 app.set('trust proxy', 1);
 const port = process.env.PORT || 8080;
 
@@ -33,35 +35,43 @@ registerVerifyRoutes(app);
 registerWebhookRoutes(app);
 registerJobsRoutes(app);
 registerDemoRoutes(app);
+registerOpenApiRoutes(app);
 
 const SHUTDOWN_TIMEOUT_MS = Number(process.env.SHUTDOWN_TIMEOUT_MS || 10000);
 
 const startServer = async () => {
+    getErpAdapter();
+    initTracing();
+    await registerGraphqlRoutes(app);
     setRateStore(await createRateLimitStoreFromEnv(fallbackRateStore));
     await ensureDemoSessionStateLoaded();
+    const workers = isBullmqWorkerEnabled ? startQueueWorkers() : [];
     const server = app.listen(port, () => {
-        console.log(`Server listening on port ${port}`);
+        appLogger.info('server_listening', { port });
     });
 
-    // Cloud Run (and most orchestrators) send SIGTERM before killing an
-    // instance on scale-down/redeploy. Stop accepting new connections and let
-    // in-flight requests finish, instead of dropping them mid-response.
     const shutdown = (signal: string) => {
-        console.log(`Received ${signal}, shutting down gracefully...`);
+        appLogger.info('server_shutdown', { signal });
         const forceExitTimer = setTimeout(() => {
-            console.warn(`Graceful shutdown timed out after ${SHUTDOWN_TIMEOUT_MS}ms; forcing exit.`);
+            appLogger.warn('shutdown_timeout');
             process.exit(1);
         }, SHUTDOWN_TIMEOUT_MS);
         forceExitTimer.unref();
 
         server.close((err) => {
-            if (err) {
-                console.error('Error during server close:', err);
-                process.exit(1);
-            }
-            clearTimeout(forceExitTimer);
-            console.log('Server closed. Exiting.');
-            process.exit(0);
+            void (async () => {
+                if (err) {
+                    appLogger.error('server_close_error', { error: String(err) });
+                    process.exit(1);
+                }
+                await Promise.all(workers.map((worker) => worker.close()));
+                await closeQueues().catch(() => undefined);
+                await closeMongo().catch(() => undefined);
+                await shutdownTracing().catch(() => undefined);
+                clearTimeout(forceExitTimer);
+                appLogger.info('server_closed');
+                process.exit(0);
+            })();
         });
     };
 
@@ -70,6 +80,6 @@ const startServer = async () => {
 };
 
 startServer().catch(error => {
-    console.error('Failed to start server:', error);
+    appLogger.error('server_start_failed', { error: String(error) });
     process.exit(1);
 });

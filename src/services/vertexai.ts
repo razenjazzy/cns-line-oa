@@ -323,3 +323,23 @@ export const classifyIntent = async (text: string): Promise<{ intent: string; co
     return { intent: 'unknown', confidence: 0.3 };
   }
 };
+
+export const embedText = async (text: string): Promise<number[] | null> => {
+  if (isAiOff() || !text.trim()) return null;
+  const clients = getGenAIClients();
+  if (!clients.length) return null;
+
+  for (const { client } of clients) {
+    try {
+      const response = await client.models.embedContent({
+        model: 'text-embedding-004',
+        contents: text.trim().slice(0, 8000),
+      });
+      const values = response.embeddings?.[0]?.values;
+      if (Array.isArray(values) && values.length) return values;
+    } catch {
+      // try next client
+    }
+  }
+  return null;
+};

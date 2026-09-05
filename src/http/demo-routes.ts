@@ -4,6 +4,8 @@ import { getAgentName } from '../line/channels';
 import { resolveCommandReply } from '../line/command-router';
 import { getUserLanguage, getUserProfile } from '../services/firestore';
 import { getDemoOverview, runDemoJourney } from '../services/demo';
+import { getDemoPlatformPayload } from '../platform/service-modules';
+import { getPlatformFlags } from '../platform/status';
 import { createDemoSessionToken, safeTokenMatch } from '../services/demo-session';
 import { getPricingModel, runPricingSimulation, updatePricingModel } from '../services/pricing-control';
 import { runRuntimeProbes, collectProbeFailures } from '../services/runtime-probes';
@@ -97,6 +99,10 @@ export const registerDemoRoutes = (app: Express): void => {
             console.error('Error loading demo connections:', error);
             res.status(500).json({ error: String(error) });
         }
+    });
+
+    app.get('/demo/platform', requireDemoControlAccess, (_req, res) => {
+        res.json({ ...getDemoPlatformPayload(), flags: getPlatformFlags() });
     });
 
     app.post('/demo/journey', requireDemoControlAccess, jsonParser, async (req, res) => {

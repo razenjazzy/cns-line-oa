@@ -14,12 +14,12 @@ import {
   getSaleOrderById,
   getSaleOrderPortalLink,
   getSaleOrderPdfLink,
-  pingOdoo,
   seedOdooSampleSalesData,
 } from '../../services/odoo';
 import { recordAuditEvent } from '../../services/firestore';
 import type { UserLanguage } from '../../services/firestore';
 import { getErpAdapter } from '../../erp/registry';
+import { getPlatformStatus } from '../../platform/status';
 
 const tr = (language: UserLanguage, th: string, en: string): string => (language === 'en' ? en : th);
 
@@ -203,13 +203,21 @@ const demoOdooHandler: CommandHandler = {
   handle: async (ctx) => {
     const { userLanguage } = ctx;
     try {
-      const status = await pingOdoo();
-      return [botText(tr(userLanguage, `สถานะ Odoo: ${status}`, `Odoo status: ${status}`), userLanguage)];
+      const status = await getPlatformStatus();
+      const failed = status.checks.filter(check => !check.ok).map(check => `${check.name}=${check.message}`);
+      const body = [
+        tr(userLanguage, `พร้อมใช้: ${status.ready ? 'ใช่' : 'ไม่'}`, `Ready: ${status.ready ? 'yes' : 'no'}`),
+        ...status.checks.filter(check => check.required).map(check => `${check.name}: ${check.message}`),
+        failed.length
+          ? tr(userLanguage, `ปัญหา: ${failed.join(' | ')}`, `Issues: ${failed.join(' | ')}`)
+          : tr(userLanguage, 'ไม่มีปัญหาที่ต้องแก้', 'No blocking issues'),
+      ].join('\n');
+      return [botText(body, userLanguage)];
     } catch (err) {
-      console.error('Odoo ping error:', err);
+      console.error('Platform status error:', err);
       return [botText(tr(userLanguage,
-        'ตรวจสอบ Odoo ไม่สำเร็จ กรุณาตรวจค่า ODOO_* และ API key',
-        'Odoo check failed. Please verify ODOO_* values and API key.',
+        'ตรวจสอบสถานะไม่สำเร็จ',
+        'Platform status check failed.',
       ), userLanguage)];
     }
   },

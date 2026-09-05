@@ -12,6 +12,8 @@
 
 import { checkFirestoreReady } from './firestore';
 import { pingOdoo } from './odoo';
+import { pingMongo } from '../infra/mongo/base-repository';
+import { mongoUri } from '../http/env';
 import { getRateLimitRuntimeStatus, type RateLimitStore } from './rate-limit-store';
 
 export type ProbeResult = {
@@ -24,6 +26,7 @@ export type RuntimeProbeResults = {
   firestore: ProbeResult;
   odoo: ProbeResult;
   rateLimiter: ProbeResult;
+  mongo: ProbeResult;
 };
 
 const withTimeout = async <T>(
@@ -56,7 +59,7 @@ export const runRuntimeProbes = async (
   rateStore: RateLimitStore,
   timeoutMs: number,
 ): Promise<RuntimeProbeResults> => {
-  const [firestore, odoo, rateLimiter] = await Promise.all([
+  const [firestore, odoo, rateLimiter, mongo] = await Promise.all([
     // Firestore probe
     withTimeout(checkFirestoreReady(), timeoutMs, 'Firestore check')
       .then((r): ProbeResult => ({ name: 'firestore', ok: r.ok, message: r.message }))
@@ -86,9 +89,17 @@ export const runRuntimeProbes = async (
         };
       })
       .catch((e): ProbeResult => ({ name: 'rateLimiter', ok: false, message: String(e) })),
+
+    withTimeout(pingMongo(), timeoutMs, 'Mongo check')
+      .then((r): ProbeResult => ({
+        name: 'mongo',
+        ok: !mongoUri || r.ok,
+        message: r.message,
+      }))
+      .catch((e): ProbeResult => ({ name: 'mongo', ok: !mongoUri, message: String(e) })),
   ]);
 
-  return { firestore, odoo, rateLimiter };
+  return { firestore, odoo, rateLimiter, mongo };
 };
 
 /**
@@ -100,5 +111,6 @@ export const collectProbeFailures = (probes: RuntimeProbeResults): string[] => {
   if (!probes.firestore.ok) failures.push(`Firestore runtime probe failed: ${probes.firestore.message}`);
   if (!probes.odoo.ok) failures.push(`Odoo runtime probe failed: ${probes.odoo.message}`);
   if (!probes.rateLimiter.ok) failures.push(`Rate limiter runtime probe failed: ${probes.rateLimiter.message}`);
+  if (mongoUri && !probes.mongo.ok) failures.push(`Mongo runtime probe failed: ${probes.mongo.message}`);
   return failures;
 };

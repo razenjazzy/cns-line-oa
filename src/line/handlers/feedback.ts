@@ -2,6 +2,7 @@ import type { CommandHandler } from './index';
 import { createBotTextFlexMessage } from '../templates';
 import { getConversationHistory, recordChatFeedback } from '../../services/firestore';
 import type { UserLanguage } from '../../services/firestore';
+import { indexChatEmbedding } from '../../infra/mongo/embeddings';
 
 const tr = (language: UserLanguage, th: string, en: string): string => (language === 'en' ? en : th);
 
@@ -35,6 +36,9 @@ const buildFeedbackHandler = (rating: 'good' | 'bad', matchText: string): Comman
     const { userId, userLanguage } = ctx;
     const { question, answer } = await getLastExchange(userId);
     await recordChatFeedback({ userId, rating, question, answer });
+    if (rating === 'good' && question && answer) {
+      await indexChatEmbedding(question, answer).catch(() => undefined);
+    }
     return [botText(tr(userLanguage, 'ขอบคุณสำหรับความคิดเห็นค่ะ 🙏', 'Thanks for the feedback! 🙏'), userLanguage)];
   },
 });

@@ -1,7 +1,18 @@
+const envFlag = (value: string | undefined): boolean => /^(1|true|yes|on)$/i.test(value || '');
+
 export const isProduction = process.env.NODE_ENV === 'production';
-export const isWebhookTestEnabled = !isProduction || /^(1|true|yes|on)$/i.test(process.env.ENABLE_WEBHOOK_TEST || '');
-export const isDemoControlEnabled = !isProduction || /^(1|true|yes|on)$/i.test(process.env.ENABLE_DEMO_CONTROL_PANEL || '');
-export const allowDemoHeaderTokenFallbackInProd = !isProduction && /^(1|true|yes|on)$/i.test(process.env.ALLOW_DEMO_HEADER_TOKEN_FALLBACK || '');
+export const isWebhookTestEnabled = !isProduction || envFlag(process.env.ENABLE_WEBHOOK_TEST);
+export const isDemoControlEnabled = !isProduction || envFlag(process.env.ENABLE_DEMO_CONTROL_PANEL);
+export const allowDemoHeaderTokenFallbackInProd = !isProduction && envFlag(process.env.ALLOW_DEMO_HEADER_TOKEN_FALLBACK);
+export const isApiDocsEnabled = !isProduction || envFlag(process.env.ENABLE_API_DOCS);
+export const isGraphqlEnabled = !isProduction || envFlag(process.env.ENABLE_GRAPHQL);
+export const isOpsJobsAsync = envFlag(process.env.OPS_JOBS_ASYNC);
+export const isLineWebhookAsync = envFlag(process.env.LINE_WEBHOOK_ASYNC);
+export const isBullmqWorkerEnabled = envFlag(process.env.RUN_BULLMQ_WORKER);
+export const isMongoVectorEnabled = envFlag(process.env.MONGO_VECTOR_ENABLED);
+export const mongoUri = process.env.MONGODB_URI?.trim() || '';
+export const mongoDbName = process.env.MONGO_DB_NAME?.trim() || 'cns_line_oa';
+export const bullmqPrefix = process.env.BULLMQ_PREFIX?.trim() || 'cns';
 export const webhookTestToken = process.env.WEBHOOK_TEST_TOKEN?.trim() || '';
 export const opsApiToken = process.env.OPS_API_TOKEN?.trim() || '';
 export const demoControlToken = process.env.DEMO_CONTROL_TOKEN?.trim() || opsApiToken;

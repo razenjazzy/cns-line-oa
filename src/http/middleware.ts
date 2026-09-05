@@ -1,5 +1,5 @@
 import express from 'express';
-import { buildCspHeader } from '../utils/html';
+import { buildCspHeader, buildSwaggerCspHeader } from '../utils/html';
 import { isGuideCommand } from '../line/command-guide';
 import { recordHttpRequest } from '../services/kpi';
 import { appLogger } from '../services/logger';
@@ -8,7 +8,11 @@ import { isProduction } from './env';
 
 export const jsonParser = express.json({ limit: process.env.MAX_JSON_BODY || '64kb' });
 
-export const cspMiddleware = (_req: express.Request, res: express.Response, next: express.NextFunction) => {
+export const cspMiddleware = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (req.path === '/api-docs' || req.path.startsWith('/api-docs/')) {
+        res.setHeader('Content-Security-Policy', buildSwaggerCspHeader());
+        return next();
+    }
     res.setHeader('Content-Security-Policy', buildCspHeader());
     next();
 };
@@ -73,7 +77,7 @@ export const createRateLimiter = (options: { windowMs: number; max: number; labe
                 return res.status(429).json({ error: 'Too many requests' });
             }
         } catch (error) {
-            console.warn('Rate limiter store error, allowing request:', String(error));
+            appLogger.warn('rate_limiter_error', { error: String(error) });
         }
         return next();
     };

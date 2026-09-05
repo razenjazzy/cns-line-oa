@@ -20,6 +20,5 @@ Dockerfile
 clawframework
 documents
 tests
-skills
 ansible
 *.log

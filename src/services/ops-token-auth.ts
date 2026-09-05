@@ -15,19 +15,30 @@ const getBearerToken = (authHeader: string | undefined): string => {
  * @param {Response} res - The Express response object.
  * @param {NextFunction} next - The next middleware function.
  */
-export const requireOpsToken = (req: Request, res: Response, next: NextFunction) => {
-  const opsApiToken = process.env.OPS_API_TOKEN?.trim() || '';
+export const getOpsBearerOrHeaderToken = (req: Request): string => {
+  const headerToken = req.get('x-ops-token') || '';
+  const bearerToken = getBearerToken(req.get('authorization'));
+  return bearerToken || headerToken;
+};
 
-  if (!opsApiToken || opsApiToken.length < 16) {
+export const isValidOpsToken = (token: string): boolean => {
+  const opsApiToken = process.env.OPS_API_TOKEN?.trim() || '';
+  if (!opsApiToken || opsApiToken.length < 16) return false;
+  return safeTokenMatch(token, opsApiToken);
+};
+
+export const isOpsTokenConfigured = (): boolean => {
+  const opsApiToken = process.env.OPS_API_TOKEN?.trim() || '';
+  return Boolean(opsApiToken && opsApiToken.length >= 16);
+};
+
+export const requireOpsToken = (req: Request, res: Response, next: NextFunction) => {
+  if (!isOpsTokenConfigured()) {
     console.warn('OPS_API_TOKEN is not configured or is too short; denying access to protected route.');
     return res.status(503).json({ error: 'Service is unavailable.' });
   }
 
-  const headerToken = req.get('x-ops-token') || '';
-  const bearerToken = getBearerToken(req.get('authorization'));
-  const token = bearerToken || headerToken;
-
-  if (safeTokenMatch(token, opsApiToken)) {
+  if (isValidOpsToken(getOpsBearerOrHeaderToken(req))) {
     return next();
   }
 

@@ -32,14 +32,25 @@ echo "4) demo connections"
 curl -fsS "${BASE_URL}/demo/connections" | cat
 echo
 
-echo "5) webhook-test DEMO ODOO"
+echo "5) demo platform"
+curl -fsS "${BASE_URL}/demo/platform" | cat
+echo
+
+echo "6) webhook-test SYSTEM STATUS"
 curl -fsS -X POST "${BASE_URL}/webhook-test" \
   -H 'Content-Type: application/json' \
   "${TOKEN_HEADER[@]}" \
-  -d '{"userId":"railway_validate_user","text":"DEMO ODOO"}' | cat
+  -d '{"userId":"railway_validate_user","text":"SYSTEM STATUS"}' | cat
 echo
 
-echo "6) language default + switch"
+echo "7) webhook-test PRODUCT FIND"
+curl -fsS -X POST "${BASE_URL}/webhook-test" \
+  -H 'Content-Type: application/json' \
+  "${TOKEN_HEADER[@]}" \
+  -d '{"userId":"railway_validate_user","text":"PRODUCT FIND App"}' | cat
+echo
+
+echo "8) language default + switch"
 curl -fsS -X POST "${BASE_URL}/webhook-test" \
   -H 'Content-Type: application/json' \
   "${TOKEN_HEADER[@]}" \

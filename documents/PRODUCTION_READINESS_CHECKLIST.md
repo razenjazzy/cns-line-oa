@@ -3,13 +3,17 @@
 Use this checklist after the reviewed release snapshot is committed. Do not put
 credentials or secret values in this repository.
 
-**Note (2026-09-05):** this checklist is entirely for the Cloud Run
-pipeline (`release.yml`), which is not the actual deploy target — Railway
-(`railway.json`'s Dockerfile builder) is. `release.yml` no longer runs
-automatically on push (switched to `workflow_dispatch`-only) specifically
-because these items were still unconfigured and it was failing on every
-commit with no real signal value. Work through this list only if Cloud
-Run is actually going to be used; otherwise it can stay as-is.
+**Note (2026-09-05):** Cloud Run (`release.yml`) is manual `workflow_dispatch` only. **Railway** (`railway.json` + `Dockerfile`) is the staging deploy that runs on git push. Use `documents/RAILWAY_STAGING.md` for variables. Work through the Cloud Run list below only if Cloud Run is actually going to be used.
+
+## Railway staging (current path)
+
+- [x] `npm test`, `npm run lint`, `npx tsc --noEmit` pass locally before push.
+- [x] Dockerfile copies `dist/` and `skills/`, runs `node dist/index.js`, healthchecks `/healthz`.
+- [ ] Railway service has LINE, Firestore JSON credentials, sandbox Odoo, `ADMIN_USER_ID`, `OPS_API_TOKEN`.
+- [ ] Staging demo flags: `ENABLE_DEMO_CONTROL_PANEL`, `ENABLE_WEBHOOK_TEST` (+ token), optional `ENABLE_GRAPHQL` / `ENABLE_API_DOCS`.
+- [ ] `LINE_WEBHOOK_ASYNC` remains false unless Redis + a worker process exist.
+- [ ] After deploy: `/healthz` 200, `/readyz` 200, `scripts/validate-railway.sh`.
+- [ ] LINE webhook URL points at the Railway host `/webhook` on a **test** OA.
 
 ## Automated Local Evidence
 

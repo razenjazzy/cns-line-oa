@@ -141,6 +141,16 @@ These must stay outside the staging production runtime commit unless the release
 
 The ClawFramework bridge remains an optional fallback in dev/staging only and must never become a production dependency without explicit gating and validation.
 
+### 8) Optional ops platform adapters (not a second bot)
+
+These sit **on top of** LINE + Firestore + `resolveCommandReply`. They must not replace identity, ERP, or webhook signature validation.
+
+- **REST + Swagger:** Zod schemas generate OpenAPI at `/api-docs.json`; Swagger UI at `/api-docs` (off in production unless `ENABLE_API_DOCS`; then ops-token gated).
+- **GraphQL Yoga:** `POST /graphql` mirrors existing ops/job functions only. Same `OPS_API_TOKEN` / `ADMIN_SECRET_TOKEN` as REST. LINE events never go through GraphQL.
+- **MongoDB:** Optional RAG/embeddings (`skill_embeddings`, `chat_embeddings`) via `BaseRepository`. Firestore remains the system of record for users, OTP, group-buy, and audit.
+- **BullMQ:** Optional. Default webhook is still synchronous. `LINE_WEBHOOK_ASYNC=true` requires Redis; workers use `replyMessage` then `pushMessage` if the reply token is stale. `npm run worker` or `RUN_BULLMQ_WORKER=true`.
+- **Pino + OpenTelemetry:** Structured logs keep redaction. Tracing is off unless `OTEL_ENABLED=true`.
+
 ## Phase backlog
 
 ### Phase 1 — repo hardening and deploy discipline

@@ -2,9 +2,9 @@ export const DEMO_PAGE_MARKUP = `
   <div class="shell">
     <section class="hero">
       <div class="panel hero-copy">
-        <div class="eyebrow">Platform Cost + Control</div>
-        <h1>One panel to run operations, pricing, and full demo simulation.</h1>
-        <p>Tune cost assumptions, control package pricing, run complete end-to-end flows, and validate platform economics before production rollout.</p>
+        <div class="eyebrow">CNS Platform Control Panel · 5 Sep 2026</div>
+        <h1>Walk LINE → Firestore → Odoo in one panel. Mongo and GraphQL stay optional ops add-ons.</h1>
+        <p>Same resolveCommandReply as the Official Account. Chat, journey runner, and connection checks are the live demo path.</p>
         <div class="token-row">
           <label>Demo Access Token (required in production)
             <input id="demo-token" placeholder="Paste DEMO_CONTROL_TOKEN or OPS_API_TOKEN" />
@@ -16,14 +16,23 @@ export const DEMO_PAGE_MARKUP = `
         </div>
       </div>
       <div class="panel hero-side">
-        <div class="chip">Step 1: Verify connections</div>
-        <div class="chip">Step 2: Tune pricing model</div>
-        <div class="chip">Step 3: Run cost simulation</div>
-        <div class="chip">Step 4: Run full journey + LINE simulation</div>
+        <div class="chip">1. Connections (LINE, Firestore, Odoo)</div>
+        <div class="chip">2. Web chat = real router</div>
+        <div class="chip">3. FORM QUOTE CREATE → Odoo</div>
+        <div class="chip">4. Journey seed + quote readback</div>
+        <div class="chip">5. Ops: /api-docs and /graphql</div>
       </div>
     </section>
 
     <section class="grid">
+      <article class="panel card span-12">
+        <h2>Service modules</h2>
+        <p>Canonical LINE and ops inventory. Buttons still send real command text. Mongo is FAQ/RAG only.</p>
+        <p class="store-note" id="platform-stores">Loading module map...</p>
+        <div class="module-grid" id="platform-modules"></div>
+        <pre id="platform-script">Demo-day talk track loads with the module map.</pre>
+      </article>
+
       <article class="panel card span-6">
         <h2>Operations Snapshot</h2>
         <p>Instant health view for app, Firestore, Odoo, and demo endpoints.</p>
@@ -39,11 +48,12 @@ export const DEMO_PAGE_MARKUP = `
         <h2>Full-Step Runbook</h2>
         <p>Guided sequence for showcase or UAT dry-run.</p>
         <ul class="timeline">
-          <li>1. Load /demo/connections and validate dependencies.</li>
-          <li>2. Load current pricing control model.</li>
-          <li>3. Run pricing simulation with current assumptions.</li>
-          <li>4. Execute journey runner for Odoo create and readback.</li>
-          <li>5. Push a simulated LINE command into /webhook-test.</li>
+          <li>1. Refresh connections: LINE, Firestore, Odoo. Mongo is optional.</li>
+          <li>2. First web-chat message opens PDPA + home (same as LINE).</li>
+          <li>3. FORM QUOTE CREATE writes a real Odoo quotation.</li>
+          <li>4. Run Full Simulation Flow for partner/product/quote readback.</li>
+          <li>5. Ops only: /api-docs and /graphql with tokens — not the LINE path.</li>
+          <li>6. Close on identity chain: LINE → odooVerified → ADMIN_USER_ID → Odoo admin.</li>
         </ul>
         <p class="warn">For production launch: protect demo endpoints behind OPS token or internal network policy.</p>
         <pre id="runbook-output">Runbook has not executed yet.</pre>
