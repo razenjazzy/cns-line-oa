@@ -133,8 +133,16 @@ scope, just not attempted in this pass:
 - ⬜ Rich-menu (persistent bottom menu) font/legibility and a multi-purpose
   redesign (Home/Help/Search/Language icons; "Tap to open" → a
   purpose-specific label).
-- ⬜ `GUIDE`/help command redesign — numbered/bulleted, nested interactive
-  buttons ("smart IVR"-style) instead of a plain text wall.
+- ✅ `GUIDE`/help command redesign — closed 2026-09-05. `GUIDE` now shows a
+  tappable category menu (8 topics, mirroring service-catalog.ts's
+  ServiceKeys plus 3 general ones); each topic drills into
+  `GUIDE <category>`, a card of prefill buttons (tap → keyboard opens
+  pre-filled with a real, editable example command) instead of one long
+  plain-text wall. Also closed a real content gap found in the process:
+  the old guide never mentioned the quote lifecycle (`QUOTE ADD`/`EDIT`/
+  `CANCEL`/etc.), `MESSAGE CUSTOMER`, `QUOTE STATUS`/`LIST`, `VERIFY START`,
+  or any Group-Buy command — all shipped features that had no guide entry
+  at all. Now covered (`src/line/command-guide.ts`, `src/line/templates/guide.ts`).
 - ✅ Consistent header treatment (meaningful title/subtitle) across every
   Flex card — closed 2026-09-05. Three outliers found and fixed:
   `createDailyReportFlexMessage` and `createQuotationListFlexMessage` had
@@ -179,7 +187,7 @@ working estimate:
 |---|---|---|
 | Core Quotation → Sales Order → Invoice lifecycle | **~85–90%** | Every step in Phases 3–5 is built and live-verified; the gap is almost entirely Odoo-side blocks (delivery, pricelists), not missing code. |
 | Enterprise-grade hardening (auth, audit, step-up security) | **~95%** (was ~70%) | Step-up OTP (now covering the full quote lifecycle **and** `USER`/`SERVICE` CRUD), full admin-authorization chain, audit trail + archive, `ADMIN CONFIG` UI, ansible fallback-secret removal, `salesTier` Odoo-role gating, `tests/http-auth.test.ts`/`tests/action-otp-gate.test.ts` regression coverage, and Track A3's audit sweep (which found and fixed a real authorization bypass on `DAILY REPORT`/`SEGMENT CUSTOMERS`) are all shipped since this was last written (see `ENTERPRISE_ROADMAP.md` — security now scores 10/10). Remaining gap: Odoo-touching handlers still have no automated test coverage beyond live verification (a deliberate choice — no mocking pattern exists yet for `odoo.ts`, not introduced speculatively). |
-| UX consistency & polish | **~65%** (was ~50%) | Design-system pass, picker chips, the summary card, and now the per-card header consistency sweep (3 outlier headers found and fixed) are shipped; the rich-menu redesign and `GUIDE` overhaul are still explicitly not started. |
+| UX consistency & polish | **~80%** (was ~50%) | Design-system pass, picker chips, the summary card, the per-card header consistency sweep, and now the `GUIDE` overhaul (categorized, tappable, prefill-button-driven) are all shipped; the rich-menu redesign is the one remaining item, still explicitly not started. |
 
 **Overall: roughly 3/4 of the core sales journey is built and verified.**
 The remaining quarter splits between genuinely blocked items (Odoo

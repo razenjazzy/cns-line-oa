@@ -1,49 +1,113 @@
 type UiLanguage = 'th' | 'en';
 
+/**
+ * Mirrors src/services/service-catalog.ts's ServiceKey where a command is
+ * actually service-scoped, plus three general categories (basics/admin/
+ * account) for commands that aren't. Kept as a separate union rather than
+ * importing ServiceKey directly since 'basics'/'admin'/'account' aren't
+ * real services — but the five that overlap use the exact same keys so
+ * src/line/templates/guide.ts can reuse navigation.ts's SERVICE_ICON map
+ * instead of maintaining a second icon table.
+ */
+export type CommandCategoryKey = 'basics' | 'commerce' | 'directory' | 'catalog' | 'reporting' | 'groupBuy' | 'admin' | 'account';
+
 type CommandSpec = {
   key: string;
   examples: string[];
   aliases?: string[];
+  category: CommandCategoryKey;
 };
 
 const COMMAND_SPECS: CommandSpec[] = [
-  { key: 'OPTIONS', examples: ['OPTIONS'] , aliases: ['MENU', 'HELP', 'START', 'เริ่มต้น'] },
-  { key: 'FEATURES', examples: ['FEATURES'], aliases: ['ฟีเจอร์'] },
-  { key: 'JOURNEY', examples: ['JOURNEY'], aliases: ['DEMO JOURNEY'] },
-  { key: 'RUN DEMO JOURNEY', examples: ['RUN DEMO JOURNEY'] },
-  { key: 'NAME', examples: ['NAME'], aliases: ['BOT NAME', 'WHAT IS YOUR NAME', 'ชื่ออะไร'] },
-  { key: 'SYSTEM STATUS', examples: ['SYSTEM STATUS'] },
-  { key: 'PRODUCT FIND', examples: ['PRODUCT FIND App'] },
-  { key: 'QUOTE CREATE', examples: ['QUOTE CREATE App Premium Plan,1,Somchai,0812345678'] },
-  { key: 'ORDER STATUS', examples: ['ORDER STATUS SO0001'] },
-  { key: 'DAILY REPORT', examples: ['DAILY REPORT'] },
-  { key: 'SEGMENT CUSTOMERS', examples: ['SEGMENT CUSTOMERS'] },
-  { key: 'SEED SAMPLE DATA', examples: ['SEED SAMPLE DATA'] },
-  { key: 'USER CREATE', examples: ['USER CREATE Somchai,0812345678,somchai@example.com'] },
-  { key: 'USER READ', examples: ['USER READ 0812345678'] },
-  { key: 'USER UPDATE', examples: ['USER UPDATE 0812345678,Somchai CEO,0812345678,somchai.ceo@example.com'] },
-  { key: 'USER DELETE', examples: ['USER DELETE 0812345678'] },
-  { key: 'SERVICE LIST', examples: ['SERVICE LIST'] },
-  { key: 'SERVICE CREATE', examples: ['SERVICE CREATE Premium Support,SVC-PREMIUM,990'] },
-  { key: 'SERVICE READ', examples: ['SERVICE READ SVC-PREMIUM'] },
-  { key: 'SERVICE UPDATE', examples: ['SERVICE UPDATE SVC-PREMIUM,Premium Support Pro,1290,SVC-PRO'] },
-  { key: 'SERVICE DELETE', examples: ['SERVICE DELETE SVC-PRO'] },
-  { key: 'ADMIN VERIFY', examples: ['ADMIN VERIFY'] },
-  { key: 'ADMIN ENABLE', examples: ['ADMIN ENABLE'] },
-  { key: 'ADMIN DISABLE', examples: ['ADMIN DISABLE'], aliases: ['ADMIN REVOKE'] },
-  { key: 'ADMIN CHANNEL', examples: ['ADMIN CHANNEL default STATUS', 'ADMIN CHANNEL default SERVICES commerce,catalog'] },
-  { key: 'ADMIN AUDIT ROTATE', examples: ['ADMIN AUDIT ROTATE'] },
-  { key: 'NAV HOME', examples: ['NAV HOME'], aliases: ['NAV'] },
-  { key: 'BACK', examples: ['BACK'] },
-  { key: 'LANG EN', examples: ['LANG EN'], aliases: ['ENGLISH'] },
-  { key: 'LANG TH', examples: ['LANG TH'], aliases: ['THAI', 'ภาษาไทย'] },
-  { key: 'GUIDE', examples: ['GUIDE'], aliases: ['STEP BY STEP', 'MENU GUIDE', 'คู่มือ'] },
-  { key: 'HUMAN', examples: ['HUMAN'], aliases: ['AGENT', 'ติดต่อแอดมิน', 'คุยกับแอดมิน'] },
-  { key: 'MY DATA', examples: ['MY DATA'], aliases: ['ข้อมูลของฉัน'] },
-  { key: 'DELETE MY DATA', examples: ['DELETE MY DATA'] },
-  { key: 'PROMO ON', examples: ['PROMO ON'], aliases: ['รับโปรโมชัน'] },
-  { key: 'PROMO OFF', examples: ['PROMO OFF'], aliases: ['ไม่รับโปรโมชัน'] },
+  { key: 'OPTIONS', examples: ['OPTIONS'], aliases: ['MENU', 'HELP', 'START', 'เริ่มต้น'], category: 'basics' },
+  { key: 'FEATURES', examples: ['FEATURES'], aliases: ['ฟีเจอร์'], category: 'basics' },
+  { key: 'NAME', examples: ['NAME'], aliases: ['BOT NAME', 'WHAT IS YOUR NAME', 'ชื่ออะไร'], category: 'basics' },
+  { key: 'VERIFY START', examples: ['VERIFY START 0812345678'], category: 'basics' },
+  { key: 'NAV HOME', examples: ['NAV HOME'], aliases: ['NAV'], category: 'basics' },
+  { key: 'BACK', examples: ['BACK'], category: 'basics' },
+  { key: 'LANG EN', examples: ['LANG EN'], aliases: ['ENGLISH'], category: 'basics' },
+  { key: 'LANG TH', examples: ['LANG TH'], aliases: ['THAI', 'ภาษาไทย'], category: 'basics' },
+
+  { key: 'PRODUCT FIND', examples: ['PRODUCT FIND App'], category: 'commerce' },
+  { key: 'QUOTE CREATE', examples: ['QUOTE CREATE App Premium Plan,1,Somchai,0812345678'], category: 'commerce' },
+  { key: 'QUOTE STATUS', examples: ['QUOTE STATUS 5'], category: 'commerce' },
+  { key: 'QUOTE LIST', examples: ['QUOTE LIST'], category: 'commerce' },
+  { key: 'ORDER STATUS', examples: ['ORDER STATUS SO0001'], category: 'commerce' },
+  { key: 'MESSAGE CUSTOMER', examples: ['MESSAGE CUSTOMER 0812345678 Hi! We have a new offer for you.'], category: 'commerce' },
+
+  { key: 'USER CREATE', examples: ['USER CREATE Somchai,0812345678,somchai@example.com'], category: 'directory' },
+  { key: 'USER READ', examples: ['USER READ 0812345678'], category: 'directory' },
+  { key: 'USER UPDATE', examples: ['USER UPDATE 0812345678,Somchai CEO,0812345678,somchai.ceo@example.com'], category: 'directory' },
+  { key: 'USER DELETE', examples: ['USER DELETE 0812345678'], category: 'directory' },
+
+  { key: 'SERVICE LIST', examples: ['SERVICE LIST'], category: 'catalog' },
+  { key: 'SERVICE CREATE', examples: ['SERVICE CREATE Premium Support,SVC-PREMIUM,990'], category: 'catalog' },
+  { key: 'SERVICE READ', examples: ['SERVICE READ SVC-PREMIUM'], category: 'catalog' },
+  { key: 'SERVICE UPDATE', examples: ['SERVICE UPDATE SVC-PREMIUM,Premium Support Pro,1290,SVC-PRO'], category: 'catalog' },
+  { key: 'SERVICE DELETE', examples: ['SERVICE DELETE SVC-PRO'], category: 'catalog' },
+
+  { key: 'SYSTEM STATUS', examples: ['SYSTEM STATUS'], category: 'reporting' },
+  { key: 'DAILY REPORT', examples: ['DAILY REPORT'], category: 'reporting' },
+  { key: 'SEGMENT CUSTOMERS', examples: ['SEGMENT CUSTOMERS'], category: 'reporting' },
+
+  { key: 'START GROUPBUY', examples: ['START GROUPBUY App Premium Plan,10,20'], category: 'groupBuy' },
+  { key: 'JOIN GROUPBUY', examples: ['JOIN GROUPBUY 1'], category: 'groupBuy' },
+  { key: 'STATUS GROUPBUY', examples: ['STATUS GROUPBUY 1'], category: 'groupBuy' },
+  { key: 'CONFIRM GROUPBUY', examples: ['CONFIRM GROUPBUY 1'], category: 'groupBuy' },
+  { key: 'CANCEL GROUPBUY', examples: ['CANCEL GROUPBUY 1'], category: 'groupBuy' },
+
+  { key: 'JOURNEY', examples: ['JOURNEY'], aliases: ['DEMO JOURNEY'], category: 'admin' },
+  { key: 'RUN DEMO JOURNEY', examples: ['RUN DEMO JOURNEY'], category: 'admin' },
+  { key: 'SEED SAMPLE DATA', examples: ['SEED SAMPLE DATA'], category: 'admin' },
+  { key: 'ADMIN VERIFY', examples: ['ADMIN VERIFY'], category: 'admin' },
+  { key: 'ADMIN ENABLE', examples: ['ADMIN ENABLE'], category: 'admin' },
+  { key: 'ADMIN DISABLE', examples: ['ADMIN DISABLE'], aliases: ['ADMIN REVOKE'], category: 'admin' },
+  { key: 'ADMIN CHANNEL', examples: ['ADMIN CHANNEL default STATUS', 'ADMIN CHANNEL default SERVICES commerce,catalog'], category: 'admin' },
+  { key: 'ADMIN AUDIT ROTATE', examples: ['ADMIN AUDIT ROTATE'], category: 'admin' },
+
+  { key: 'HUMAN', examples: ['HUMAN'], aliases: ['AGENT', 'ติดต่อแอดมิน', 'คุยกับแอดมิน'], category: 'account' },
+  { key: 'MY DATA', examples: ['MY DATA'], aliases: ['ข้อมูลของฉัน'], category: 'account' },
+  { key: 'DELETE MY DATA', examples: ['DELETE MY DATA'], category: 'account' },
+  { key: 'PROMO ON', examples: ['PROMO ON'], aliases: ['รับโปรโมชัน'], category: 'account' },
+  { key: 'PROMO OFF', examples: ['PROMO OFF'], aliases: ['ไม่รับโปรโมชัน'], category: 'account' },
+
+  // GUIDE itself isn't listed as a category item — it's the meta-command
+  // that got the user here in the first place.
+  { key: 'GUIDE', examples: ['GUIDE'], aliases: ['STEP BY STEP', 'MENU GUIDE', 'คู่มือ'], category: 'basics' },
 ];
+
+export const GUIDE_CATEGORY_ORDER: CommandCategoryKey[] = ['basics', 'commerce', 'directory', 'catalog', 'reporting', 'groupBuy', 'admin', 'account'];
+
+export const GUIDE_CATEGORY_LABELS: Record<CommandCategoryKey, { th: string; en: string }> = {
+  basics: { th: 'เริ่มต้นใช้งาน', en: 'Getting started' },
+  commerce: { th: 'สินค้า/ใบเสนอราคา', en: 'Products & quotes' },
+  directory: { th: 'จัดการลูกค้า', en: 'Customers' },
+  catalog: { th: 'จัดการบริการ', en: 'Catalog & services' },
+  reporting: { th: 'รายงาน', en: 'Reports' },
+  groupBuy: { th: 'Group-Buy', en: 'Group-Buy' },
+  admin: { th: 'ตั้งค่าแอดมิน', en: 'Admin setup' },
+  account: { th: 'บัญชีของฉัน', en: 'Account & data' },
+};
+
+/** Shown as a body note above a category's command buttons — only where it adds real information beyond the button list itself. */
+export const GUIDE_CATEGORY_NOTES: Partial<Record<CommandCategoryKey, { th: string; en: string }>> = {
+  basics: {
+    en: 'After VERIFY START, reply with VERIFY OTP <code> from the message you receive. Most commands below also have a guided, step-by-step version — type FORM <command>, e.g. FORM PRODUCT FIND.',
+    th: 'หลังจาก VERIFY START ให้พิมพ์ VERIFY OTP <รหัส> ตามที่ได้รับ คำสั่งด้านล่างส่วนใหญ่มีแบบฟอร์มทีละขั้นด้วย ลองพิมพ์ FORM <คำสั่ง> เช่น FORM PRODUCT FIND',
+  },
+  commerce: {
+    en: 'Once a quote exists, manage it from its own card\'s buttons, or type QUOTE ADD/EDIT/REMOVE/CANCEL/CONFIRM/SEND/INVOICE/APPROVE <id> ... directly.',
+    th: 'เมื่อมีใบเสนอราคาแล้ว จัดการต่อได้จากปุ่มบนการ์ดนั้น หรือพิมพ์ QUOTE ADD/EDIT/REMOVE/CANCEL/CONFIRM/SEND/INVOICE/APPROVE <id> ... ได้โดยตรง',
+  },
+  directory: {
+    en: 'Each of these has a guided version too — try FORM USER CREATE.',
+    th: 'แต่ละคำสั่งมีแบบฟอร์มทีละขั้นด้วย ลองพิมพ์ FORM USER CREATE',
+  },
+  catalog: {
+    en: 'Each of these has a guided version too — try FORM SERVICE CREATE.',
+    th: 'แต่ละคำสั่งมีแบบฟอร์มทีละขั้นด้วย ลองพิมพ์ FORM SERVICE CREATE',
+  },
+};
 
 const normalize = (raw: string): string => raw.trim().toUpperCase().replace(/\s+/g, ' ');
 
@@ -53,7 +117,7 @@ const isLikelyCommand = (input: string): boolean => {
   if (/[,<>]/.test(value)) return true;
   const tokens = value.split(' ');
   if (tokens.length >= 2) return true;
-  return /^[A-Z\u0E00-\u0E7F]+$/.test(value);
+  return /^[A-Z฀-๿]+$/.test(value);
 };
 
 const extractIntentKey = (input: string): string => {
@@ -70,7 +134,7 @@ const extractIntentKey = (input: string): string => {
     return tokens.slice(0, 2).join(' ');
   }
 
-  if ((tokens[0] === 'USER' || tokens[0] === 'SERVICE' || tokens[0] === 'ADMIN' || tokens[0] === 'LANG') && tokens.length >= 2) {
+  if ((tokens[0] === 'USER' || tokens[0] === 'SERVICE' || tokens[0] === 'ADMIN' || tokens[0] === 'LANG' || tokens[0] === 'VERIFY') && tokens.length >= 2) {
     return tokens.slice(0, 2).join(' ');
   }
 
@@ -137,13 +201,17 @@ export const isGuideCommand = (input: string): boolean => {
   return guideKeys.includes(intent);
 };
 
-export const buildStepByStepGuide = (language: UiLanguage, agentName: string): string => {
-  if (language === 'en') {
-    return `${agentName} step-by-step command guide\n\n1) Start and menu\n- OPTIONS\n- FEATURES\n\n2) Environment and journey\n- ADMIN VERIFY\n- ADMIN ENABLE\n- ADMIN DISABLE\n- RUN DEMO JOURNEY\n\n3) Odoo demo flow\n- SYSTEM STATUS\n- PRODUCT FIND App\n- QUOTE CREATE App Premium Plan,1,Somchai,0812345678\n- ORDER STATUS SO0001\n- DAILY REPORT\n\n4) User CRUD (type FORM USER CREATE etc. for a guided step-by-step version)\n- USER CREATE <name>,<phone>,<email?>\n- USER READ <phone>\n- USER UPDATE <phone>,<name?>,<newPhone?>,<email?>\n- USER DELETE <phone>\n\n5) Service CRUD (type FORM SERVICE CREATE etc. for a guided step-by-step version)\n- SERVICE LIST\n- SERVICE CREATE <name>,<code>,<price>\n- SERVICE READ <code_or_name>\n- SERVICE UPDATE <code_or_name>,<name?>,<price?>,<newCode?>\n- SERVICE DELETE <code_or_name>\n\n6) Language\n- LANG EN\n- LANG TH\n\n7) Navigation menu\n- NAV HOME (browse services available on this channel)\n- BACK (return to the home menu)\n\n8) Multi-channel module config (admin)\n- ADMIN CHANNEL <channelId> STATUS\n- ADMIN CHANNEL <channelId> SERVICES <svc1,svc2,...|ALL>\n\n9) Audit trail (admin)\n- ADMIN AUDIT ROTATE (archive events older than the retention window to BigQuery, then delete them from Firestore)\n\n10) Talk to a person\n- HUMAN (always connects you to a human agent, no waiting on the AI to decide)\n\n11) Your data and preferences\n- MY DATA (see what's stored about you)\n- DELETE MY DATA (request full erasure)\n- PROMO ON / PROMO OFF (subscribe or unsubscribe from marketing messages)\n\nTip: If a command fails, send GUIDE and copy a command exactly.`;
-  }
-
-  return `${agentName} คู่มือคำสั่งทีละขั้น\n\n1) เริ่มต้นและดูเมนู\n- OPTIONS\n- FEATURES\n\n2) เตรียมสภาพแวดล้อม\n- ADMIN VERIFY\n- ADMIN ENABLE\n- ADMIN DISABLE\n- RUN DEMO JOURNEY\n\n3) เดโม Odoo ครบวงจร\n- SYSTEM STATUS\n- PRODUCT FIND App\n- QUOTE CREATE App Premium Plan,1,สมชาย,0812345678\n- ORDER STATUS SO0001\n- DAILY REPORT\n\n4) จัดการผู้ใช้ (พิมพ์ FORM USER CREATE เป็นต้น เพื่อใช้แบบฟอร์มทีละขั้น)\n- USER CREATE <ชื่อ>,<เบอร์>,<อีเมล?>\n- USER READ <เบอร์>\n- USER UPDATE <เบอร์>,<ชื่อใหม่?>,<เบอร์ใหม่?>,<อีเมล?>\n- USER DELETE <เบอร์>\n\n5) จัดการบริการ (พิมพ์ FORM SERVICE CREATE เป็นต้น เพื่อใช้แบบฟอร์มทีละขั้น)\n- SERVICE LIST\n- SERVICE CREATE <ชื่อ>,<รหัส>,<ราคา>\n- SERVICE READ <รหัสหรือชื่อ>\n- SERVICE UPDATE <รหัสหรือชื่อ>,<ชื่อใหม่?>,<ราคาใหม่?>,<รหัสใหม่?>\n- SERVICE DELETE <รหัสหรือชื่อ>\n\n6) เปลี่ยนภาษา\n- LANG EN\n- LANG TH\n\n7) เมนูนำทาง\n- NAV HOME (ดูบริการที่เปิดใช้งานบนช่องทางนี้)\n- BACK (กลับไปหน้าเมนูหลัก)\n\n8) ตั้งค่าโมดูลต่อช่องทาง (แอดมิน)\n- ADMIN CHANNEL <channelId> STATUS\n- ADMIN CHANNEL <channelId> SERVICES <svc1,svc2,...|ALL>\n\n9) บันทึกการตรวจสอบ (แอดมิน)\n- ADMIN AUDIT ROTATE (เก็บถาวรรายการที่เกินระยะเวลาที่กำหนดไปยัง BigQuery แล้วลบออกจาก Firestore)\n\n10) คุยกับเจ้าหน้าที่\n- HUMAN (โอนสายหาเจ้าหน้าที่ทันที ไม่ต้องรอ AI ตัดสินใจ)\n\n11) ข้อมูลและการตั้งค่าของคุณ\n- MY DATA (ดูข้อมูลที่เราเก็บไว้)\n- DELETE MY DATA (ขอลบข้อมูลทั้งหมด)\n- PROMO ON / PROMO OFF (เปิด/ปิดรับข่าวสารและโปรโมชัน)\n\nเคล็ดลับ: ถ้าคำสั่งผิด ให้พิมพ์ GUIDE แล้วคัดลอกคำสั่งตามตัวอย่างได้เลย`;
+/** Parses a category token off `GUIDE <TOKEN>` — only literal category keys are recognized (case-insensitive), since that's exactly what the category buttons this module renders send. */
+export const parseGuideCategoryKey = (input: string): CommandCategoryKey | null => {
+  const upper = input.trim().toUpperCase();
+  if (!upper.startsWith('GUIDE ')) return null;
+  const token = upper.slice('GUIDE '.length).trim();
+  const match = GUIDE_CATEGORY_ORDER.find(key => key.toUpperCase() === token);
+  return match || null;
 };
+
+export const getCommandsForCategory = (category: CommandCategoryKey): { key: string; example: string }[] =>
+  COMMAND_SPECS.filter(spec => spec.category === category && spec.key !== 'GUIDE').map(spec => ({ key: spec.key, example: spec.examples[0] }));
 
 export const buildCommandKeywordGuidance = (input: string, language: UiLanguage, agentName: string): string | null => {
   if (!isLikelyCommand(input)) return null;

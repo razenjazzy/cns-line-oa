@@ -1,7 +1,7 @@
 import type { CommandHandler } from './index';
 import { buildHomeMenuMessage } from '../command-router';
-import { buildCommandKeywordGuidance, buildStepByStepGuide, isGuideCommand } from '../command-guide';
-import { createBotTextFlexMessage } from '../templates';
+import { buildCommandKeywordGuidance, isGuideCommand, parseGuideCategoryKey } from '../command-guide';
+import { createBotTextFlexMessage, createGuideCategoriesFlexMessage, createGuideCategoryFlexMessage } from '../templates';
 import { pingOdoo, seedOdooSampleSalesData } from '../../services/odoo';
 import { setEscalationState } from '../../services/firestore';
 import type { UserLanguage } from '../../services/firestore';
@@ -96,12 +96,20 @@ const humanHandoffHandler: CommandHandler = {
   },
 };
 
-// GUIDE commands — step-by-step keyword guidance
+// GUIDE / GUIDE <category> — categorized, tappable command guide ("smart
+// IVR"-style: pick a topic, then pick a command) instead of one long
+// plain-text wall. Category buttons send `GUIDE <category>` themselves, so
+// this same handler renders either level depending on what's in the text.
 const guideHandler: CommandHandler = {
   name: 'help-guide',
   match: (_u, ctx) => isGuideCommand(ctx.text.trim()),
-  handle: async (ctx) =>
-    [botText(buildStepByStepGuide(ctx.userLanguage, ctx.agentName), ctx.userLanguage)],
+  handle: async (ctx) => {
+    const category = parseGuideCategoryKey(ctx.text.trim());
+    if (category) {
+      return [createGuideCategoryFlexMessage(category, ctx.userLanguage, ctx.agentName)];
+    }
+    return [createGuideCategoriesFlexMessage(ctx.userLanguage, ctx.agentName)];
+  },
 };
 
 /**

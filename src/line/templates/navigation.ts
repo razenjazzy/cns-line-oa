@@ -1,7 +1,7 @@
 import { messagingApi } from '@line/bot-sdk';
 import { BRAND, buttonLabel, createMessageActionButton, truncate, type ReportLanguage } from './shared';
 
-const SERVICE_ICON: Record<string, string> = {
+export const SERVICE_ICON: Record<string, string> = {
   VERIFY: '🔐',
   commerce: '🛍️',
   directory: '👥',
