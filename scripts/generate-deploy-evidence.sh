@@ -7,13 +7,41 @@ DEPLOY_ENV=${3:-${DEPLOY_ENV:-unknown}}
 OPS_TOKEN=${OPS_API_TOKEN:-}
 STRICT=${EVIDENCE_STRICT:-false}
 
+mkdir -p "$(dirname "$OUTPUT_FILE")"
+
 if [ -z "$BASE_URL" ]; then
-  echo "Usage: $0 <base-url> [output-file] [deploy-env]" >&2
-  exit 1
+  if [ "$STRICT" = "true" ]; then
+    echo "Usage: $0 <base-url> [output-file] [deploy-env]" >&2
+    exit 1
+  fi
+
+  node - <<'NODE' "$OUTPUT_FILE" "$DEPLOY_ENV"
+const fs = require('fs');
+
+const [outputFile, deployEnv] = process.argv.slice(2);
+
+const payload = {
+  generatedAt: new Date().toISOString(),
+  environment: deployEnv,
+  baseUrl: null,
+  overallOk: false,
+  skipped: true,
+  skippedReason: 'Base URL was not provided.',
+  checks: {
+    healthz: { checked: false },
+    readyz: { checked: false },
+    opsWorkflowAudit: { checked: false },
+  },
+};
+
+fs.writeFileSync(outputFile, `${JSON.stringify(payload, null, 2)}\n`);
+NODE
+
+  echo "[evidence] base URL missing; wrote skipped deploy evidence to $OUTPUT_FILE"
+  exit 0
 fi
 
 BASE_URL=${BASE_URL%/}
-mkdir -p "$(dirname "$OUTPUT_FILE")"
 
 fetch_endpoint() {
   local url="$1"
