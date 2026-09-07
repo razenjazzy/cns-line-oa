@@ -1,4 +1,5 @@
 import { ChannelContext } from '../line/channels';
+import { isLiveOverrideEnabled } from './feature-toggles';
 
 export type ServiceKey = 'commerce' | 'directory' | 'catalog' | 'reporting' | 'groupBuy';
 
@@ -178,9 +179,8 @@ export const getServiceDefinition = (key: string): ServiceDefinition | null => {
  * matching current ungated behavior.
  */
 export const isServiceEnabledForChannel = (service: ServiceKey, channel?: ChannelContext): boolean => {
-  if (!channel) return true;
-  if (channel.enabledServices === null) return true;
-  return channel.enabledServices.includes(service);
+  const channelAllows = !channel || channel.enabledServices === null || channel.enabledServices.includes(service);
+  return channelAllows && isLiveOverrideEnabled(service);
 };
 
 export const getVisibleCommands = (service: ServiceDefinition, isAdmin: boolean): ServiceCommand[] => {

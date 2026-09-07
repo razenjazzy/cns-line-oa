@@ -63,6 +63,20 @@ Odoo web analog: email send uses partner email; confirm converts quotation → s
 
 ---
 
+## Sales Administrator — LINE feature toggles
+
+Odoo **Sales Administrator** (`sales_manager` after VERIFY) or LINE `role=admin` can turn the five LINE service groups on/off without redeploy. Sales User is refused. `ADMIN ENABLE` is not required. Env `ENABLED_SERVICES` / channel `_SERVICES` is a hard ceiling — a live ON cannot resurrect a key env omitted.
+
+| Command | You should see |
+|---|---|
+| `SALES FEATURES` | Flex list of `commerce`, `directory`, `catalog`, `reporting`, `groupBuy`. Env-forced-off rows are grey with no button. |
+| `SALES FEATURE catalog OFF` | Same list with catalog off. `SERVICE LIST` is then refused. |
+| `SALES FEATURE catalog ON` | Catalog restored. If catalog is missing from env, the command is refused. |
+
+`SALES FEATURES` is unmapped in the service catalog so turning `commerce` off cannot hide the kill-switch.
+
+---
+
 ## D — Language and Thai proof
 
 | # | Command | You should see | File |

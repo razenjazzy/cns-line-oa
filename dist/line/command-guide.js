@@ -42,6 +42,7 @@ const COMMAND_SPECS = [
     { key: 'ADMIN DISABLE', examples: ['ADMIN DISABLE'], aliases: ['ADMIN REVOKE'], category: 'admin' },
     { key: 'ADMIN CHANNEL', examples: ['ADMIN CHANNEL default STATUS', 'ADMIN CHANNEL default SERVICES commerce,catalog'], category: 'admin' },
     { key: 'ADMIN AUDIT ROTATE', examples: ['ADMIN AUDIT ROTATE'], category: 'admin' },
+    { key: 'SALES FEATURES', examples: ['SALES FEATURES'], category: 'admin' },
     { key: 'HUMAN', examples: ['HUMAN'], aliases: ['AGENT', 'ติดต่อแอดมิน', 'คุยกับแอดมิน'], category: 'account' },
     { key: 'HUMAN OFF', examples: ['HUMAN OFF'], aliases: ['RESUME BOT'], category: 'account' },
     { key: 'MY DATA', examples: ['MY DATA'], aliases: ['ข้อมูลของฉัน'], category: 'account' },
@@ -80,6 +81,10 @@ exports.GUIDE_CATEGORY_NOTES = {
     catalog: {
         en: 'Each of these has a guided version too — try FORM SERVICE CREATE.',
         th: 'แต่ละคำสั่งมีแบบฟอร์มทีละขั้นด้วย ลองพิมพ์ FORM SERVICE CREATE',
+    },
+    admin: {
+        en: 'SALES FEATURES is for Sales Administrators after VERIFY (no ADMIN ENABLE). It turns LINE service groups on/off without redeploy and stays available even if commerce is off.',
+        th: 'SALES FEATURES สำหรับผู้ดูแลฝ่ายขายหลัง VERIFY (ไม่ต้อง ADMIN ENABLE) ใช้เปิด/ปิดกลุ่มบริการ LINE โดยไม่ต้อง redeploy และใช้ได้แม้ปิด commerce',
     },
 };
 const normalize = (raw) => raw.trim().toUpperCase().replace(/\s+/g, ' ');

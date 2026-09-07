@@ -120,6 +120,44 @@ export const DEMO_PAGE_SCRIPT = `
       });
     }
 
+    async function loadSalesFeatureToggles() {
+      const output = document.getElementById('sales-feature-toggles-output');
+      output.textContent = 'Loading sales feature toggles...';
+      const data = await getJson('/demo/sales-feature-toggles');
+      const form = document.getElementById('sales-feature-toggles-form');
+      (data.toggles || []).forEach((row) => {
+        const input = form.elements.namedItem(row.key);
+        if (input) {
+          input.checked = !!row.effective;
+          input.disabled = row.source === 'env-forced';
+        }
+      });
+      output.textContent = pretty(data);
+      return data;
+    }
+
+    async function saveSalesFeatureToggles(event) {
+      event.preventDefault();
+      const output = document.getElementById('sales-feature-toggles-output');
+      output.textContent = 'Saving sales feature toggles...';
+      const form = event.currentTarget;
+      const payload = {};
+      ['commerce', 'directory', 'catalog', 'reporting', 'groupBuy'].forEach((key) => {
+        const input = form.elements.namedItem(key);
+        if (input && !input.disabled) payload[key] = !!input.checked;
+      });
+      const data = await postJson('/demo/sales-feature-toggles', 'PUT', payload);
+      (data.toggles || []).forEach((row) => {
+        const input = form.elements.namedItem(row.key);
+        if (input) {
+          input.checked = !!row.effective;
+          input.disabled = row.source === 'env-forced';
+        }
+      });
+      output.textContent = pretty(data);
+      return data;
+    }
+
     async function loadPricingModel() {
       const output = document.getElementById('pricing-model-output');
       output.textContent = 'Loading pricing model...';
@@ -243,6 +281,18 @@ export const DEMO_PAGE_SCRIPT = `
     document.getElementById('run-full-flow').addEventListener('click', () => {
       runFullFlow().catch((error) => {
         document.getElementById('runbook-output').textContent = String(error);
+      });
+    });
+
+    document.getElementById('load-sales-feature-toggles').addEventListener('click', () => {
+      loadSalesFeatureToggles().catch((error) => {
+        document.getElementById('sales-feature-toggles-output').textContent = String(error);
+      });
+    });
+
+    document.getElementById('sales-feature-toggles-form').addEventListener('submit', (event) => {
+      saveSalesFeatureToggles(event).catch((error) => {
+        document.getElementById('sales-feature-toggles-output').textContent = String(error);
       });
     });
 
@@ -398,7 +448,7 @@ export const DEMO_PAGE_SCRIPT = `
           return;
         }
 
-        await Promise.all([loadConnections(), loadPlatform(), loadPricingModel(), runWorkflowAudit()]);
+        await Promise.all([loadConnections(), loadPlatform(), loadPricingModel(), loadSalesFeatureToggles(), runWorkflowAudit()]);
       } catch (error) {
         document.getElementById('runbook-output').textContent = String(error);
       }

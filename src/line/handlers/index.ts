@@ -42,6 +42,7 @@ import { helpHandlers }       from './help';
 import { commerceHandlers }   from './commerce';
 import { quotationHandlers }  from './quotation';
 import { salesMessageHandlers } from './sales-message';
+import { salesFeaturesHandlers } from './sales-features';
 import { userDirectoryHandlers } from './user-directory';
 import { serviceCatalogHandlers } from './service-catalog-handler';
 import { groupBuyHandler }    from './group-buy';
@@ -64,6 +65,7 @@ export const COMMAND_HANDLERS: CommandHandler[] = [
   ...quotationHandlers,
   ...commerceHandlers,
   ...salesMessageHandlers,
+  ...salesFeaturesHandlers,
   ...userDirectoryHandlers,
   ...serviceCatalogHandlers,
   groupBuyHandler,

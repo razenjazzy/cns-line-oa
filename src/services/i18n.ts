@@ -48,6 +48,9 @@ export const UI_STRINGS = {
   sendNow: { en: 'Send', th: 'ส่ง' },
   createMore: { en: 'Create More', th: 'สร้างเพิ่ม' },
   sendComposerTitle: { en: 'Send quotation', th: 'ส่งใบเสนอราคา' },
+  invoiceSendComposerTitle: { en: 'Send invoice', th: 'ส่งใบแจ้งหนี้' },
+  sendInvoice: { en: 'Send Invoice', th: 'ส่งใบแจ้งหนี้' },
+  invoiceSentToCustomer: { en: 'Invoice sent to the customer.', th: 'ส่งใบแจ้งหนี้ให้ลูกค้าแล้ว' },
   emailTo: { en: 'To', th: 'ถึง' },
   emailSubject: { en: 'Subject', th: 'เรื่อง' },
   noPartnerEmail: { en: 'No email on this customer. Type one below or send via LINE if they verified.', th: 'ลูกค้ายังไม่มีอีเมล พิมพ์อีเมลด้านล่าง หรือส่งทาง LINE ได้ถ้ายืนยันตัวตนแล้ว' },
@@ -59,6 +62,13 @@ export const UI_STRINGS = {
   // client itself (its width-based clipping, not the 20-char cap below).
   viewFullQuotation: { en: 'View Quote', th: 'ดูใบเสนอราคา' },
   quoteSentToAdmin: { en: 'Sent to the customer for approval.', th: 'ส่งให้ลูกค้าเพื่ออนุมัติแล้ว' },
+  sentViaLine: { en: 'Sent to the customer on LINE.', th: 'ส่งให้ลูกค้าทาง LINE แล้ว' },
+  sentViaEmail: { en: 'Sent to the customer by email.', th: 'ส่งให้ลูกค้าทางอีเมลแล้ว' },
+  sentViaBoth: { en: 'Sent to the customer on LINE and by email.', th: 'ส่งให้ลูกค้าทาง LINE และอีเมลแล้ว' },
+  sendViaLine: { en: 'Send LINE', th: 'ส่ง LINE' },
+  sendViaEmail: { en: 'Send Email', th: 'ส่งอีเมล' },
+  sendViaBoth: { en: 'Send both', th: 'ส่งทั้งคู่' },
+  phoneField: { en: 'Phone', th: 'เบอร์โทร' },
   quoteNotLinked: {
     en: 'This customer has not verified with the bot yet, so LINE cannot message them. Ask them to message the bot and complete VERIFY first.',
     th: 'ลูกค้ารายนี้ยังไม่ได้ยืนยันตัวตนกับบอท จึงยังส่งข้อความทาง LINE ไม่ได้ กรุณาให้ลูกค้าทักบอทและทำการ VERIFY ก่อน',

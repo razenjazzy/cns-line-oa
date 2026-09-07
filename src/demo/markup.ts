@@ -148,6 +148,25 @@ export const DEMO_PAGE_MARKUP = `
         <pre id="pricing-model-output">Pricing model has not been loaded yet.</pre>
       </article>
 
+      <article class="panel card span-12">
+        <h2>Sales Feature Toggles</h2>
+        <p>Live LINE OA kill-switches for the five ServiceKeys. Env / channel <code>ENABLED_SERVICES</code> is a hard ceiling — Save cannot turn on a key that env already omits.</p>
+        <form id="sales-feature-toggles-form">
+          <div class="three-up">
+            <label><input type="checkbox" name="commerce" checked /> commerce</label>
+            <label><input type="checkbox" name="directory" checked /> directory</label>
+            <label><input type="checkbox" name="catalog" checked /> catalog</label>
+            <label><input type="checkbox" name="reporting" checked /> reporting</label>
+            <label><input type="checkbox" name="groupBuy" checked /> groupBuy</label>
+          </div>
+          <div class="actions">
+            <button type="button" id="load-sales-feature-toggles">Load Toggles</button>
+            <button type="submit">Save Toggles</button>
+          </div>
+        </form>
+        <pre id="sales-feature-toggles-output">Sales feature toggles have not been loaded yet.</pre>
+      </article>
+
       <article class="panel card span-6">
         <h2>Cost Simulation</h2>
         <form id="simulation-form">

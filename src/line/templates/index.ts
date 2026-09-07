@@ -5,3 +5,4 @@ export * from './navigation';
 export * from './forms';
 export * from './quotation';
 export * from './guide';
+export * from './sales-features';

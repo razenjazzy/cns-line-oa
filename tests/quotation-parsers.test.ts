@@ -25,9 +25,24 @@ describe('parseOrderId', () => {
 
 describe('parseOrderIdAndOptionalEmail', () => {
   it('parses an order id with or without an email', () => {
-    expect(parseOrderIdAndOptionalEmail('QUOTE SEND CONFIRM 17', 'QUOTE SEND CONFIRM')).toEqual({ orderId: 17 });
+    expect(parseOrderIdAndOptionalEmail('QUOTE SEND CONFIRM 17', 'QUOTE SEND CONFIRM')).toEqual({ orderId: 17, channel: 'both' });
     expect(parseOrderIdAndOptionalEmail('QUOTE SEND CONFIRM 17 user@example.com', 'QUOTE SEND CONFIRM')).toEqual({
       orderId: 17,
+      channel: 'both',
+      email: 'user@example.com',
+    });
+    expect(parseOrderIdAndOptionalEmail('QUOTE SEND CONFIRM 17 LINE', 'QUOTE SEND CONFIRM')).toEqual({
+      orderId: 17,
+      channel: 'line',
+    });
+    expect(parseOrderIdAndOptionalEmail('QUOTE SEND CONFIRM 17 EMAIL user@example.com', 'QUOTE SEND CONFIRM')).toEqual({
+      orderId: 17,
+      channel: 'email',
+      email: 'user@example.com',
+    });
+    expect(parseOrderIdAndOptionalEmail('QUOTE SEND CONFIRM 17 BOTH user@example.com', 'QUOTE SEND CONFIRM')).toEqual({
+      orderId: 17,
+      channel: 'both',
       email: 'user@example.com',
     });
   });

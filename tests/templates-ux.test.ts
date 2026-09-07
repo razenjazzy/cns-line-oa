@@ -89,18 +89,11 @@ describe('quotation journey state actions', () => {
     expect(json).toContain('NAV HOME');
     expect(json).toContain('QUOTE CREATE MORE 17');
     expect(json).toContain('Create More');
-    const contents = message.contents;
-    expect(contents.type).toBe('bubble');
-    if (contents.type !== 'bubble' || contents.footer?.type !== 'box') {
-      throw new Error('expected bubble footer');
-    }
-    const footer = contents.footer.contents;
-    expect(footer[0]).toMatchObject({ type: 'box', layout: 'horizontal' });
-    expect(JSON.stringify(footer[0])).toContain('QUOTE CONFIRM 17');
-    expect(JSON.stringify(footer[0])).toContain('QUOTE SEND 17');
+    expect(json).toContain('"layout":"horizontal"');
+    expect(json).toContain('"text":"S0017"');
   });
 
-  it('hides Edit/Cancel More for a salesperson but keeps Confirm, Send, and Create More', () => {
+  it('keeps Confirm, Send, Create More, and More for a salesperson', () => {
     const json = JSON.stringify(createQuotationJourneyFlexMessage(
       { ...order, state: 'draft' },
       { role: 'admin', salesTier: 'salesperson', portalLink: 'https://example.com/q', pdfLink: 'https://example.com/p' },
@@ -109,7 +102,7 @@ describe('quotation journey state actions', () => {
     expect(json).toContain('QUOTE CONFIRM 17');
     expect(json).toContain('QUOTE SEND 17');
     expect(json).toContain('QUOTE CREATE MORE 17');
-    expect(json).not.toContain('QUOTE MORE 17');
+    expect(json).toContain('QUOTE MORE 17');
   });
 
   it('keeps Confirm and Send half-width on a sent quotation and labels Quotation Sent', () => {
@@ -137,19 +130,37 @@ describe('quotation journey state actions', () => {
     expect(json).toContain('Download PDF');
     expect(json).not.toContain('NAV HOME');
     expect(json).not.toContain('QUOTE CONFIRM');
+    expect(json).not.toContain('QUOTE INVOICE');
   });
 
-  it('gives the customer only Download PDF on a sales order', () => {
+  it('gives the customer View Quote and Download PDF on a sales order, not invoice send', () => {
     const json = JSON.stringify(createQuotationJourneyFlexMessage(
-      { ...order, state: 'sale' },
+      { ...order, state: 'sale', invoice_status: 'invoiced' },
       { role: 'customer', portalLink: 'https://example.com/q', pdfLink: 'https://example.com/p' },
       'en',
     ));
     expect(json).toContain('Sales Order');
     expect(json).toContain('Download PDF');
+    expect(json).toContain('View Quote');
     expect(json).not.toContain('QUOTE APPROVE');
-    expect(json).not.toContain('View Quote');
+    expect(json).not.toContain('QUOTE INVOICE');
+    expect(json).not.toContain('QUOTE CONFIRM');
     expect(json).not.toContain('NAV HOME');
+  });
+
+  it('shows Create Invoice beside Send Invoice on a sales order for staff', () => {
+    const json = JSON.stringify(createQuotationJourneyFlexMessage(
+      { ...order, state: 'sale', invoice_status: 'to invoice' },
+      { role: 'admin', portalLink: 'https://example.com/q', pdfLink: 'https://example.com/p' },
+      'en',
+    ));
+    expect(json).toContain('Sales Order');
+    expect(json).toContain('QUOTE INVOICE 17');
+    expect(json).toContain('QUOTE INVOICE SEND 17');
+    expect(json).toContain('View Quote');
+    expect(json).toContain('Download PDF');
+    expect(json).toContain('NAV HOME');
+    expect(json).not.toContain('QUOTE APPROVE');
   });
 });
 
@@ -163,9 +174,25 @@ describe('quote send composer', () => {
       partner_id: [9, 'Somchai'],
     }, 'somchai@example.com', 'en');
     const json = JSON.stringify(message);
-    expect(json).toContain('QUOTE SEND CONFIRM 17 somchai@example.com');
+    expect(json).toContain('QUOTE SEND CONFIRM 17 BOTH somchai@example.com');
+    expect(json).toContain('Send LINE');
+    expect(json).toContain('Send Email');
+    expect(json).toContain('Send both');
     expect(json).toContain('Type email');
     expect(json).toContain('somchai@example.com');
+  });
+
+  it('uses invoice send confirm commands for the invoice composer', () => {
+    const json = JSON.stringify(createQuoteSendComposerFlexMessage({
+      id: 17,
+      name: 'S0017',
+      state: 'sale',
+      amount_total: 100,
+      partner_id: [9, 'Somchai'],
+    }, 'somchai@example.com', 'en', 'invoice'));
+    expect(json).toContain('Send invoice');
+    expect(json).toContain('QUOTE INVOICE SEND CONFIRM 17 BOTH somchai@example.com');
+    expect(json).not.toContain('QUOTE SEND CONFIRM 17');
   });
 });
 

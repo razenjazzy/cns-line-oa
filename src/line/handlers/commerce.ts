@@ -20,7 +20,8 @@ import {
 } from '../../services/odoo';
 import { recordAuditEvent, setLastProductContext } from '../../services/firestore';
 import type { UserLanguage } from '../../services/firestore';
-import { canManageQuoteLines, isQuoteStaff, quoteJourneyRole } from '../quote-access';
+import { canManageQuoteLines, isQuoteStaff, quoteJourneyRole, syncStaffProfile } from '../quote-access';
+import { notifyQuoteParties } from '../quote-notify';
 import { getErpAdapter } from '../../erp/registry';
 import { getPlatformStatus } from '../../platform/status';
 
@@ -103,11 +104,12 @@ const demoOrderHandler: CommandHandler = {
       getSaleOrderPortalLink(order.id).then(v => v || undefined),
       getSaleOrderPdfLink(order.id).then(v => v || undefined),
     ]);
-    const role = quoteJourneyRole(ctx.profile);
+    const profile = await syncStaffProfile(ctx.userId, ctx.profile);
+    const role = quoteJourneyRole(profile);
     return [createQuotationJourneyFlexMessage(order, {
       role,
-      salesTier: ctx.profile.salesTier,
-      canManageLines: canManageQuoteLines(ctx.profile),
+      salesTier: profile.salesTier,
+      canManageLines: canManageQuoteLines(profile),
       portalLink,
       pdfLink,
     }, userLanguage)];
@@ -119,7 +121,8 @@ const demoQuoteHandler: CommandHandler = {
   name: 'commerce-quote-create',
   match: (u) => u === 'QUOTE CREATE' || (u.startsWith('QUOTE CREATE ') && !u.startsWith('QUOTE CREATE MORE')),
   handle: async (ctx) => {
-    const { userLanguage, profile, text, userId, channel, requestId } = ctx;
+    const { userLanguage, text, userId, channel, requestId } = ctx;
+    const profile = await syncStaffProfile(userId, ctx.profile);
     const payload = text.trim().replace(/^QUOTE CREATE\s*/i, '').trim();
     const parsed = parseDemoQuotePayload(payload);
     if (!parsed) {
@@ -211,6 +214,9 @@ const demoQuoteHandler: CommandHandler = {
       portalLink,
       pdfLink,
     }, userLanguage);
+
+    notifyQuoteParties({ order, channelId: channel?.channelId, actorUserId: userId, notifyCustomer: false })
+      .catch(err => console.warn('quote-create: sales notify failed (non-fatal):', err));
 
     if (paymentTermNotFound) {
       return [

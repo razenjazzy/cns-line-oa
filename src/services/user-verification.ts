@@ -7,15 +7,22 @@ import {
   recordAuditEvent,
   setUserOdooPartner,
   setUserOdooVerificationStatus,
+  setUserSalesTier,
   UserLanguage,
 } from './firestore';
 import { getPartnerByPhone } from './odoo/partners';
+import { findOdooSalesTierByPartnerId } from './odoo/admin';
 import { DEFAULT_CHANNEL_ID } from '../line/channels';
 import { sendTargetedMessage, sendTargetedFlexMessage } from '../line/messaging';
 import { createBotTextFlexMessage } from '../line/templates';
 import { appLogger } from './logger';
 
 const tr = (language: UserLanguage, th: string, en: string): string => (language === 'en' ? en : th);
+
+const bindSalesTierIfOdooSalesUser = async (userId: string, partnerId: number): Promise<void> => {
+  const salesTier = await findOdooSalesTierByPartnerId(partnerId);
+  if (salesTier) await setUserSalesTier(userId, salesTier);
+};
 
 const normalizePhone = (value: string): string => value.replace(/[^0-9+]/g, '').trim();
 
@@ -192,6 +199,8 @@ export const verifyOdooUserByOtp = async (input: VerifyOtpInput): Promise<string
     return tr(input.language, `${input.agentName} ยืนยันสำเร็จ แต่บันทึกสถานะยืนยันไม่สำเร็จ`, `${input.agentName} verification succeeded but failed to persist verification status.`);
   }
 
+  await bindSalesTierIfOdooSalesUser(input.userId, consumed.data.partnerId);
+
   notifyAdminOfVerification({ userId: input.userId, phone: consumed.data.phone, partnerId: consumed.data.partnerId, channelId: consumed.data.channelId })
     .catch(err => console.warn('verifyOdooUserByOtp: post-verify notify failed (non-fatal):', err));
 
@@ -226,6 +235,8 @@ export const verifyOdooUserByToken = async (token: string): Promise<{ ok: boolea
   if (!statusResult.ok) {
     return { ok: false, message: 'Verification succeeded, but failed to persist verification status.' };
   }
+
+  await bindSalesTierIfOdooSalesUser(consumed.data.userId, consumed.data.partnerId);
 
   // The magic-link flow completes over plain HTTP, so without this push the
   // customer's LINE chat never learns the verification actually succeeded.

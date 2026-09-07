@@ -8,6 +8,7 @@ import { getDemoPlatformPayload } from '../platform/service-modules';
 import { getPlatformFlags } from '../platform/status';
 import { createDemoSessionToken, safeTokenMatch } from '../services/demo-session';
 import { getPricingModel, runPricingSimulation, updatePricingModel } from '../services/pricing-control';
+import { describeAllFeatureToggles, ensureFeatureTogglesLoaded, replaceFeatureToggles } from '../services/feature-toggles';
 import { runRuntimeProbes, collectProbeFailures } from '../services/runtime-probes';
 import { jsonParser } from './middleware';
 import { getRateStore } from './runtime-state';
@@ -171,6 +172,32 @@ export const registerDemoRoutes = (app: Express): void => {
             .catch(error => {
                 res.status(500).json({ error: String(error) });
             });
+    });
+
+    app.get('/demo/sales-feature-toggles', requireDemoControlAccess, (_req, res) => {
+        return ensureFeatureTogglesLoaded()
+            .then(() => {
+                res.json({
+                    generatedAt: new Date().toISOString(),
+                    toggles: describeAllFeatureToggles(),
+                });
+            })
+            .catch(error => {
+                res.status(500).json({ error: String(error) });
+            });
+    });
+
+    app.put('/demo/sales-feature-toggles', requireDemoControlAccess, jsonParser, async (req, res) => {
+        try {
+            const updated = await replaceFeatureToggles(req.body || {});
+            res.json({
+                ok: true,
+                generatedAt: new Date().toISOString(),
+                ...updated,
+            });
+        } catch (error) {
+            res.status(400).json({ ok: false, error: String(error) });
+        }
     });
 
     app.put('/demo/pricing-model', requireDemoControlAccess, jsonParser, async (req, res) => {

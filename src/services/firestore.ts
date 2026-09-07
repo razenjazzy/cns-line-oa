@@ -497,6 +497,58 @@ export const findVerifiedUserIdByPhone = async (phone: string): Promise<string |
     return null;
 };
 
+export const findVerifiedUserIdByPartnerId = async (partnerId: number): Promise<string | null> => {
+    if (!Number.isFinite(partnerId) || partnerId <= 0) return null;
+
+    const database = getDb();
+    if (database) {
+        try {
+            const snap = await database.collection('users')
+                .where('odooPartnerId', '==', partnerId)
+                .where('odooVerified', '==', true)
+                .limit(1)
+                .get();
+            if (!snap.empty) return snap.docs[0].id;
+        } catch (error) {
+            logFirestoreError('findVerifiedUserIdByPartnerId', error);
+        }
+    }
+
+    for (const [userId, entry] of userStateCache.entries()) {
+        if (!entry.state.odooVerified || entry.state.odooPartnerId !== partnerId) continue;
+        return userId;
+    }
+    return null;
+};
+
+/** LINE users who VERIFY as an Odoo Sales User or Sales Administrator. */
+export const listVerifiedSalesLineUserIds = async (): Promise<string[]> => {
+    const ids = new Set<string>();
+    const database = getDb();
+    if (database) {
+        try {
+            for (const tier of ['salesperson', 'sales_manager'] as const) {
+                const snap = await database.collection('users')
+                    .where('salesTier', '==', tier)
+                    .where('odooVerified', '==', true)
+                    .limit(50)
+                    .get();
+                for (const doc of snap.docs) ids.add(doc.id);
+            }
+        } catch (error) {
+            logFirestoreError('listVerifiedSalesLineUserIds', error);
+        }
+    }
+
+    for (const [userId, entry] of userStateCache.entries()) {
+        if (!entry.state.odooVerified) continue;
+        if (entry.state.salesTier === 'salesperson' || entry.state.salesTier === 'sales_manager') {
+            ids.add(userId);
+        }
+    }
+    return [...ids];
+};
+
 export const getPlatformConfig = platformConfigRepository.get;
 export const setPlatformConfig = platformConfigRepository.set;
 

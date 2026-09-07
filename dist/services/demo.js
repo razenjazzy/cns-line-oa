@@ -4,6 +4,9 @@ exports.runDemoJourney = exports.getDemoOverview = void 0;
 const firestore_1 = require("./firestore");
 const app_config_1 = require("./app-config");
 const channels_1 = require("../line/channels");
+const base_repository_1 = require("../infra/mongo/base-repository");
+const service_modules_1 = require("../platform/service-modules");
+const env_1 = require("../http/env");
 const odoo_1 = require("./odoo");
 const isLineConfigured = () => {
     const accessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim() || '';
@@ -18,8 +21,6 @@ const isOdooConfigured = () => {
     const apiKey = process.env.ODOO_API_KEY?.trim() || '';
     return Boolean(url && db && username && apiKey);
 };
-const isProduction = process.env.NODE_ENV === 'production';
-const isDemoControlEnabled = !isProduction || /^(1|true|yes|on)$/i.test(process.env.ENABLE_DEMO_CONTROL_PANEL || '');
 const normalizeBaseUrl = (baseUrl) => {
     const fallbackPort = process.env.PORT || '8080';
     return (baseUrl || `http://localhost:${fallbackPort}`).replace(/\/$/, '');
@@ -42,12 +43,12 @@ const safeSeedOdoo = async () => {
 };
 const getDemoOverview = async (baseUrl) => {
     const resolvedBaseUrl = normalizeBaseUrl(baseUrl);
-    const odooStatus = await safePingOdoo();
+    const [odooStatus, mongoPing] = await Promise.all([safePingOdoo(), (0, base_repository_1.pingMongo)()]);
     return {
         generatedAt: new Date().toISOString(),
         app: {
             status: 'ready',
-            environment: process.env.NODE_ENV?.trim() || 'development',
+            environment: env_1.appEnv,
             endpoints: {
                 demoPage: `${resolvedBaseUrl}/demo`,
                 connections: `${resolvedBaseUrl}/demo/connections`,
@@ -57,12 +58,15 @@ const getDemoOverview = async (baseUrl) => {
                 workflowAudit: `${resolvedBaseUrl}/demo/workflow-audit`,
                 simulatedLineWebhook: `${resolvedBaseUrl}/webhook-test`,
                 lineWebhook: `${resolvedBaseUrl}/webhook`,
+                platform: `${resolvedBaseUrl}/demo/platform`,
+                graphql: `${resolvedBaseUrl}/graphql`,
+                apiDocs: `${resolvedBaseUrl}/api-docs`,
             },
         },
         connections: {
             lineOA: {
                 configured: isLineConfigured(),
-                agentName: (0, channels_1.getAgentName)(),
+                agentName: (0, channels_1.getAgentName)((0, app_config_1.getDefaultLanguage)()),
                 webhookReady: isLineConfigured(),
             },
             odoo: {
@@ -73,19 +77,23 @@ const getDemoOverview = async (baseUrl) => {
                 configured: isFirestoreConfigured(),
                 projectId: process.env.GOOGLE_CLOUD_PROJECT?.trim() || null,
             },
+            mongo: {
+                configured: Boolean(process.env.MONGODB_URI?.trim()),
+                vectorEnabled: env_1.isMongoVectorEnabled,
+                status: mongoPing.message,
+                note: 'LINE FAQ/RAG only. Partners, quotes, and users stay in Firestore and Odoo.',
+            },
+        },
+        platform: {
+            modules: (0, service_modules_1.getServiceModules)(),
+            demoDayScript: (0, service_modules_1.getDemoDayScript)(),
         },
         demo: {
             accessControl: {
-                enabled: isDemoControlEnabled,
-                productionProtected: !isProduction || Boolean((process.env.DEMO_CONTROL_TOKEN || process.env.OPS_API_TOKEN || '').trim()),
+                enabled: env_1.isDemoControlEnabled,
+                productionProtected: env_1.isDeliveryProduction || Boolean((process.env.DEMO_CONTROL_TOKEN || process.env.OPS_API_TOKEN || '').trim()),
             },
-            recommendedJourney: [
-                'Open /demo to inspect connectivity and run the guided flow.',
-                'If production-gated, provide demo token in panel before loading secured API actions.',
-                'Load pricing model, tune markups/cost assumptions, and run simulation for target margin.',
-                'Use POST /webhook-test or the demo console to simulate a LINE user message.',
-                'Run the demo journey to seed Odoo, create or reuse a partner, create a quotation, and read it back.',
-            ],
+            recommendedJourney: (0, service_modules_1.getDemoDayScript)(),
             sampleLinePayload: {
                 userId: 'demo_line_user',
                 text: 'PRODUCT FIND App',

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   getAvailableServices,
   getVisibleCommands,
@@ -7,6 +7,11 @@ import {
   resolveServiceForCommand,
   SERVICE_CATALOG,
 } from '../src/services/service-catalog';
+import { resetFeatureToggleCacheForTests } from '../src/services/feature-toggles';
+
+afterEach(() => {
+  resetFeatureToggleCacheForTests();
+});
 
 describe('resolveServiceForCommand', () => {
   it('maps mapped command prefixes to their service key', () => {
@@ -25,6 +30,8 @@ describe('resolveServiceForCommand', () => {
   it('returns null for unmapped commands so they remain ungated', () => {
     expect(resolveServiceForCommand('OPTIONS')).toBeNull();
     expect(resolveServiceForCommand('ADMIN ENABLE')).toBeNull();
+    expect(resolveServiceForCommand('SALES FEATURES')).toBeNull();
+    expect(resolveServiceForCommand('SALES FEATURE catalog OFF')).toBeNull();
     expect(resolveServiceForCommand('VERIFY START 0812345678')).toBeNull();
     expect(resolveServiceForCommand('LANG EN')).toBeNull();
   });
@@ -48,6 +55,13 @@ describe('isServiceEnabledForChannel', () => {
   it('disables everything for a channel with an empty enabledServices list', () => {
     const channel = { channelId: 'empty', enabledServices: [] };
     expect(isServiceEnabledForChannel('commerce', channel)).toBe(false);
+  });
+
+  it('hides a live-off service when env and channel still allow it', () => {
+    resetFeatureToggleCacheForTests({ catalog: false });
+    expect(isServiceEnabledForChannel('catalog', undefined)).toBe(false);
+    expect(getAvailableServices(undefined, true).map(s => s.key)).not.toContain('catalog');
+    expect(isServiceEnabledForChannel('commerce', undefined)).toBe(true);
   });
 });
 

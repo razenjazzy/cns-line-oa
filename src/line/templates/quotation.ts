@@ -92,6 +92,17 @@ export const createQuotationJourneyFlexMessage = (
         createMessageActionButton(t('sendNow', language), `QUOTE SEND ${order.id}`, 'secondary', BRAND.tealTint),
       ]);
     }
+    if (!isCancelled && isSale) {
+      const canCreateInvoice = order.invoice_status === 'to invoice';
+      footerRows.push(canCreateInvoice
+        ? [
+            createMessageActionButton(t('createInvoice', language), `QUOTE INVOICE ${order.id}`, 'primary', BRAND.teal),
+            createMessageActionButton(t('sendInvoice', language), `QUOTE INVOICE SEND ${order.id}`, 'secondary', BRAND.tealTint),
+          ]
+        : [
+            createMessageActionButton(t('sendInvoice', language), `QUOTE INVOICE SEND ${order.id}`, 'secondary', BRAND.tealTint),
+          ]);
+    }
     if (options.portalLink || options.pdfLink) {
       footerRows.push([
         ...(options.portalLink ? [createUriActionButton(t('viewFullQuotation', language), options.portalLink, 'secondary', BRAND.goldTint)] : []),
@@ -101,14 +112,9 @@ export const createQuotationJourneyFlexMessage = (
     footerRows.push([
       createMessageActionButton(t('createMore', language), `QUOTE CREATE MORE ${order.id}`, 'secondary', BRAND.tealTint),
     ]);
-    const showLineTools = options.canManageLines !== undefined
-      ? options.canManageLines
-      : options.salesTier !== 'salesperson';
-    if (showLineTools) {
-      footerRows.push([
-        createMessageActionButton(t('moreActions', language), `QUOTE MORE ${order.id}`, 'secondary', BRAND.tealTint),
-      ]);
-    }
+    footerRows.push([
+      createMessageActionButton(t('moreActions', language), `QUOTE MORE ${order.id}`, 'secondary', BRAND.tealTint),
+    ]);
     footerRows.push([
       createMessageActionButton(t('home', language), 'NAV HOME', 'secondary', BRAND.goldTint),
     ]);
@@ -120,8 +126,11 @@ export const createQuotationJourneyFlexMessage = (
         ...(options.pdfLink ? [createUriActionButton(t('downloadPdf', language), options.pdfLink, 'secondary', BRAND.tealTint)] : []),
       ]);
     }
-  } else if (!isCancelled && isSale && options.pdfLink) {
-    footerRows.push([createUriActionButton(t('downloadPdf', language), options.pdfLink, 'primary', BRAND.teal)]);
+  } else if (!isCancelled && isSale && (options.portalLink || options.pdfLink)) {
+    footerRows.push([
+      ...(options.portalLink ? [createUriActionButton(t('viewFullQuotation', language), options.portalLink, 'secondary', BRAND.tealTint)] : []),
+      ...(options.pdfLink ? [createUriActionButton(t('downloadPdf', language), options.pdfLink, 'secondary', BRAND.tealTint)] : []),
+    ]);
   } else if (!isCancelled && (options.portalLink || options.pdfLink)) {
     footerRows.push([
       ...(options.portalLink ? [createUriActionButton(t('viewFullQuotation', language), options.portalLink, 'secondary', BRAND.tealTint)] : []),
@@ -145,13 +154,12 @@ export const createQuotationJourneyFlexMessage = (
         body: { backgroundColor: BRAND.surface },
         footer: { backgroundColor: BRAND.surface },
       },
-      header: {
+        header: {
         type: 'box',
         layout: 'vertical',
         paddingAll: 'md',
         contents: [
-          { type: 'text', text: isCancelled ? stateLabel('cancel', language) : stateLabel(order.state, language), weight: 'bold', size: 'lg', color: '#FFFFFF', wrap: true },
-          { type: 'text', text: order.name, size: 'sm', color: '#DDEBE9', margin: 'xs', wrap: true },
+          { type: 'text', text: order.name, weight: 'bold', size: 'lg', color: '#FFFFFF', wrap: true },
           { type: 'text', text: `${t('customer', language)}: ${customerName}`, size: 'xs', color: '#DDEBE9', margin: 'xs', wrap: true },
         ],
       },
@@ -213,7 +221,9 @@ export const createQuotationJourneyFlexMessage = (
         type: 'box',
         layout: 'vertical',
         spacing: 'sm',
-        contents: footerContents.length ? footerContents : [{ type: 'text', text: ' ', size: 'xs', color: BRAND.surface }],
+        contents: footerContents.length
+          ? [{ type: 'box', layout: 'vertical', spacing: 'sm', contents: footerContents }]
+          : [{ type: 'text', text: ' ', size: 'xs', color: BRAND.surface }],
       },
     },
   };
@@ -245,6 +255,9 @@ export const createQuotationMoreFlexMessage = (
       rows.push(createMessageActionButton(t('cancelQuote', language), `QUOTE CANCEL ${order.id}`, 'secondary', BRAND.goldTint));
     }
   }
+  if (order.state === 'sale') {
+    rows.push(createMessageActionButton(t('sendInvoice', language), `QUOTE INVOICE SEND ${order.id}`, 'secondary', BRAND.tealTint));
+  }
   if (canInvoice && !isRestrictedToSalesperson) {
     rows.push(createMessageActionButton(t('createInvoice', language), `QUOTE INVOICE ${order.id}`, 'primary', BRAND.teal));
   }
@@ -275,27 +288,38 @@ export const createQuoteSendComposerFlexMessage = (
   order: OdooSaleOrder,
   email: string | undefined,
   language: Lang,
+  kind: 'quotation' | 'invoice' = 'quotation',
+  phone?: string,
 ): messagingApi.FlexMessage => {
   const customerName = order.partner_id?.[1] || '-';
-  const subject = language === 'en' ? `Quotation ${order.name}` : `ใบเสนอราคา ${order.name}`;
-  const body = language === 'en'
-    ? `Please review quotation ${order.name} (${formatMoney(order.amount_total, language)}). Confirm in LINE or Odoo to proceed.`
-    : `กรุณาตรวจสอบใบเสนอราคา ${order.name} (${formatMoney(order.amount_total, language)}) ยืนยันใน LINE หรือ Odoo เพื่อดำเนินการต่อ`;
+  const isInvoice = kind === 'invoice';
+  const confirmPrefix = isInvoice ? `QUOTE INVOICE SEND CONFIRM ${order.id}` : `QUOTE SEND CONFIRM ${order.id}`;
+  const subject = isInvoice
+    ? (language === 'en' ? `Invoice ${order.name}` : `ใบแจ้งหนี้ ${order.name}`)
+    : (language === 'en' ? `Quotation ${order.name}` : `ใบเสนอราคา ${order.name}`);
+  const body = isInvoice
+    ? (language === 'en'
+      ? `Please review invoice ${order.name} (${formatMoney(order.amount_total, language)}).`
+      : `กรุณาตรวจสอบใบแจ้งหนี้ ${order.name} (${formatMoney(order.amount_total, language)})`)
+    : (language === 'en'
+      ? `Please review quotation ${order.name} (${formatMoney(order.amount_total, language)}). Confirm in LINE or Odoo to proceed.`
+      : `กรุณาตรวจสอบใบเสนอราคา ${order.name} (${formatMoney(order.amount_total, language)}) ยืนยันใน LINE หรือ Odoo เพื่อดำเนินการต่อ`);
   const emailChips = email ? [email] : [];
+  const title = isInvoice ? t('invoiceSendComposerTitle', language) : t('sendComposerTitle', language);
+  const emailSuffix = email ? ` ${email}` : '';
 
   return {
     type: 'flex',
-    altText: truncate(t('sendComposerTitle', language), 390),
+    altText: truncate(title, 390),
     quickReply: {
       items: [
+        { type: 'action' as const, action: { type: 'message' as const, label: t('sendViaLine', language), text: `${confirmPrefix} LINE` } },
+        { type: 'action' as const, action: { type: 'message' as const, label: t('sendViaEmail', language), text: `${confirmPrefix} EMAIL${emailSuffix}` } },
+        { type: 'action' as const, action: { type: 'message' as const, label: t('sendViaBoth', language), text: `${confirmPrefix} BOTH${emailSuffix}` } },
         ...emailChips.map(value => ({
           type: 'action' as const,
-          action: { type: 'message' as const, label: value, text: `QUOTE SEND CONFIRM ${order.id} ${value}` },
+          action: { type: 'message' as const, label: value, text: `${confirmPrefix} BOTH ${value}` },
         })),
-        {
-          type: 'action' as const,
-          action: { type: 'message' as const, label: t('sendNow', language), text: `QUOTE SEND CONFIRM ${order.id}` },
-        },
       ],
     },
     contents: {
@@ -306,7 +330,7 @@ export const createQuoteSendComposerFlexMessage = (
         layout: 'vertical',
         paddingAll: 'md',
         contents: [
-          { type: 'text', text: t('sendComposerTitle', language), weight: 'bold', size: 'md', color: '#FFFFFF' },
+          { type: 'text', text: title, weight: 'bold', size: 'md', color: '#FFFFFF' },
           { type: 'text', text: order.name, size: 'xs', color: '#DDEBE9', margin: 'xs' },
         ],
       },
@@ -316,11 +340,13 @@ export const createQuoteSendComposerFlexMessage = (
         spacing: 'sm',
         paddingBottom: 'lg',
         contents: [
+          { type: 'text', text: `${t('customer', language)}: ${customerName}`, size: 'sm', color: BRAND.ink, wrap: true },
+          { type: 'text', text: `${t('phoneField', language)}: ${phone || '—'}`, size: 'sm', color: BRAND.ink, wrap: true },
           { type: 'text', text: `${t('emailTo', language)}: ${email || '—'}`, size: 'sm', color: BRAND.ink, wrap: true },
           { type: 'text', text: `${t('emailSubject', language)}: ${subject}`, size: 'sm', color: BRAND.ink, wrap: true },
           { type: 'text', text: body, size: 'xs', color: BRAND.inkSoft, wrap: true },
+          ...(!phone ? [{ type: 'text' as const, text: t('quoteNotLinked', language), size: 'xs' as const, color: BRAND.gold, wrap: true }] : []),
           ...(!email ? [{ type: 'text' as const, text: t('noPartnerEmail', language), size: 'xs' as const, color: BRAND.gold, wrap: true }] : []),
-          { type: 'text', text: `${t('customer', language)}: ${customerName}`, size: 'xs', color: BRAND.inkSoft, wrap: true },
         ],
       },
       footer: {
@@ -328,8 +354,17 @@ export const createQuoteSendComposerFlexMessage = (
         layout: 'vertical',
         spacing: 'sm',
         contents: [
-          createMessageActionButton(t('sendNow', language), `QUOTE SEND CONFIRM ${order.id}${email ? ` ${email}` : ''}`, 'primary', BRAND.teal),
-          createPrefillButton(t('typeEmail', language), `QUOTE SEND CONFIRM ${order.id} `, 'secondary', BRAND.tealTint),
+          {
+            type: 'box',
+            layout: 'horizontal',
+            spacing: 'xs',
+            contents: [
+              { ...createMessageActionButton(t('sendViaLine', language), `${confirmPrefix} LINE`, 'secondary', BRAND.tealTint), flex: 1 },
+              { ...createMessageActionButton(t('sendViaEmail', language), `${confirmPrefix} EMAIL${emailSuffix}`, 'secondary', BRAND.tealTint), flex: 1 },
+            ],
+          },
+          createMessageActionButton(t('sendViaBoth', language), `${confirmPrefix} BOTH${emailSuffix}`, 'primary', BRAND.teal),
+          createPrefillButton(t('typeEmail', language), `${confirmPrefix} BOTH `, 'secondary', BRAND.tealTint),
           createMessageActionButton(t('back', language), `QUOTE STATUS ${order.id}`, 'secondary', BRAND.goldTint),
         ],
       },

@@ -1,6 +1,6 @@
 import { listProducts, listServiceCatalogItems } from './odoo/catalog';
 import { listPaymentTerms, getDefaultPaymentTermName } from './odoo/sales';
-import { listPartners } from './odoo/partners';
+import { listPartners, getPartnerByName } from './odoo/partners';
 import { loadOdooFieldSkills, type OdooFieldLoader } from './odoo-field-skills';
 
 // Dedupe by name — Odoo can have multiple product.product records sharing a
@@ -12,12 +12,13 @@ const loadServiceOptions = async (): Promise<string[]> => dedupeNames((await lis
 const loadPaymentTermOptions = async (): Promise<string[]> => dedupeNames((await listPaymentTerms(12)).map(term => term.name));
 const loadCustomerNameOptions = async (): Promise<string[]> => dedupeNames((await listPartners(12)).map(partner => partner.name).filter(Boolean));
 const loadCustomerPhoneOptions = async (collected?: Record<string, string>): Promise<string[]> => {
+  const named = collected?.customerName?.trim()
+    ? await getPartnerByName(collected.customerName)
+    : null;
   const partners = await listPartners(12);
-  const matched = collected?.customerName
-    ? partners.find(partner => partner.name === collected.customerName)?.phone
-    : undefined;
-  const phones = partners.map(partner => partner.phone).filter((phone): phone is string => Boolean(phone));
-  return dedupeNames(matched ? [matched, ...phones] : phones);
+  const phones = [named?.phone, ...partners.map(partner => partner.phone)]
+    .filter((phone): phone is string => Boolean(phone));
+  return dedupeNames(phones);
 };
 
 export type FlowKey =

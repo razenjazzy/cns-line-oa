@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.sendTargetedFlexMessage = exports.sendTargetedMessage = void 0;
 const bot_sdk_1 = require("@line/bot-sdk");
 const channels_1 = require("./channels");
+const logger_1 = require("../services/logger");
 // Reuses the same channel resolver as webhook.ts so channel credentials
 // have a single source of truth. Defaults to the backward-compatible
 // default channel when no channelId is given.
@@ -15,8 +16,7 @@ const getClient = (channelId) => {
 const sendTargetedMessages = async (userIds, messages, channelId = channels_1.DEFAULT_CHANNEL_ID) => {
     const client = getClient(channelId);
     if (!client) {
-        console.warn(`LINE Client not initialized for channel "${channelId}". Cannot send targeted messages.`);
-        console.log(`[DRY RUN] Would send to ${userIds.length} users: ${JSON.stringify(messages)}`);
+        logger_1.appLogger.warn('line_client_missing_for_targeted_send', { channelId, userCount: userIds.length });
         return;
     }
     // LINE multicast API accepts up to 500 user IDs at a time
@@ -27,10 +27,10 @@ const sendTargetedMessages = async (userIds, messages, channelId = channels_1.DE
     for (const chunk of chunks) {
         try {
             await client.multicast({ to: chunk, messages });
-            console.log(`Sent targeted message to ${chunk.length} users on channel "${channelId}".`);
+            logger_1.appLogger.info('line_multicast_sent', { channelId, userCount: chunk.length });
         }
         catch (error) {
-            console.error(`Error sending multicast message on channel "${channelId}":`, error);
+            logger_1.appLogger.error('line_multicast_failed', { channelId, error: String(error) });
         }
     }
 };

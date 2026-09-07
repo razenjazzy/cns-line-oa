@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { canManageQuoteLines, isQuoteStaff, quoteJourneyRole } from '../src/line/quote-access';
 
 describe('quote access from Odoo sales groups', () => {
-  it('gives Confirm/Send staff cards to sales users without LINE admin', () => {
+  it('gives Confirm/Send staff cards to Odoo sales users without LINE admin', () => {
     const sales = { role: 'user' as const, salesTier: 'salesperson' as const };
     expect(isQuoteStaff(sales)).toBe(true);
     expect(quoteJourneyRole(sales)).toBe('admin');

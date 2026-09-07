@@ -140,6 +140,7 @@ export type AuditAction =
     | 'quote_invoice'
     | 'quote_message'
     | 'sales_message'
+    | 'sales_feature_toggle'
     | 'group_buy_odoo_order_create'
     | 'daily_report_trigger'
     | 'segment_customers_trigger'

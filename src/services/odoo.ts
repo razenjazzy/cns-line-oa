@@ -72,7 +72,7 @@ const parseOrderLine = (row: Record<string, unknown>): OdooSaleOrderLine => {
 const parsePartner = (row: Record<string, unknown>): OdooPartner => ({
   id: num(row.id),
   name: str(row.name),
-  phone: str(row.phone),
+  phone: str(row.phone) || str(row.mobile),
   email: str(row.email),
 });
 
@@ -651,18 +651,8 @@ const findOrCreatePartner = async (config: OdooConfig, uid: number, name: string
   // Only search by phone when we actually have one — matching on an empty
   // string can return an unrelated partner that also has no phone on file.
   if (normalizedPhone) {
-    const found = await executeKwRead<Record<string, unknown>[]>(
-      config,
-      uid,
-      'res.partner',
-      'search_read',
-      [[['phone', '=', normalizedPhone]]],
-      { fields: ['id'], limit: 1 }
-    );
-
-    if (found.length > 0) {
-      return num(found[0].id);
-    }
+    const existing = await getPartnerByPhone(normalizedPhone);
+    if (existing) return existing.id;
   }
 
   return executeKw<number>(
@@ -803,12 +793,16 @@ const getPartnerPhoneFields = async (config: OdooConfig, uid: number): Promise<s
   return fields;
 };
 
+const partnerReadFields = async (config: OdooConfig, uid: number): Promise<string[]> =>
+  ['id', 'name', 'email', ...(await getPartnerPhoneFields(config, uid))];
+
 export const listPartners = async (limit = 12): Promise<OdooPartner[]> => {
   const config = getConfig();
   if (!config) return [];
   const uid = await loginRead(config);
   if (!uid) return [];
-  const fields = ['id', 'name', 'phone', 'email'];
+  const fields = await partnerReadFields(config, uid);
+  const phoneFields = await getPartnerPhoneFields(config, uid);
   const read = async (domain: unknown[]) => executeKwRead<Record<string, unknown>[]>(
     config, uid, 'res.partner', 'search_read', [domain], { fields, limit, order: 'name asc' },
   );
@@ -818,7 +812,10 @@ export const listPartners = async (limit = 12): Promise<OdooPartner[]> => {
   } catch {
     // Older databases without customer_rank fall through.
   }
-  const withPhone = await read([['phone', '!=', false]]);
+  const phoneDomain = phoneFields.length > 1
+    ? ['|', [phoneFields[0], '!=', false], [phoneFields[1], '!=', false]]
+    : [[phoneFields[0], '!=', false]];
+  const withPhone = await read(phoneDomain);
   return withPhone.map(parsePartner);
 };
 
@@ -842,7 +839,7 @@ export const getPartnerByPhone = async (phone: string): Promise<OdooPartner | nu
     'res.partner',
     'search_read',
     [domain],
-    { fields: ['id', 'name', 'phone', 'email'], limit: 1 }
+    { fields: await partnerReadFields(config, uid), limit: 1 }
   );
 
   if (!rows.length) return null;
@@ -857,18 +854,22 @@ export const getPartnerByName = async (name: string): Promise<OdooPartner | null
 
   const uid = await loginRead(config);
   if (!uid) return null;
+  const fields = await partnerReadFields(config, uid);
 
-  const rows = await executeKwRead<Record<string, unknown>[]>(
+  const search = async (domain: unknown[]) => executeKwRead<Record<string, unknown>[]>(
     config,
     uid,
     'res.partner',
     'search_read',
-    [[['name', '=', trimmed]]],
-    { fields: ['id', 'name', 'phone', 'email'], limit: 1 },
+    [domain],
+    { fields, limit: 1 },
   );
 
-  if (!rows.length) return null;
-  return parsePartner(rows[0]);
+  const exact = await search([['name', '=', trimmed]]);
+  if (exact.length) return parsePartner(exact[0]);
+  const fuzzy = await search([['name', 'ilike', trimmed]]);
+  if (!fuzzy.length) return null;
+  return parsePartner(fuzzy[0]);
 };
 
 /** By id rather than phone — used by QUOTE SEND to find the phone to look up against findVerifiedUserIdByPhone, since sale.order's partner_id only carries [id, displayName]. */
@@ -885,7 +886,7 @@ export const getPartnerById = async (partnerId: number): Promise<OdooPartner | n
     'res.partner',
     'search_read',
     [[['id', '=', partnerId]]],
-    { fields: ['id', 'name', 'phone', 'email'], limit: 1 }
+    { fields: await partnerReadFields(config, uid), limit: 1 }
   );
 
   if (!rows.length) return null;

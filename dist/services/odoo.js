@@ -14,7 +14,7 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.seedOdooSampleSalesData = exports.getDailySalesSnapshot = exports.deleteServiceCatalogItem = exports.updateServiceCatalogItem = exports.createServiceCatalogItem = exports.getServiceByIdentifier = exports.listServiceCatalogItems = exports.deletePartnerFromLine = exports.updatePartnerFromLine = exports.createPartnerFromLine = exports.getPartnerById = exports.getPartnerByPhone = exports.createQuotationFromLine = exports.createInvoiceForSaleOrder = exports.removeSaleOrderLine = exports.updateSaleOrderLineQty = exports.findSaleOrderLineByProduct = exports.addSaleOrderLine = exports.cancelSaleOrder = exports.markSaleOrderSent = exports.confirmSaleOrder = exports.findPaymentTermByName = exports.getSaleOrdersForPartner = exports.getSaleOrderPdfLink = exports.getSaleOrderPortalLink = exports.getSaleOrderById = exports.findOrderByReference = exports.listProducts = exports.findProductsByQuery = exports.findProductByQuery = exports.verifyOdooAdminAccess = exports.pingOdoo = exports.isOdooConfigured = void 0;
+exports.seedOdooSampleSalesData = exports.getDailySalesSnapshot = exports.deleteServiceCatalogItem = exports.updateServiceCatalogItem = exports.createServiceCatalogItem = exports.getServiceByIdentifier = exports.listServiceCatalogItems = exports.deletePartnerFromLine = exports.updatePartnerFromLine = exports.createPartnerFromLine = exports.getPartnerById = exports.getPartnerByName = exports.getPartnerByPhone = exports.listPartners = exports.createQuotationFromLine = exports.createInvoiceForSaleOrder = exports.removeSaleOrderLine = exports.updateSaleOrderLineQty = exports.findSaleOrderLineByProduct = exports.addSaleOrderLine = exports.cancelSaleOrder = exports.sendQuotationEmail = exports.markSaleOrderSent = exports.confirmSaleOrder = exports.listPaymentTerms = exports.getDefaultPaymentTermName = exports.pickDefaultPaymentTermName = exports.findPaymentTermByName = exports.getSaleOrdersForPartner = exports.getSaleOrderPdfLink = exports.getSaleOrderPortalLink = exports.getSaleOrderById = exports.findOrderByReference = exports.listProducts = exports.findProductsByQuery = exports.getProductById = exports.findProductByQuery = exports.verifyOdooAdminAccess = exports.pingOdoo = exports.isOdooConfigured = void 0;
 const client_1 = require("./odoo/client");
 __exportStar(require("./odoo/types"), exports);
 const getConfig = client_1.getOdooConfig;
@@ -51,6 +51,7 @@ const parseOrder = (row) => {
         date_order: str(row.date_order),
         access_token: typeof row.access_token === 'string' ? row.access_token : undefined,
         invoice_status: typeof row.invoice_status === 'string' ? row.invoice_status : undefined,
+        amount_invoiced: row.amount_invoiced !== undefined ? num(row.amount_invoiced) : undefined,
         note: typeof row.note === 'string' && row.note ? row.note : undefined,
     };
 };
@@ -66,7 +67,7 @@ const parseOrderLine = (row) => {
 const parsePartner = (row) => ({
     id: num(row.id),
     name: str(row.name),
-    phone: str(row.phone),
+    phone: str(row.phone) || str(row.mobile),
     email: str(row.email),
 });
 const parseService = (row) => ({
@@ -118,6 +119,21 @@ const findProductByQuery = async (query) => {
     return parseProduct(rows[0]);
 };
 exports.findProductByQuery = findProductByQuery;
+const getProductById = async (productId) => {
+    if (!Number.isFinite(productId) || productId <= 0)
+        return null;
+    const config = getConfig();
+    if (!config)
+        return null;
+    const uid = await (0, client_1.loginRead)(config);
+    if (!uid)
+        return null;
+    const rows = await (0, client_1.executeKwRead)(config, uid, 'product.product', 'search_read', [[['id', '=', productId]]], { fields: ['id', 'name', 'list_price', 'qty_available', 'default_code'], limit: 1 });
+    if (!rows.length)
+        return null;
+    return parseProduct(rows[0]);
+};
+exports.getProductById = getProductById;
 /**
  * Same ilike search as findProductByQuery, but returns every match up to
  * `limit` instead of only the first row — lets a caller show a picker when
@@ -197,7 +213,7 @@ const getSaleOrderById = async (orderId) => {
     const uid = await (0, client_1.loginRead)(config);
     if (!uid)
         return null;
-    const rows = await (0, client_1.executeKwRead)(config, uid, 'sale.order', 'search_read', [[['id', '=', orderId]]], { fields: ['id', 'name', 'state', 'amount_total', 'partner_id', 'access_token', 'invoice_status', 'note'], limit: 1 });
+    const rows = await (0, client_1.executeKwRead)(config, uid, 'sale.order', 'search_read', [[['id', '=', orderId]]], { fields: ['id', 'name', 'state', 'amount_total', 'partner_id', 'access_token', 'invoice_status', 'amount_invoiced', 'note'], limit: 1 });
     if (!rows.length)
         return null;
     const order = parseOrder(rows[0]);
@@ -249,14 +265,29 @@ const getSaleOrderPdfLink = async (orderId) => {
 };
 exports.getSaleOrderPdfLink = getSaleOrderPdfLink;
 /** Powers "my quotations" — most recent orders for a given customer, newest first. */
-const getSaleOrdersForPartner = async (partnerId, limit = 8) => {
+const getSaleOrdersForPartner = async (partnerId, limitOrOpts = 8) => {
+    const opts = typeof limitOrOpts === 'number' ? { limit: limitOrOpts } : limitOrOpts;
+    const limit = opts.limit ?? 8;
+    const offset = opts.cursor ? 0 : (opts.offset ?? 0);
+    const domain = [['partner_id', '=', partnerId]];
+    if (opts.dateFrom)
+        domain.push(['date_order', '>=', opts.dateFrom]);
+    if (opts.dateTo)
+        domain.push(['date_order', '<=', `${opts.dateTo} 23:59:59`]);
+    if (opts.cursor) {
+        domain.push('|');
+        domain.push(['date_order', '<', opts.cursor.dateOrder]);
+        domain.push('&');
+        domain.push(['date_order', '=', opts.cursor.dateOrder]);
+        domain.push(['id', '<', opts.cursor.id]);
+    }
     const config = getConfig();
     if (!config)
         return [];
     const uid = await (0, client_1.loginRead)(config);
     if (!uid)
         return [];
-    const rows = await (0, client_1.executeKwRead)(config, uid, 'sale.order', 'search_read', [[['partner_id', '=', partnerId]]], { fields: ['id', 'name', 'state', 'amount_total', 'partner_id', 'date_order'], order: 'date_order desc', limit });
+    const rows = await (0, client_1.executeKwRead)(config, uid, 'sale.order', 'search_read', [domain], { fields: ['id', 'name', 'state', 'amount_total', 'partner_id', 'date_order'], order: 'date_order desc, id desc', limit, offset });
     return rows.map(parseOrder);
 };
 exports.getSaleOrdersForPartner = getSaleOrdersForPartner;
@@ -277,6 +308,49 @@ const findPaymentTermByName = async (query) => {
     return { id: num(rows[0].id), name: str(rows[0].name) };
 };
 exports.findPaymentTermByName = findPaymentTermByName;
+/** Prefer Odoo's Immediate Payment (or equivalent) over an arbitrary first row. */
+const pickDefaultPaymentTermName = (terms) => {
+    if (!terms.length)
+        return undefined;
+    const immediate = terms.find(term => /immediate/i.test(term.name));
+    return immediate?.name || terms[0]?.name;
+};
+exports.pickDefaultPaymentTermName = pickDefaultPaymentTermName;
+const getDefaultPaymentTermName = async () => {
+    const terms = await (0, exports.listPaymentTerms)(20);
+    const config = getConfig();
+    if (config) {
+        const uid = await (0, client_1.loginRead)(config);
+        if (uid) {
+            try {
+                const defaults = await (0, client_1.executeKwRead)(config, uid, 'sale.order', 'default_get', [['payment_term_id']]);
+                const raw = defaults?.payment_term_id;
+                const id = Array.isArray(raw) ? num(raw[0]) : num(raw);
+                if (id) {
+                    const match = terms.find(term => term.id === id);
+                    if (match)
+                        return match.name;
+                }
+            }
+            catch (error) {
+                console.warn('Odoo sale.order default_get payment_term_id failed (non-fatal):', error);
+            }
+        }
+    }
+    return (0, exports.pickDefaultPaymentTermName)(terms) || 'Immediate Payment';
+};
+exports.getDefaultPaymentTermName = getDefaultPaymentTermName;
+const listPaymentTerms = async (limit = 12) => {
+    const config = getConfig();
+    if (!config)
+        return [];
+    const uid = await (0, client_1.loginRead)(config);
+    if (!uid)
+        return [];
+    const rows = await (0, client_1.executeKwRead)(config, uid, 'account.payment.term', 'search_read', [[]], { fields: ['id', 'name'], limit });
+    return rows.map(row => ({ id: num(row.id), name: str(row.name) })).filter(row => row.name);
+};
+exports.listPaymentTerms = listPaymentTerms;
 /** Quotation -> Sales Order. */
 const confirmSaleOrder = async (orderId) => {
     const config = getConfig();
@@ -309,7 +383,13 @@ const markSaleOrderSent = async (orderId) => {
         const uid = await (0, client_1.login)(config);
         if (!uid)
             return false;
-        await (0, client_1.executeKw)(config, uid, 'sale.order', 'write', [[orderId], { state: 'sent' }]);
+        try {
+            await (0, client_1.executeKw)(config, uid, 'sale.order', 'action_quotation_sent', [[orderId]]);
+        }
+        catch (workflowError) {
+            console.warn('markSaleOrderSent: action_quotation_sent failed, trying write:', workflowError);
+            await (0, client_1.executeKw)(config, uid, 'sale.order', 'write', [[orderId], { state: 'sent' }]);
+        }
         try {
             await (0, client_1.executeKw)(config, uid, 'sale.order', 'message_post', [[orderId]], {
                 body: 'Sent to customer via LINE OA.',
@@ -326,6 +406,30 @@ const markSaleOrderSent = async (orderId) => {
     }
 };
 exports.markSaleOrderSent = markSaleOrderSent;
+const sendQuotationEmail = async (orderId, email, subject, body) => {
+    const config = getConfig();
+    if (!config || !email.trim())
+        return false;
+    try {
+        const uid = await (0, client_1.login)(config);
+        if (!uid)
+            return false;
+        const mailId = await (0, client_1.executeKw)(config, uid, 'mail.mail', 'create', [{
+                email_to: email.trim(),
+                subject,
+                body_html: `<p>${body.replace(/</g, '&lt;').replace(/\n/g, '<br/>')}</p>`,
+            }]);
+        if (mailId) {
+            await (0, client_1.executeKw)(config, uid, 'mail.mail', 'send', [[mailId]]);
+        }
+        return true;
+    }
+    catch (error) {
+        console.warn('sendQuotationEmail failed (non-fatal):', error);
+        return false;
+    }
+};
+exports.sendQuotationEmail = sendQuotationEmail;
 /** Cancels a quotation/order — reversible in Odoo itself (reset to draft), not exposed here since it's not part of the LINE journey. */
 const cancelSaleOrder = async (orderId) => {
     const config = getConfig();
@@ -475,10 +579,9 @@ const findOrCreatePartner = async (config, uid, name, phone) => {
     // Only search by phone when we actually have one — matching on an empty
     // string can return an unrelated partner that also has no phone on file.
     if (normalizedPhone) {
-        const found = await (0, client_1.executeKwRead)(config, uid, 'res.partner', 'search_read', [[['phone', '=', normalizedPhone]]], { fields: ['id'], limit: 1 });
-        if (found.length > 0) {
-            return num(found[0].id);
-        }
+        const existing = await (0, exports.getPartnerByPhone)(normalizedPhone);
+        if (existing)
+            return existing.id;
     }
     return (0, client_1.executeKw)(config, uid, 'res.partner', 'create', [{ name, ...(normalizedPhone ? { phone: normalizedPhone } : {}) }]);
 };
@@ -497,7 +600,9 @@ extra) => {
         const uid = await (0, client_1.login)(config);
         if (!uid)
             return null;
-        const product = await (0, exports.findProductByQuery)(productQuery);
+        const product = extra?.productId
+            ? await (0, exports.getProductById)(extra.productId)
+            : await (0, exports.findProductByQuery)(productQuery);
         if (!product)
             return null;
         const partnerId = explicitPartnerId || await findOrCreatePartner(config, uid, customerName, customerPhone);
@@ -587,6 +692,32 @@ const getPartnerPhoneFields = async (config, uid) => {
     cachedPartnerPhoneFields = fields;
     return fields;
 };
+const partnerReadFields = async (config, uid) => ['id', 'name', 'email', ...(await getPartnerPhoneFields(config, uid))];
+const listPartners = async (limit = 12) => {
+    const config = getConfig();
+    if (!config)
+        return [];
+    const uid = await (0, client_1.loginRead)(config);
+    if (!uid)
+        return [];
+    const fields = await partnerReadFields(config, uid);
+    const phoneFields = await getPartnerPhoneFields(config, uid);
+    const read = async (domain) => (0, client_1.executeKwRead)(config, uid, 'res.partner', 'search_read', [domain], { fields, limit, order: 'name asc' });
+    try {
+        const ranked = await read([['customer_rank', '>', 0]]);
+        if (ranked.length)
+            return ranked.map(parsePartner);
+    }
+    catch {
+        // Older databases without customer_rank fall through.
+    }
+    const phoneDomain = phoneFields.length > 1
+        ? ['|', [phoneFields[0], '!=', false], [phoneFields[1], '!=', false]]
+        : [[phoneFields[0], '!=', false]];
+    const withPhone = await read(phoneDomain);
+    return withPhone.map(parsePartner);
+};
+exports.listPartners = listPartners;
 const getPartnerByPhone = async (phone) => {
     const config = getConfig();
     if (!config)
@@ -600,12 +731,33 @@ const getPartnerByPhone = async (phone) => {
     const phoneFields = await getPartnerPhoneFields(config, uid);
     const fieldMatches = variants.flatMap(v => phoneFields.map(f => [f, '=', v]));
     const domain = [...Array(fieldMatches.length - 1).fill('|'), ...fieldMatches];
-    const rows = await (0, client_1.executeKwRead)(config, uid, 'res.partner', 'search_read', [domain], { fields: ['id', 'name', 'phone', 'email'], limit: 1 });
+    const rows = await (0, client_1.executeKwRead)(config, uid, 'res.partner', 'search_read', [domain], { fields: await partnerReadFields(config, uid), limit: 1 });
     if (!rows.length)
         return null;
     return parsePartner(rows[0]);
 };
 exports.getPartnerByPhone = getPartnerByPhone;
+const getPartnerByName = async (name) => {
+    const config = getConfig();
+    if (!config)
+        return null;
+    const trimmed = name.trim();
+    if (!trimmed)
+        return null;
+    const uid = await (0, client_1.loginRead)(config);
+    if (!uid)
+        return null;
+    const fields = await partnerReadFields(config, uid);
+    const search = async (domain) => (0, client_1.executeKwRead)(config, uid, 'res.partner', 'search_read', [domain], { fields, limit: 1 });
+    const exact = await search([['name', '=', trimmed]]);
+    if (exact.length)
+        return parsePartner(exact[0]);
+    const fuzzy = await search([['name', 'ilike', trimmed]]);
+    if (!fuzzy.length)
+        return null;
+    return parsePartner(fuzzy[0]);
+};
+exports.getPartnerByName = getPartnerByName;
 /** By id rather than phone — used by QUOTE SEND to find the phone to look up against findVerifiedUserIdByPhone, since sale.order's partner_id only carries [id, displayName]. */
 const getPartnerById = async (partnerId) => {
     const config = getConfig();
@@ -614,7 +766,7 @@ const getPartnerById = async (partnerId) => {
     const uid = await (0, client_1.loginRead)(config);
     if (!uid)
         return null;
-    const rows = await (0, client_1.executeKwRead)(config, uid, 'res.partner', 'search_read', [[['id', '=', partnerId]]], { fields: ['id', 'name', 'phone', 'email'], limit: 1 });
+    const rows = await (0, client_1.executeKwRead)(config, uid, 'res.partner', 'search_read', [[['id', '=', partnerId]]], { fields: await partnerReadFields(config, uid), limit: 1 });
     if (!rows.length)
         return null;
     return parsePartner(rows[0]);

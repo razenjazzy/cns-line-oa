@@ -2,7 +2,6 @@ import type { CommandHandler } from './index';
 import { createBotTextFlexMessage } from '../templates';
 import { getPartnerByPhone } from '../../services/odoo/partners';
 import {
-  findVerifiedUserIdByPhone,
   getUserLanguage,
   getUserProfile,
   recordAuditEvent,
@@ -10,6 +9,8 @@ import {
 } from '../../services/firestore';
 import { sendTargetedFlexMessage } from '../messaging';
 import { DEFAULT_CHANNEL_ID } from '../channels';
+import { isQuoteStaff, syncStaffProfile } from '../quote-access';
+import { resolveCustomerLineUserId } from '../quote-notify';
 
 const tr = (language: UserLanguage, th: string, en: string): string => (language === 'en' ? en : th);
 
@@ -21,8 +22,8 @@ const botText = (value: string, language: UserLanguage, tone: 'info' | 'success'
     tone,
   });
 
-const adminOnlyReply = (language: UserLanguage) =>
-  botText(tr(language, 'คำสั่งนี้สำหรับแอดมินเท่านั้น', 'This command is admin-only.'), language, 'error');
+const staffOnlyReply = (language: UserLanguage) =>
+  botText(tr(language, 'คำสั่งนี้สำหรับพนักงานขาย', 'This action is for sales users.'), language, 'error');
 
 // "<prefix> <phone> <free-text message>" — same shape as quotation.ts's
 // parseOrderIdAndMessage, just keyed by phone instead of an order id.
@@ -48,8 +49,9 @@ const messageCustomerHandler: CommandHandler = {
   name: 'sales-message-customer',
   match: (u) => u.startsWith('MESSAGE CUSTOMER'),
   handle: async (ctx) => {
-    const { userLanguage, userId, profile, channel, requestId, text } = ctx;
-    if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
+    const { userLanguage, userId, channel, requestId, text } = ctx;
+    const profile = await syncStaffProfile(userId, ctx.profile);
+    if (!isQuoteStaff(profile)) return [staffOnlyReply(userLanguage)];
 
     const parsed = parsePhoneAndMessage(text, 'MESSAGE CUSTOMER');
     if (!parsed) {
@@ -60,7 +62,7 @@ const messageCustomerHandler: CommandHandler = {
     }
 
     const partner = await getPartnerByPhone(parsed.phone);
-    const customerUserId = partner?.phone ? await findVerifiedUserIdByPhone(partner.phone) : null;
+    const customerUserId = await resolveCustomerLineUserId(partner);
     if (!customerUserId) {
       recordAuditEvent({ action: 'sales_message', outcome: 'failure', actorUserId: userId, channelId: channel?.channelId, requestId, detail: 'customer_not_linked' });
       return [botText(tr(userLanguage,

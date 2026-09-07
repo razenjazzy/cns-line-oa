@@ -35,6 +35,7 @@ const ai_circuit_breaker_1 = require("./ai-circuit-breaker");
 const child_process_1 = require("child_process");
 const path_1 = __importDefault(require("path"));
 const channels_1 = require("../line/channels");
+const logger_1 = require("./logger");
 const isAiOff = () => /^(1|true|yes|on)$/i.test(process.env.AI_OFF || '');
 const isClawBridgeEnabled = () => /^(1|true|yes|on)$/i.test(process.env.CLAWFRAMEWORK_ENABLED || '') &&
     process.env.NODE_ENV !== 'production'; // ← NEVER in production
@@ -249,7 +250,7 @@ const processGeminiResponse = async (response, userId, isThai, agentName) => {
                     aiTextResponse += quotation
                         ? `[Quotation ${quotation.orderName} for ${qty}x ${odooProduct.name}]`
                         : `[Order summary for ${qty}x ${odooProduct.name}]`;
-                    messages.push((0, templates_1.createOrderSummaryFlexMessage)(total, isThai ? 'th' : 'en'));
+                    messages.push((0, templates_1.createOrderSummaryFlexMessage)(total, isThai ? 'th' : 'en', quotation?.orderId));
                     if (quotation) {
                         messages.push({ type: 'text', text: isThai
                                 ? `${agentName} สร้างใบเสนอราคาใน Odoo แล้ว เลขที่ ${quotation.orderName}`
@@ -280,7 +281,7 @@ const processGeminiResponse = async (response, userId, isThai, agentName) => {
 // Main export — processChatMessage
 // ---------------------------------------------------------------------------
 const processChatMessage = async (userId, userText, language) => {
-    const agentName = (0, channels_1.getAgentName)();
+    const agentName = (0, channels_1.getAgentName)(language);
     const isThai = language === 'th';
     // AI disabled globally — skip straight to heuristic
     if (isAiOff())
@@ -360,7 +361,7 @@ const processChatMessage = async (userId, userText, language) => {
                 : 'Reply in English only, regardless of what language this message is written in. Do not mix languages.';
             const content = await callClawBridge(`${languageDirective}\n\n${userText}`);
             ai_circuit_breaker_1.clawCircuit.recordSuccess();
-            console.log('[chat] ClawBridge (Tier 2) responded successfully.');
+            logger_1.appLogger.info('clawbridge_tier2_ok');
             await (0, firestore_1.saveConversationMessage)(userId, 'model', content);
             return { handled: true, messages: [{ type: 'text', text: content }] };
         }

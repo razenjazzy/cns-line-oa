@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.classifyIntent = exports.transcribeAudioToText = exports.generateInsights = void 0;
+exports.embedText = exports.classifyIntent = exports.transcribeAudioToText = exports.generateInsights = void 0;
 const genai_1 = require("@google/genai");
 const app_config_1 = require("./app-config");
 const isAiOff = () => /^(1|true|yes|on)$/i.test(process.env.AI_OFF || '');
@@ -296,3 +296,26 @@ const classifyIntent = async (text) => {
     }
 };
 exports.classifyIntent = classifyIntent;
+const embedText = async (text) => {
+    if (isAiOff() || !text.trim())
+        return null;
+    const clients = getGenAIClients();
+    if (!clients.length)
+        return null;
+    for (const { client } of clients) {
+        try {
+            const response = await client.models.embedContent({
+                model: 'text-embedding-004',
+                contents: text.trim().slice(0, 8000),
+            });
+            const values = response.embeddings?.[0]?.values;
+            if (Array.isArray(values) && values.length)
+                return values;
+        }
+        catch {
+            // try next client
+        }
+    }
+    return null;
+};
+exports.embedText = embedText;

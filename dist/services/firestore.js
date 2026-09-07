@@ -14,7 +14,7 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.cancelGroupBuy = exports.confirmGroupBuy = exports.joinGroupBuy = exports.attachGroupBuyOdooOrder = exports.listGroupBuysByCreator = exports.getGroupBuyById = exports.createGroupBuy = exports.consumeActionOtpChallenge = exports.createActionOtpChallenge = exports.consumeOdooVerificationByToken = exports.consumeOdooVerificationByOtp = exports.createOdooVerificationChallenge = exports.deleteAuditEventsByIds = exports.listAuditEventsOlderThan = exports.listRecentAuditEvents = exports.listRecentAuditEventsPage = exports.recordAuditEvent = exports.transitionStoredApproval = exports.getApprovalRecord = exports.saveApprovalRecord = exports.setPlatformConfig = exports.getPlatformConfig = exports.findVerifiedUserIdByPhone = exports.setUserOdooVerificationStatus = exports.setUserOdooPartner = exports.setUserSalesTier = exports.setUserRole = exports.setUserPendingFlow = exports.recordChatFeedback = exports.filterMarketingOptedInUserIds = exports.deleteUserProfile = exports.setMarketingOptIn = exports.setLastActionOtpAt = exports.markConsentNoticeShown = exports.getUserProfile = exports.setUserLanguage = exports.getUserLanguage = exports.saveReportLog = exports.markUserFirstContact = exports.setEscalationState = exports.getEscalationState = exports.saveConversationMessage = exports.getConversationHistory = exports.updateUserScore = exports.checkFirestoreReady = void 0;
+exports.cancelGroupBuy = exports.confirmGroupBuy = exports.joinGroupBuy = exports.attachGroupBuyOdooOrder = exports.listGroupBuysByCreator = exports.getGroupBuyById = exports.createGroupBuy = exports.consumeActionOtpChallenge = exports.createActionOtpChallenge = exports.consumeOdooVerificationByToken = exports.consumeOdooVerificationByOtp = exports.createOdooVerificationChallenge = exports.deleteAuditEventsByIds = exports.listAuditEventsOlderThan = exports.listRecentAuditEvents = exports.listRecentAuditEventsPage = exports.recordAuditEvent = exports.transitionStoredApproval = exports.getApprovalRecord = exports.saveApprovalRecord = exports.setPlatformConfig = exports.getPlatformConfig = exports.listVerifiedSalesLineUserIds = exports.findVerifiedUserIdByPartnerId = exports.findVerifiedUserIdByPhone = exports.setUserOdooVerificationStatus = exports.setUserOdooPartner = exports.setUserSalesTier = exports.setUserRole = exports.setLastQuoteListFrom = exports.setLastProductContext = exports.setUserPendingFlow = exports.recordChatFeedback = exports.filterMarketingOptedInUserIds = exports.deleteUserProfile = exports.setMarketingOptIn = exports.setLastActionOtpAt = exports.markConsentNoticeShown = exports.getUserProfile = exports.setUserLanguage = exports.getUserLanguage = exports.saveReportLog = exports.markUserFirstContact = exports.setEscalationState = exports.getEscalationState = exports.saveConversationMessage = exports.getConversationHistory = exports.updateUserScore = exports.checkFirestoreReady = void 0;
 const firestore_1 = require("@google-cloud/firestore");
 const app_config_1 = require("./app-config");
 const logger_1 = require("./logger");
@@ -177,7 +177,7 @@ const userProfileRepository = (0, user_profile_repository_1.createUserProfileRep
     deleteCached: userId => userStateCache.delete(userId),
     read: withFirestoreRead,
     write: withFirestoreWrite,
-    defaultLanguage: (0, app_config_1.getDefaultLanguage)('en'),
+    defaultLanguage: (0, app_config_1.getDefaultLanguage)(),
     pendingFlowIsActive: isPendingFlowActive,
 });
 const communicationRepository = (0, communication_1.createCommunicationRepository)({
@@ -227,6 +227,12 @@ const createOdooVerificationChallengeInMemory = (params) => {
     const ttlMinutes = Math.max(1, Math.trunc(params.ttlMinutes || Number(process.env.ODOO_VERIFY_OTP_TTL_MINUTES || 10)));
     const createdAt = now.toISOString();
     const expiresAt = new Date(now.getTime() + ttlMinutes * 60 * 1000).toISOString();
+    for (const existing of inMemoryVerificationChallenges.values()) {
+        if (existing.userId === params.userId && existing.status === 'pending') {
+            existing.status = 'expired';
+            existing.updatedAt = createdAt;
+        }
+    }
     const challenge = {
         id: generateInMemoryId(),
         userId: params.userId,
@@ -353,6 +359,8 @@ exports.filterMarketingOptedInUserIds = filterMarketingOptedInUserIds;
  */
 exports.recordChatFeedback = communicationRepository.recordChatFeedback;
 exports.setUserPendingFlow = userProfileRepository.setPendingFlow;
+exports.setLastProductContext = userProfileRepository.setLastProductContext;
+exports.setLastQuoteListFrom = userProfileRepository.setLastQuoteListFrom;
 exports.setUserRole = userProfileRepository.setRole;
 exports.setUserSalesTier = userProfileRepository.setSalesTier;
 exports.setUserOdooPartner = userProfileRepository.setOdooPartner;
@@ -423,6 +431,62 @@ const findVerifiedUserIdByPhone = async (phone) => {
     return null;
 };
 exports.findVerifiedUserIdByPhone = findVerifiedUserIdByPhone;
+const findVerifiedUserIdByPartnerId = async (partnerId) => {
+    if (!Number.isFinite(partnerId) || partnerId <= 0)
+        return null;
+    const database = getDb();
+    if (database) {
+        try {
+            const snap = await database.collection('users')
+                .where('odooPartnerId', '==', partnerId)
+                .where('odooVerified', '==', true)
+                .limit(1)
+                .get();
+            if (!snap.empty)
+                return snap.docs[0].id;
+        }
+        catch (error) {
+            logFirestoreError('findVerifiedUserIdByPartnerId', error);
+        }
+    }
+    for (const [userId, entry] of userStateCache.entries()) {
+        if (!entry.state.odooVerified || entry.state.odooPartnerId !== partnerId)
+            continue;
+        return userId;
+    }
+    return null;
+};
+exports.findVerifiedUserIdByPartnerId = findVerifiedUserIdByPartnerId;
+/** LINE users who VERIFY as an Odoo Sales User or Sales Administrator. */
+const listVerifiedSalesLineUserIds = async () => {
+    const ids = new Set();
+    const database = getDb();
+    if (database) {
+        try {
+            for (const tier of ['salesperson', 'sales_manager']) {
+                const snap = await database.collection('users')
+                    .where('salesTier', '==', tier)
+                    .where('odooVerified', '==', true)
+                    .limit(50)
+                    .get();
+                for (const doc of snap.docs)
+                    ids.add(doc.id);
+            }
+        }
+        catch (error) {
+            logFirestoreError('listVerifiedSalesLineUserIds', error);
+        }
+    }
+    for (const [userId, entry] of userStateCache.entries()) {
+        if (!entry.state.odooVerified)
+            continue;
+        if (entry.state.salesTier === 'salesperson' || entry.state.salesTier === 'sales_manager') {
+            ids.add(userId);
+        }
+    }
+    return [...ids];
+};
+exports.listVerifiedSalesLineUserIds = listVerifiedSalesLineUserIds;
 exports.getPlatformConfig = platformConfigRepository.get;
 exports.setPlatformConfig = platformConfigRepository.set;
 const approvalStore = (0, approval_store_1.createApprovalStore)({
@@ -479,6 +543,12 @@ const createActionOtpChallengeInMemory = (params) => {
         createdAt,
         updatedAt: createdAt,
     };
+    for (const existing of inMemoryActionOtpChallenges.values()) {
+        if (existing.userId === params.userId && existing.status === 'pending') {
+            existing.status = 'expired';
+            existing.updatedAt = createdAt;
+        }
+    }
     inMemoryActionOtpChallenges.set(challenge.id, challenge);
     return { ok: true, data: challenge };
 };
