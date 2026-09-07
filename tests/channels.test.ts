@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { DEFAULT_CHANNEL_ID, getAgentName, getBrandTitle, resolveChannelConfig } from '../src/line/channels';
+import { DEFAULT_CHANNEL_ID, getAgentName, getBrandTitle, oaChatDeepLink, resolveChannelConfig } from '../src/line/channels';
 
 const ENV_KEYS = [
   'LINE_CHANNEL_SECRET',
@@ -102,5 +102,32 @@ describe('agent name', () => {
     expect(getAgentName('th')).toBe('โซระ');
     expect(getBrandTitle('en')).toBe('CloudNex Connect: Sora');
     expect(getBrandTitle('th')).toBe('CloudNex Connect: โซระ');
+  });
+});
+
+describe('oaChatDeepLink', () => {
+  const keys = ['LINE_CHANNEL_BASIC_ID'];
+  const original: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const key of keys) {
+      original[key] = process.env[key];
+      delete process.env[key];
+    }
+  });
+
+  afterEach(() => {
+    for (const key of keys) {
+      if (original[key] === undefined) delete process.env[key];
+      else process.env[key] = original[key];
+    }
+  });
+
+  it('keeps the @ unencoded so LINE webview accepts the OA chat URL', () => {
+    process.env.LINE_CHANNEL_BASIC_ID = '@cloudnex';
+    expect(oaChatDeepLink(DEFAULT_CHANNEL_ID)).toBe('https://line.me/R/ti/p/@cloudnex');
+    process.env.LINE_CHANNEL_BASIC_ID = 'cloudnex';
+    expect(oaChatDeepLink(DEFAULT_CHANNEL_ID)).toBe('https://line.me/R/ti/p/@cloudnex');
+    expect(oaChatDeepLink(DEFAULT_CHANNEL_ID)).not.toContain('%40');
   });
 });

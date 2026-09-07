@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 /**
  * Builds LINE native rich-menu art from assets/rich-menu/layout.json.
- * SVG is the portable source. PNG is rasterized with AppKit (SF Pro Regular).
+ * Default PNGs have every tile equal. Per-cell "active" (dark teal) variants
+ * are menu-{lang}-{id}.png for linkUserRichMenu after a tray tap.
  *
  *   node scripts/generate-rich-menu.mjs
  */
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,6 +19,12 @@ const GOLD_TINT = '#F4E9D4';
 const fills = { teal: TEAL, tealTint: TEAL_TINT, goldTint: GOLD_TINT };
 const inks = { teal: '#FFFFFF', tealTint: TEAL_STRONG, goldTint: GOLD };
 
+const tileFill = (area, activeId, lang) => {
+  if (area.id === 'language') return lang === 'th' ? 'teal' : 'goldTint';
+  if (area.id === activeId) return 'teal';
+  return 'tealTint';
+};
+
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const outDir = join(root, 'assets', 'rich-menu');
 mkdirSync(outDir, { recursive: true });
@@ -27,9 +34,23 @@ const HEIGHT = layout.size.height;
 const PAD = 20;
 const RADIUS = 28;
 const FONT_SIZE = 48;
+const STROKE = 10;
+
+const escapeXml = (value) => String(value)
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;');
+
+const withFills = (activeId, lang) => ({
+  ...layout,
+  areas: layout.areas.map(area => ({
+    ...area,
+    fill: tileFill(area, activeId, lang),
+  })),
+});
 
 const iconSvg = (icon, cx, cy, color) => {
-  const stroke = `fill="none" stroke="${color}" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"`;
+  const stroke = `fill="none" stroke="${color}" stroke-width="${STROKE}" stroke-linecap="round" stroke-linejoin="round"`;
   if (icon === 'home') {
     return `<path ${stroke} d="M ${cx - 36} ${cy + 4} L ${cx} ${cy - 36} L ${cx + 36} ${cy + 4} V ${cy + 36} H ${cx + 12} V ${cy + 10} H ${cx - 12} V ${cy + 36} H ${cx - 36} Z"/>`;
   }
@@ -41,10 +62,10 @@ const iconSvg = (icon, cx, cy, color) => {
     return `<path ${stroke} d="M ${cx - 32} ${cy - 8} H ${cx + 32} L ${cx + 24} ${cy + 36} H ${cx - 24} Z M ${cx - 14} ${cy - 8} V ${cy - 22} A 14 14 0 0 1 ${cx + 14} ${cy - 22} V ${cy - 8}"/>`;
   }
   if (icon === 'grid') {
-    return `<rect ${stroke} x="${cx - 32}" y="${cy - 32}" width="26" height="26" rx="4"/>
-    <rect ${stroke} x="${cx + 6}" y="${cy - 32}" width="26" height="26" rx="4"/>
-    <rect ${stroke} x="${cx - 32}" y="${cy + 6}" width="26" height="26" rx="4"/>
-    <rect ${stroke} x="${cx + 6}" y="${cy + 6}" width="26" height="26" rx="4"/>`;
+    return `<rect ${stroke} x="${cx - 34}" y="${cy - 34}" width="30" height="30" rx="5"/>
+    <rect ${stroke} x="${cx + 4}" y="${cy - 34}" width="30" height="30" rx="5"/>
+    <rect ${stroke} x="${cx - 34}" y="${cy + 4}" width="30" height="30" rx="5"/>
+    <rect ${stroke} x="${cx + 4}" y="${cy + 4}" width="30" height="30" rx="5"/>`;
   }
   if (icon === 'help') {
     return `<circle ${stroke} cx="${cx}" cy="${cy}" r="38"/>
@@ -56,7 +77,7 @@ const iconSvg = (icon, cx, cy, color) => {
     <path ${stroke} d="M ${cx - 36} ${cy} h 72"/>`;
 };
 
-const buildSvg = (lang) => `<?xml version="1.0" encoding="UTF-8"?>
+const buildSvg = (lang, spec) => `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}">
   <rect width="100%" height="100%" fill="#F3F5F4"/>
   <style>
@@ -67,7 +88,7 @@ const buildSvg = (lang) => `<?xml version="1.0" encoding="UTF-8"?>
       text-anchor: middle;
     }
   </style>
-  ${layout.areas.map(area => {
+  ${spec.areas.map(area => {
     const { x, y, width: w, height: h } = area.bounds;
     const fillKey = area.fill || 'tealTint';
     const fill = fills[fillKey] || TEAL_TINT;
@@ -78,7 +99,7 @@ const buildSvg = (lang) => `<?xml version="1.0" encoding="UTF-8"?>
     const tileH = h - PAD * 2;
     const cx = x + w / 2;
     const iconY = y + h * 0.42;
-    const label = lang === 'th' ? area.labelTh : area.labelEn;
+    const label = escapeXml(lang === 'th' ? area.labelTh : area.labelEn);
     return `<rect x="${tileX}" y="${tileY}" width="${tileW}" height="${tileH}" rx="${RADIUS}" fill="${fill}"/>
     ${iconSvg(area.icon, cx, iconY, ink)}
     <text class="label" fill="${ink}" x="${cx}" y="${y + h * 0.78}">${label}</text>`;
@@ -86,19 +107,27 @@ const buildSvg = (lang) => `<?xml version="1.0" encoding="UTF-8"?>
 </svg>
 `;
 
-writeFileSync(join(outDir, 'menu-en.svg'), buildSvg('en'));
-writeFileSync(join(outDir, 'menu-th.svg'), buildSvg('th'));
-
 const swift = join(root, 'scripts', 'render-rich-menu.swift');
-const layoutPath = join(outDir, 'layout.json');
-for (const lang of ['en', 'th']) {
-  const png = join(outDir, `menu-${lang}.png`);
-  const result = spawnSync('swift', [swift, layoutPath, lang, png], { encoding: 'utf8' });
+const render = (spec, lang, pngName) => {
+  const tmp = join(outDir, `.layout-${lang}-${pngName}.json`);
+  writeFileSync(tmp, JSON.stringify(spec));
+  const png = join(outDir, pngName);
+  const result = spawnSync('swift', [swift, tmp, lang, png], { encoding: 'utf8' });
+  unlinkSync(tmp);
   if (result.status !== 0) {
     console.error(result.stderr || result.stdout || 'swift render failed');
     process.exit(result.status || 1);
   }
   process.stdout.write(result.stdout || '');
+};
+
+for (const lang of ['en', 'th']) {
+  const defaultSpec = withFills(null, lang);
+  writeFileSync(join(outDir, `menu-${lang}.svg`), buildSvg(lang, defaultSpec));
+  render(defaultSpec, lang, `menu-${lang}.png`);
+  for (const area of layout.areas) {
+    render(withFills(area.id, lang), lang, `menu-${lang}-${area.id}.png`);
+  }
 }
 
-console.log(`svg + png written (${FONT_SIZE}px, radius ${RADIUS}, pad ${PAD})`);
+console.log(`svg + png written (${FONT_SIZE}px, radius ${RADIUS}, pad ${PAD}, active variants)`);

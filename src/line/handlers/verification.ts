@@ -79,7 +79,7 @@ const verifyStatusHandler: CommandHandler = {
       ),
       language: userLanguage,
       tone: 'info',
-      ...(profile.odooVerified ? {} : { actions: [{ label: tr(userLanguage, 'ยืนยันตัวตน', 'Verify account'), text: 'FORM VERIFY' }] }),
+      actions: [{ label: tr(userLanguage, 'ยืนยันอีกครั้ง', 'Verify again'), text: 'FORM VERIFY' }],
     })];
   },
 };

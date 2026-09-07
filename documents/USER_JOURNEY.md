@@ -13,9 +13,9 @@ Persona names: **Sora** (EN), **โซระ** (TH). Guide/home titles: **CloudN
 1. Railway `/healthz` and `/readyz` are 200.
 2. LINE webhook is `POST https://<host>/webhook`.
 3. Compact tray is live (2×3: Home, Verify, Products & Quotes, Order Status, Help, Language). If the tray is still the tall old grid, run `npm run rich-menu:generate` then `npm run rich-menu:upload` on a laptop, set these on Railway, restart:
-   - `LINE_RICH_MENU_EN=richmenu-22b4799d58ec2d91ac6b9f5b009a688b`
-   - `LINE_RICH_MENU_TH=richmenu-10cc474ff66f8e5bfb93b8164da1bc55`
-   (ids from the compact PNG upload on 2026-09-07; a new upload replaces them). Also set `LINE_AGENT_NAME_EN=Sora` and `LINE_AGENT_NAME_TH=โซระ` or omit for the same defaults.
+   - `LINE_RICH_MENU_EN=richmenu-f6c30110b71f3635710f869521f4210c`
+   - `LINE_RICH_MENU_TH=richmenu-cbfe12eff9d8432dde9df117e1a3ecad`
+   (ids from the compact PNG upload on 2026-09-08). Also set `LINE_RICH_MENU_JSON` from that upload, plus `LINE_AGENT_NAME_EN=Sora` and `LINE_AGENT_NAME_TH=โซระ` or omit for the same defaults.
 4. Capture account language is English (or tap Language until English). Existing Firestore `language: th` stays Thai until Language is tapped.
 
 ---
@@ -44,7 +44,7 @@ Admin chain must already be complete (`odooVerified` + `ADMIN_USER_ID` + Odoo ad
 | B3 | Customer name | Odoo partner **name chips** plus type-in | `journey/b3-quote-customer-name.png` |
 | B4 | Customer phone | Odoo **phone chips** (matched partner first) plus type-in | `journey/b4-quote-phone.png` |
 | B5 | Optional summary | Equal rows: label left, **value right bold**. Payment term default Immediate Payment (or Odoo `default_get`) | `journey/b5-quote-optional.png` |
-| B6 | Create now (after step-up OTP if asked) | Journey card label **Quotation**; footer **Confirm** and **Send** | `journey/b6-quote-draft.png` |
+| B6 | Create now (after step-up OTP if asked) | Journey card label **Quotation**; footer **Confirm \| Send**, View Quote, Download PDF, **Create More**, Home. Edit/Cancel stay under More for admin / sales manager | `journey/b6-quote-draft.png` |
 | B7 | `QUOTE SEND <id>` | Send composer: partner email as To, chip + Type email + Send | `journey/b7-quote-send-composer.png` |
 | B8 | `QUOTE SEND CONFIRM <id>` or chip with email | Admin card **Quotation Sent**; Confirm remains. Customer (if verified) gets Approve / View Quote / Download PDF | `journey/b8-quote-sent-admin.png` |
 | B9 | Same order, customer chat | Customer card: Approve, View Quote, Download PDF. No Confirm/Home | `journey/b9-quote-sent-customer.png` |

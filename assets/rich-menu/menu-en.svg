@@ -10,29 +10,29 @@
     }
   </style>
   <rect x="20" y="20" width="793" height="381" rx="28" fill="#E3F0EE"/>
-    <path fill="none" stroke="#063F3D" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" d="M 380.5 180.82 L 416.5 140.82 L 452.5 180.82 V 212.82 H 428.5 V 186.82 H 404.5 V 212.82 H 380.5 Z"/>
+    <path fill="none" stroke="#063F3D" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" d="M 380.5 180.82 L 416.5 140.82 L 452.5 180.82 V 212.82 H 428.5 V 186.82 H 404.5 V 212.82 H 380.5 Z"/>
     <text class="label" fill="#063F3D" x="416.5" y="328.38">Home</text>
-  <rect x="853" y="20" width="793" height="381" rx="28" fill="#0B6E6A"/>
-    <circle fill="none" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" cx="1249.5" cy="176.82" r="38"/>
-    <path fill="none" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" d="M 1233.5 178.82 L 1245.5 192.82 L 1269.5 162.82"/>
-    <text class="label" fill="#FFFFFF" x="1249.5" y="328.38">Verify</text>
+  <rect x="853" y="20" width="793" height="381" rx="28" fill="#E3F0EE"/>
+    <circle fill="none" stroke="#063F3D" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" cx="1249.5" cy="176.82" r="38"/>
+    <path fill="none" stroke="#063F3D" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" d="M 1233.5 178.82 L 1245.5 192.82 L 1269.5 162.82"/>
+    <text class="label" fill="#063F3D" x="1249.5" y="328.38">Verify</text>
   <rect x="1686" y="20" width="794" height="381" rx="28" fill="#E3F0EE"/>
-    <path fill="none" stroke="#063F3D" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" d="M 2051 168.82 H 2115 L 2107 212.82 H 2059 Z M 2069 168.82 V 154.82 A 14 14 0 0 1 2097 154.82 V 168.82"/>
-    <text class="label" fill="#063F3D" x="2083" y="328.38">Products & Quotes</text>
+    <path fill="none" stroke="#063F3D" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" d="M 2051 168.82 H 2115 L 2107 212.82 H 2059 Z M 2069 168.82 V 154.82 A 14 14 0 0 1 2097 154.82 V 168.82"/>
+    <text class="label" fill="#063F3D" x="2083" y="328.38">Products &amp; Quotes</text>
   <rect x="20" y="441" width="793" height="382" rx="28" fill="#E3F0EE"/>
-    <rect fill="none" stroke="#063F3D" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" x="384.5" y="566.24" width="26" height="26" rx="4"/>
-    <rect fill="none" stroke="#063F3D" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" x="422.5" y="566.24" width="26" height="26" rx="4"/>
-    <rect fill="none" stroke="#063F3D" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" x="384.5" y="604.24" width="26" height="26" rx="4"/>
-    <rect fill="none" stroke="#063F3D" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" x="422.5" y="604.24" width="26" height="26" rx="4"/>
+    <rect fill="none" stroke="#063F3D" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" x="382.5" y="564.24" width="30" height="30" rx="5"/>
+    <rect fill="none" stroke="#063F3D" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" x="420.5" y="564.24" width="30" height="30" rx="5"/>
+    <rect fill="none" stroke="#063F3D" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" x="382.5" y="602.24" width="30" height="30" rx="5"/>
+    <rect fill="none" stroke="#063F3D" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" x="420.5" y="602.24" width="30" height="30" rx="5"/>
     <text class="label" fill="#063F3D" x="416.5" y="750.1600000000001">Order Status</text>
   <rect x="853" y="441" width="793" height="382" rx="28" fill="#E3F0EE"/>
-    <circle fill="none" stroke="#063F3D" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" cx="1249.5" cy="598.24" r="38"/>
-    <path fill="none" stroke="#063F3D" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" d="M 1237.5 586.24 A 14 14 0 1 1 1249.5 604.24 V 612.24"/>
+    <circle fill="none" stroke="#063F3D" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" cx="1249.5" cy="598.24" r="38"/>
+    <path fill="none" stroke="#063F3D" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" d="M 1237.5 586.24 A 14 14 0 1 1 1249.5 604.24 V 612.24"/>
     <circle fill="#063F3D" cx="1249.5" cy="624.24" r="4"/>
     <text class="label" fill="#063F3D" x="1249.5" y="750.1600000000001">Help</text>
   <rect x="1686" y="441" width="794" height="382" rx="28" fill="#F4E9D4"/>
-    <circle fill="none" stroke="#A97A2B" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" cx="2083" cy="598.24" r="36"/>
-    <ellipse fill="none" stroke="#A97A2B" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" cx="2083" cy="598.24" rx="14" ry="36"/>
-    <path fill="none" stroke="#A97A2B" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" d="M 2047 598.24 h 72"/>
+    <circle fill="none" stroke="#A97A2B" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" cx="2083" cy="598.24" r="36"/>
+    <ellipse fill="none" stroke="#A97A2B" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" cx="2083" cy="598.24" rx="14" ry="36"/>
+    <path fill="none" stroke="#A97A2B" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" d="M 2047 598.24 h 72"/>
     <text class="label" fill="#A97A2B" x="2083" y="750.1600000000001">Language</text>
 </svg>

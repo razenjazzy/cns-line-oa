@@ -92,6 +92,17 @@ export const resolveBasicId = (channelId: string): string | undefined => {
   return process.env[`LINE_CHANNEL_${envKey}_BASIC_ID`]?.trim() || undefined;
 };
 
+/**
+ * LINE in-app browser rejects `line://` and percent-encoded `@` (`%40`).
+ * Keep the `@` literal: https://line.me/R/ti/p/@youroa
+ */
+export const oaChatDeepLink = (channelId: string): string | undefined => {
+  const raw = resolveBasicId(channelId);
+  if (!raw) return undefined;
+  const id = raw.startsWith('@') ? raw : `@${raw}`;
+  return `https://line.me/R/ti/p/${id}`;
+};
+
 const channelServiceOverrideKey = (channelId: string): string => `channelServices:${channelId}`;
 
 /**

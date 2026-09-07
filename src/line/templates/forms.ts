@@ -145,13 +145,39 @@ export const createOptionalSummaryFlexMessage = (params: {
         contents: params.fields.map(f => ({
           type: 'box' as const,
           layout: 'horizontal' as const,
-          spacing: 'md' as const,
+          spacing: 'sm' as const,
           backgroundColor: BRAND.paper,
           cornerRadius: BRAND.radius,
           paddingAll: 'md' as const,
-          height: '52px',
           action: { type: 'message' as const, text: `FORM FIELD ${f.index}` },
           contents: [
+            f.value
+              ? {
+                  type: 'box' as const,
+                  layout: 'vertical' as const,
+                  width: '22px',
+                  height: '22px',
+                  cornerRadius: '11px',
+                  backgroundColor: BRAND.teal,
+                  justifyContent: 'center' as const,
+                  flex: 0,
+                  contents: [{
+                    type: 'text' as const,
+                    text: '✓',
+                    size: 'xs' as const,
+                    color: '#FFFFFF',
+                    align: 'center' as const,
+                    gravity: 'center' as const,
+                  }],
+                }
+              : {
+                  type: 'box' as const,
+                  layout: 'vertical' as const,
+                  width: '22px',
+                  height: '22px',
+                  flex: 0,
+                  contents: [{ type: 'filler' as const }],
+                },
             {
               type: 'text' as const,
               text: f.label,
@@ -163,7 +189,7 @@ export const createOptionalSummaryFlexMessage = (params: {
             },
             {
               type: 'text' as const,
-              text: f.value || '—',
+              text: f.value || ' ',
               size: 'sm' as const,
               weight: 'bold' as const,
               color: f.value ? BRAND.ink : BRAND.inkSoft,

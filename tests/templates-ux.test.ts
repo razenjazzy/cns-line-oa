@@ -12,7 +12,8 @@ describe('form prompt options', () => {
       options: ['App Premium', 'App Basic'],
     });
     const json = JSON.stringify(message);
-    expect(message.quickReply?.items.some(item => item.action.type === 'message' && item.action.text === 'App Premium')).toBe(true);
+    expect(json).toContain('"text":"App Premium"');
+    expect(message.quickReply?.items).toBeDefined();
     const body = JSON.stringify(message.contents);
     expect(body).not.toContain('App Premium');
     expect(json).toContain('Tap an option below');
@@ -38,12 +39,13 @@ describe('optional summary', () => {
     });
     const json = JSON.stringify(message);
     expect(json).not.toContain('not set');
+    expect(json).not.toContain('"text":"—"');
     expect(json).toContain('10');
     expect(json).toContain('Valid until');
     expect(json).toContain('2026-10-06');
     expect(json).toContain('"align":"end"');
     expect(json).toContain('"weight":"bold"');
-    expect(json).not.toContain('✓');
+    expect(json).toContain('✓');
   });
 });
 
@@ -72,18 +74,45 @@ describe('quotation journey state actions', () => {
     lines: [{ productName: 'App', qty: 1, priceUnit: 100, subtotal: 100 }],
   };
 
-  it('shows Confirm and Send on a draft for admin', () => {
-    const json = JSON.stringify(createQuotationJourneyFlexMessage(
+  it('shows Confirm beside Send on a draft, then View Quote, Download PDF, and Home', () => {
+    const message = createQuotationJourneyFlexMessage(
       { ...order, state: 'draft' },
       { role: 'admin', portalLink: 'https://example.com/q', pdfLink: 'https://example.com/p' },
       'en',
-    ));
+    );
+    const json = JSON.stringify(message);
     expect(json).toContain('Quotation');
     expect(json).toContain('QUOTE CONFIRM 17');
     expect(json).toContain('QUOTE SEND 17');
+    expect(json).toContain('View Quote');
+    expect(json).toContain('Download PDF');
+    expect(json).toContain('NAV HOME');
+    expect(json).toContain('QUOTE CREATE MORE 17');
+    expect(json).toContain('Create More');
+    const contents = message.contents;
+    expect(contents.type).toBe('bubble');
+    if (contents.type !== 'bubble' || contents.footer?.type !== 'box') {
+      throw new Error('expected bubble footer');
+    }
+    const footer = contents.footer.contents;
+    expect(footer[0]).toMatchObject({ type: 'box', layout: 'horizontal' });
+    expect(JSON.stringify(footer[0])).toContain('QUOTE CONFIRM 17');
+    expect(JSON.stringify(footer[0])).toContain('QUOTE SEND 17');
   });
 
-  it('hides Send on a sent quotation for admin and labels Quotation Sent', () => {
+  it('hides Edit/Cancel More for a salesperson but keeps Confirm, Send, and Create More', () => {
+    const json = JSON.stringify(createQuotationJourneyFlexMessage(
+      { ...order, state: 'draft' },
+      { role: 'admin', salesTier: 'salesperson', portalLink: 'https://example.com/q', pdfLink: 'https://example.com/p' },
+      'en',
+    ));
+    expect(json).toContain('QUOTE CONFIRM 17');
+    expect(json).toContain('QUOTE SEND 17');
+    expect(json).toContain('QUOTE CREATE MORE 17');
+    expect(json).not.toContain('QUOTE MORE 17');
+  });
+
+  it('keeps Confirm and Send half-width on a sent quotation and labels Quotation Sent', () => {
     const json = JSON.stringify(createQuotationJourneyFlexMessage(
       { ...order, state: 'sent' },
       { role: 'admin', portalLink: 'https://example.com/q', pdfLink: 'https://example.com/p' },
@@ -91,7 +120,9 @@ describe('quotation journey state actions', () => {
     ));
     expect(json).toContain('Quotation Sent');
     expect(json).toContain('QUOTE CONFIRM 17');
-    expect(json).not.toContain('QUOTE SEND 17');
+    expect(json).toContain('QUOTE SEND 17');
+    expect(json).toContain('View Quote');
+    expect(json).toContain('Download PDF');
   });
 
   it('gives the customer View Quote, Download PDF, and Approve when sent', () => {

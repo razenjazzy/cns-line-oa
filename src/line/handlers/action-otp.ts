@@ -6,35 +6,22 @@ import {
   consumeActionOtpChallenge,
   setLastActionOtpAt,
   type UserLanguage,
-  type UserProfile,
 } from '../../services/firestore';
 import { generateOtp } from '../../services/user-verification';
 import { isOtpGatedCommand } from '../../services/service-catalog';
+
+export const isGatedMutation = isOtpGatedCommand;
 
 const tr = (language: UserLanguage, th: string, en: string): string => (language === 'en' ? en : th);
 
 const botText = (title: string, body: string, language: UserLanguage, tone: 'info' | 'success' | 'warning' | 'error') =>
   createBotTextFlexMessage({ title, body, language, tone });
 
-const ACTION_OTP_WINDOW_MINUTES = Number(process.env.ACTION_OTP_WINDOW_MINUTES || 10);
-
 /**
- * Which commands require a fresh step-up OTP is now declared once, on
- * service-catalog.ts's COMMAND_PREFIX_SERVICE_MAP (`requiresOtp`), so this
- * gate and the channel/service-gating map can't drift apart the way two
- * separately hand-maintained lists could. View-only commands (QUOTE STATUS,
- * QUOTE LIST, USER READ, SERVICE READ/LIST) are deliberately not gated
- * there. ADMIN ENABLE/DISABLE remain ungated too: they already require
- * passing the separate ADMIN_USER_ID-allowlist + Odoo admin-capability
- * chain, a stronger check than a fresh OTP would add on top.
+ * Which commands require a fresh step-up OTP is declared on service-catalog
+ * (`requiresOtp`). Every CUD prompts ACTION VERIFY; the 10-minute reuse
+ * window is gone so a second mutation cannot skip the popup.
  */
-export const isGatedMutation = isOtpGatedCommand;
-
-const hasFreshActionOtp = (profile: UserProfile): boolean => {
-  if (!profile.lastActionOtpAt) return false;
-  const ageMs = Date.now() - new Date(profile.lastActionOtpAt).getTime();
-  return ageMs < ACTION_OTP_WINDOW_MINUTES * 60 * 1000;
-};
 
 // Step-up OTP gate — registered first in the handler registry (see
 // src/line/handlers/index.ts) so it intercepts a gated command before the
@@ -46,7 +33,7 @@ const actionOtpGateHandler: CommandHandler = {
   match: (upperText, ctx) => {
     if (!ctx.profile.odooVerified) return false;
     if (!isGatedMutation(upperText)) return false;
-    return !hasFreshActionOtp(ctx.profile);
+    return !ctx.actionOtpReplay;
   },
   handle: async (ctx) => {
     const { userLanguage, userId, channel, text: originalText } = ctx;
@@ -135,8 +122,7 @@ const actionVerifyHandler: CommandHandler = {
     // very action this code just verified. Patch it in locally instead of
     // re-fetching from Firestore, same "just-written value" shortcut every
     // other handler here already takes after its own writes.
-    const freshProfile = { ...ctx.profile, lastActionOtpAt: new Date().toISOString() };
-    return resolveCommandReply({ ...ctx, profile: freshProfile, text: consumed.data.pendingCommandText });
+    return resolveCommandReply({ ...ctx, actionOtpReplay: true, text: consumed.data.pendingCommandText });
   },
 };
 

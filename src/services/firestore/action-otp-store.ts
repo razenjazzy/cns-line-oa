@@ -32,6 +32,16 @@ export const createActionOtpStore = (dependencies: Dependencies) => ({
                 createdAt,
                 updatedAt: createdAt,
             };
+            const prior = await database.collection('actionOtpChallenges').where('userId', '==', params.userId).get();
+            const batch = database.batch();
+            let expiredPrior = 0;
+            for (const doc of prior.docs) {
+                if (doc.get('status') === 'pending') {
+                    batch.update(doc.ref, { status: 'expired', updatedAt: createdAt, updatedAtServer: FieldValue.serverTimestamp() });
+                    expiredPrior += 1;
+                }
+            }
+            if (expiredPrior) await batch.commit();
             await reference.set({ ...challenge, createdAtServer: FieldValue.serverTimestamp(), updatedAtServer: FieldValue.serverTimestamp() });
             return { ok: true, data: challenge };
         } catch (error) {

@@ -460,7 +460,12 @@ export const markSaleOrderSent = async (orderId: number): Promise<boolean> => {
   try {
     const uid = await login(config);
     if (!uid) return false;
-    await executeKw<boolean>(config, uid, 'sale.order', 'write', [[orderId], { state: 'sent' }]);
+    try {
+      await executeKw<boolean>(config, uid, 'sale.order', 'action_quotation_sent', [[orderId]]);
+    } catch (workflowError) {
+      console.warn('markSaleOrderSent: action_quotation_sent failed, trying write:', workflowError);
+      await executeKw<boolean>(config, uid, 'sale.order', 'write', [[orderId], { state: 'sent' }]);
+    }
 
     try {
       await executeKw<number>(config, uid, 'sale.order', 'message_post', [[orderId]], {
@@ -838,6 +843,28 @@ export const getPartnerByPhone = async (phone: string): Promise<OdooPartner | nu
     'search_read',
     [domain],
     { fields: ['id', 'name', 'phone', 'email'], limit: 1 }
+  );
+
+  if (!rows.length) return null;
+  return parsePartner(rows[0]);
+};
+
+export const getPartnerByName = async (name: string): Promise<OdooPartner | null> => {
+  const config = getConfig();
+  if (!config) return null;
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+
+  const uid = await loginRead(config);
+  if (!uid) return null;
+
+  const rows = await executeKwRead<Record<string, unknown>[]>(
+    config,
+    uid,
+    'res.partner',
+    'search_read',
+    [[['name', '=', trimmed]]],
+    { fields: ['id', 'name', 'phone', 'email'], limit: 1 },
   );
 
   if (!rows.length) return null;

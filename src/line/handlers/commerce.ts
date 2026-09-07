@@ -11,6 +11,7 @@ import {
   findPaymentTermByName,
   findProductByQuery,
   getProductById,
+  getPartnerByName,
   getPartnerByPhone,
   getSaleOrderById,
   getSaleOrderPortalLink,
@@ -19,6 +20,7 @@ import {
 } from '../../services/odoo';
 import { recordAuditEvent, setLastProductContext } from '../../services/firestore';
 import type { UserLanguage } from '../../services/firestore';
+import { canManageQuoteLines, isQuoteStaff, quoteJourneyRole } from '../quote-access';
 import { getErpAdapter } from '../../erp/registry';
 import { getPlatformStatus } from '../../platform/status';
 
@@ -101,15 +103,21 @@ const demoOrderHandler: CommandHandler = {
       getSaleOrderPortalLink(order.id).then(v => v || undefined),
       getSaleOrderPdfLink(order.id).then(v => v || undefined),
     ]);
-    const role = ctx.profile.role === 'admin' ? 'admin' : 'customer';
-    return [createQuotationJourneyFlexMessage(order, { role, salesTier: ctx.profile.salesTier, portalLink, pdfLink }, userLanguage)];
+    const role = quoteJourneyRole(ctx.profile);
+    return [createQuotationJourneyFlexMessage(order, {
+      role,
+      salesTier: ctx.profile.salesTier,
+      canManageLines: canManageQuoteLines(ctx.profile),
+      portalLink,
+      pdfLink,
+    }, userLanguage)];
   },
 };
 
 // QUOTE CREATE [product,qty,customer,phone] — create Odoo quotation; no payload → guided form
 const demoQuoteHandler: CommandHandler = {
   name: 'commerce-quote-create',
-  match: (u) => u === 'QUOTE CREATE' || u.startsWith('QUOTE CREATE '),
+  match: (u) => u === 'QUOTE CREATE' || (u.startsWith('QUOTE CREATE ') && !u.startsWith('QUOTE CREATE MORE')),
   handle: async (ctx) => {
     const { userLanguage, profile, text, userId, channel, requestId } = ctx;
     const payload = text.trim().replace(/^QUOTE CREATE\s*/i, '').trim();
@@ -138,7 +146,13 @@ const demoQuoteHandler: CommandHandler = {
     // createQuotationFromLine's findOrCreatePartner blindly create/match a
     // bystander contact by name+phone. Unverified/new customers (the
     // common case) fall through to today's behavior unchanged.
-    const existingPartner = profile.role === 'admin' ? await getPartnerByPhone(phone) : null;
+    const namedPartner = await getPartnerByName(customerName);
+    if (namedPartner && phone && namedPartner.phone !== phone) {
+      await getErpAdapter().updateCustomer(namedPartner.id, { phone });
+    }
+    const existingPartner = isQuoteStaff(profile)
+      ? (namedPartner || await getPartnerByPhone(phone))
+      : null;
 
     // Optional field, resolved (not just validated) here — a miss never
     // blocks the quote, it just proceeds without a payment term set
@@ -189,8 +203,14 @@ const demoQuoteHandler: CommandHandler = {
       getSaleOrderPortalLink(quotation.id).then(v => v || undefined),
       getSaleOrderPdfLink(quotation.id).then(v => v || undefined),
     ]);
-    const role = profile.role === 'admin' ? 'admin' : 'customer';
-    const card = createQuotationJourneyFlexMessage(order, { role, salesTier: profile.salesTier, portalLink, pdfLink }, userLanguage);
+    const role = quoteJourneyRole(profile);
+    const card = createQuotationJourneyFlexMessage(order, {
+      role,
+      salesTier: profile.salesTier,
+      canManageLines: canManageQuoteLines(profile),
+      portalLink,
+      pdfLink,
+    }, userLanguage);
 
     if (paymentTermNotFound) {
       return [

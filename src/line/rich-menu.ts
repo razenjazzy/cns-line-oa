@@ -2,26 +2,56 @@ import type { UserLanguage } from '../services/firestore';
 import { DEFAULT_CHANNEL_ID, resolveChannelConfig } from './channels';
 import { appLogger } from '../services/logger';
 
-export const richMenuIdForLanguage = (language: UserLanguage, env: NodeJS.ProcessEnv = process.env): string | undefined => {
+export type RichMenuVariant = 'default' | 'home' | 'verify' | 'commerce' | 'orders' | 'help' | 'language';
+
+const parseMenuMap = (env: NodeJS.ProcessEnv): Record<string, Record<string, string>> => {
+  const raw = env.LINE_RICH_MENU_JSON?.trim();
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as Record<string, Record<string, string>>;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+export const richMenuIdForLanguage = (
+  language: UserLanguage,
+  env: NodeJS.ProcessEnv = process.env,
+  variant: RichMenuVariant = 'default',
+): string | undefined => {
+  const mapped = parseMenuMap(env)[language]?.[variant]?.trim();
+  if (mapped) return mapped;
+  if (variant !== 'default') {
+    const fallbackVariant = parseMenuMap(env)[language]?.default?.trim();
+    if (fallbackVariant) return fallbackVariant;
+  }
   const key = language === 'th' ? 'LINE_RICH_MENU_TH' : 'LINE_RICH_MENU_EN';
   return env[key]?.trim() || undefined;
 };
 
-/**
- * Best-effort per-user rich-menu swap after LANG. Unset LINE_RICH_MENU_EN /
- * LINE_RICH_MENU_TH is a no-op so language still saves when menus are unpublished.
- * Never links the old yellow PNGs — only IDs from env (set by upload-rich-menu.mjs).
- */
+export const trayVariantForCommand = (text: string): RichMenuVariant | undefined => {
+  const upper = text.trim().toUpperCase();
+  if (upper === 'NAV HOME' || upper === 'NAV' || upper === 'BACK') return 'home';
+  if (upper === 'FORM VERIFY') return 'verify';
+  if (upper === 'NAV COMMERCE' || /^NAV\s+COMMERCE$/i.test(text.trim())) return 'commerce';
+  if (upper === 'FORM ORDER STATUS') return 'orders';
+  if (upper === 'GUIDE' || upper.startsWith('GUIDE ')) return 'help';
+  if (upper === 'LANG' || upper === 'LANG EN' || upper === 'LANG TH' || upper === 'ENGLISH' || upper === 'THAI' || upper === 'ภาษาไทย') return 'language';
+  return undefined;
+};
+
 export const linkUserRichMenu = async (
   userId: string,
   language: UserLanguage,
   channelId: string = DEFAULT_CHANNEL_ID,
+  variant: RichMenuVariant = 'default',
 ): Promise<void> => {
-  const richMenuId = richMenuIdForLanguage(language);
+  const richMenuId = richMenuIdForLanguage(language, process.env, variant);
   if (!richMenuId) return;
   const channel = resolveChannelConfig(channelId || DEFAULT_CHANNEL_ID);
   if (!channel) {
-    appLogger.warn('rich_menu_link_skipped_no_channel', { channelId, language });
+    appLogger.warn('rich_menu_link_skipped_no_channel', { channelId, language, variant });
     return;
   }
   try {
@@ -30,9 +60,9 @@ export const linkUserRichMenu = async (
       { method: 'POST', headers: { Authorization: `Bearer ${channel.channelAccessToken}` } },
     );
     if (!response.ok) {
-      appLogger.warn('rich_menu_link_failed', { language, status: response.status, body: await response.text() });
+      appLogger.warn('rich_menu_link_failed', { language, variant, status: response.status, body: await response.text() });
     }
   } catch (error) {
-    appLogger.warn('rich_menu_link_failed', { language, error: String(error) });
+    appLogger.warn('rich_menu_link_failed', { language, variant, error: String(error) });
   }
 };

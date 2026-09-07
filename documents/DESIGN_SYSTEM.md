@@ -132,9 +132,10 @@ LINE size **2500×843** (not the tall 2500×1686 canvas). Tokens:
 
 - Canvas: `#F3F5F4`. Tile pad **20px**, corner radius **28px**, label **48px**
   semibold sentence case
-- Default tiles: `tealTint` fill, `tealStrong` marks
-- Verify (active): `teal` fill, white marks — sends `FORM VERIFY`
-- Language: `goldTint` fill, `gold` marks — sends `LANG`
+- Default tiles: `tealTint` fill, `tealStrong` marks (Verify and Language
+  are **not** permanently filled)
+- Active tile only: `teal` fill, white marks — after that tray tap LINE
+  links `menu-{lang}-{id}.png` via `LINE_RICH_MENU_JSON`
 - Layout 2×3, icon above text: Home (`NAV HOME`), Verify, Products & Quotes
   (`NAV commerce`), Order Status (`FORM ORDER STATUS`), Help (`GUIDE`),
   Language

@@ -17,6 +17,16 @@ export const createVerificationStore = (dependencies: Dependencies) => ({
             const now = new Date();
             const createdAt = now.toISOString();
             const expiresAt = new Date(now.getTime() + dependencies.ttlMinutes(params) * 60 * 1000).toISOString();
+            const prior = await database.collection('odooVerifications').where('userId', '==', params.userId).get();
+            const batch = database.batch();
+            let expiredPrior = 0;
+            for (const doc of prior.docs) {
+                if (doc.get('status') === 'pending') {
+                    batch.update(doc.ref, { status: 'expired', updatedAt: createdAt, updatedAtServer: FieldValue.serverTimestamp() });
+                    expiredPrior += 1;
+                }
+            }
+            if (expiredPrior) await batch.commit();
             const challengeRef = database.collection('odooVerifications').doc();
             const challenge: OdooVerificationChallenge = {
                 id: challengeRef.id,

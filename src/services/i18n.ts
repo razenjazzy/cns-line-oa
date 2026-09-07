@@ -46,6 +46,7 @@ export const UI_STRINGS = {
   approve: { en: 'Approve', th: 'อนุมัติ' },
   moreActions: { en: 'More', th: 'เพิ่มเติม' },
   sendNow: { en: 'Send', th: 'ส่ง' },
+  createMore: { en: 'Create More', th: 'สร้างเพิ่ม' },
   sendComposerTitle: { en: 'Send quotation', th: 'ส่งใบเสนอราคา' },
   emailTo: { en: 'To', th: 'ถึง' },
   emailSubject: { en: 'Subject', th: 'เรื่อง' },

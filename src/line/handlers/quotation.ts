@@ -1,5 +1,5 @@
 import type { CommandHandler } from './index';
-import { createBotTextFlexMessage, createQuotationJourneyFlexMessage, createQuotationListFlexMessage, createQuotationMoreFlexMessage, createQuoteSendComposerFlexMessage } from '../templates';
+import { createBotTextFlexMessage, createFormPromptFlexMessage, createQuotationJourneyFlexMessage, createQuotationListFlexMessage, createQuotationMoreFlexMessage, createQuoteSendComposerFlexMessage } from '../templates';
 import { DEFAULT_CHANNEL_ID, getBrandTitle } from '../channels';
 import {
   getSaleOrderById,
@@ -17,14 +17,16 @@ import {
   getPartnerByPhone,
 } from '../../services/odoo/partners';
 import type { OdooSaleOrder } from '../../services/odoo/types';
-import { findVerifiedUserIdByPhone, getUserLanguage, recordAuditEvent, setLastQuoteListFrom } from '../../services/firestore';
-import type { UserLanguage } from '../../services/firestore';
+import { findVerifiedUserIdByPhone, getUserLanguage, recordAuditEvent, saveApprovalRecord, setLastQuoteListFrom, setUserPendingFlow, setUserSalesTier, transitionStoredApproval } from '../../services/firestore';
+import type { UserLanguage, UserProfile } from '../../services/firestore';
 import { createApprovalRecord } from '../../services/approval-policy';
-import { saveApprovalRecord, transitionStoredApproval } from '../../services/firestore';
 import { t } from '../../services/i18n';
 import { sendTargetedFlexMessage } from '../messaging';
 import { getErpAdapter } from '../../erp/registry';
 import { decodeQuoteListCursor, encodeQuoteListCursor } from '../quote-list-cursor';
+import { FLOW_SPECS } from '../../services/guided-forms';
+import { findOdooSalesTierByPartnerId } from '../../services/odoo/admin';
+import { canManageQuoteLines, isQuoteStaff, quoteJourneyRole } from '../quote-access';
 
 const tr = (language: UserLanguage, th: string, en: string): string => (language === 'en' ? en : th);
 
@@ -50,6 +52,23 @@ const statusRetryActions = (orderId: number, language: UserLanguage) => [
 
 const adminOnlyReply = (language: UserLanguage) =>
   botText(tr(language, 'คำสั่งนี้สำหรับแอดมินเท่านั้น', 'This command is admin-only.'), language);
+
+const staffOnlyReply = (language: UserLanguage) =>
+  botText(tr(language, 'คำสั่งนี้สำหรับพนักงานขาย', 'This action is for sales users.'), language);
+
+const syncStaffProfile = async (userId: string, profile: UserProfile): Promise<UserProfile> => {
+  if (!profile.odooPartnerId) return profile;
+  const salesTier = await findOdooSalesTierByPartnerId(profile.odooPartnerId);
+  if (salesTier !== profile.salesTier) await setUserSalesTier(userId, salesTier);
+  return { ...profile, salesTier };
+};
+
+const staffCardOptions = (profile: UserProfile, links: { portalLink?: string; pdfLink?: string }) => ({
+  role: quoteJourneyRole(profile),
+  salesTier: profile.salesTier,
+  canManageLines: canManageQuoteLines(profile),
+  ...links,
+});
 
 const notFoundReply = (language: UserLanguage) => botText(t('quoteNotFound', language), language);
 
@@ -168,26 +187,26 @@ const quoteStatusHandler: CommandHandler = {
   name: 'quote-status',
   match: (u) => u.startsWith('QUOTE STATUS'),
   handle: async (ctx) => {
-    const { userLanguage, profile, text } = ctx;
+    const { userLanguage, text } = ctx;
     const orderId = parseOrderId(text, 'QUOTE STATUS');
     if (!orderId) return [notFoundReply(userLanguage)];
 
     const order = await getSaleOrderById(orderId);
     if (!order) return [notFoundReply(userLanguage)];
 
-    const role = profile.role === 'admin' ? 'admin' : 'customer';
+    const profile = await syncStaffProfile(ctx.userId, ctx.profile);
     const { portalLink, pdfLink } = await getOrderLinks(orderId);
-    return [createQuotationJourneyFlexMessage(order, { role, salesTier: profile.salesTier, portalLink, pdfLink }, userLanguage)];
+    return [createQuotationJourneyFlexMessage(order, staffCardOptions(profile, { portalLink, pdfLink }), userLanguage)];
   },
 };
 
-// QUOTE CONFIRM <orderId> — admin-only, Quotation -> Sales Order.
+// QUOTE CONFIRM <orderId> — sales staff, Quotation -> Sales Order.
 const quoteConfirmHandler: CommandHandler = {
   name: 'quote-confirm',
   match: (u) => u.startsWith('QUOTE CONFIRM'),
   handle: async (ctx) => {
     const { userLanguage, userId, profile, channel, requestId, text } = ctx;
-    if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
+    if (!isQuoteStaff(profile)) return [staffOnlyReply(userLanguage)];
 
     const orderId = parseOrderId(text, 'QUOTE CONFIRM');
     if (!orderId) return [notFoundReply(userLanguage)];
@@ -216,11 +235,11 @@ const quoteConfirmHandler: CommandHandler = {
       .catch(err => console.warn('quote-confirm: customer notify failed (non-fatal):', err));
 
     const { portalLink, pdfLink } = await getOrderLinks(orderId);
-    return [createQuotationJourneyFlexMessage(order, { role: 'admin', salesTier: profile.salesTier, portalLink, pdfLink }, userLanguage)];
+    return [createQuotationJourneyFlexMessage(order, staffCardOptions(profile, { portalLink, pdfLink }), userLanguage)];
   },
 };
 
-// QUOTE SEND <orderId> — admin-only. Pushes the customer-facing journey
+// QUOTE SEND <orderId> — sales staff. Pushes the customer-facing journey
 // card (Approve + View) to whichever LINE user has already verified with
 // this order's customer phone. LINE can only message a userId that has
 // interacted with the OA before, so a customer who's never messaged the
@@ -231,7 +250,7 @@ const quoteSendHandler: CommandHandler = {
   match: (u) => u.startsWith('QUOTE SEND') && !u.startsWith('QUOTE SEND CONFIRM'),
   handle: async (ctx) => {
     const { userLanguage, profile, text } = ctx;
-    if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
+    if (!isQuoteStaff(profile)) return [staffOnlyReply(userLanguage)];
     const orderId = parseOrderId(text, 'QUOTE SEND');
     if (!orderId) return [notFoundReply(userLanguage)];
     const order = await getSaleOrderById(orderId);
@@ -246,7 +265,7 @@ const quoteSendConfirmHandler: CommandHandler = {
   match: (u) => u.startsWith('QUOTE SEND CONFIRM'),
   handle: async (ctx) => {
     const { userLanguage, userId, profile, channel, requestId, text } = ctx;
-    if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
+    if (!isQuoteStaff(profile)) return [staffOnlyReply(userLanguage)];
 
     const parsed = parseOrderIdAndOptionalEmail(text, 'QUOTE SEND CONFIRM');
     if (!parsed) return [notFoundReply(userLanguage)];
@@ -291,12 +310,12 @@ const quoteSendConfirmHandler: CommandHandler = {
     });
 
     if (!customerUserId && !sendEmail) {
-      return [botText(t('quoteNotLinked', userLanguage), userLanguage), createQuotationJourneyFlexMessage(sentOrder, { role: 'admin', salesTier: profile.salesTier, portalLink, pdfLink }, userLanguage)];
+      return [botText(t('quoteNotLinked', userLanguage), userLanguage), createQuotationJourneyFlexMessage(sentOrder, staffCardOptions(profile, { portalLink, pdfLink }), userLanguage)];
     }
 
     return [
       botText(t('quoteSentToAdmin', userLanguage), userLanguage),
-      createQuotationJourneyFlexMessage(sentOrder, { role: 'admin', salesTier: profile.salesTier, portalLink, pdfLink }, userLanguage),
+      createQuotationJourneyFlexMessage(sentOrder, staffCardOptions(profile, { portalLink, pdfLink }), userLanguage),
     ];
   },
 };
@@ -306,7 +325,7 @@ const quoteMoreHandler: CommandHandler = {
   match: (u) => u.startsWith('QUOTE MORE'),
   handle: async (ctx) => {
     const { userLanguage, profile, text } = ctx;
-    if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
+    if (!canManageQuoteLines(profile)) return [adminOnlyReply(userLanguage)];
     const orderId = parseOrderId(text, 'QUOTE MORE');
     if (!orderId) return [notFoundReply(userLanguage)];
     const order = await getSaleOrderById(orderId);
@@ -388,7 +407,7 @@ const quoteAddHandler: CommandHandler = {
   match: (u) => u.startsWith('QUOTE ADD'),
   handle: async (ctx) => {
     const { userLanguage, userId, profile, channel, requestId, text } = ctx;
-    if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
+    if (!canManageQuoteLines(profile)) return [adminOnlyReply(userLanguage)];
 
     const parsed = parseOrderIdAndProductQty(text, 'QUOTE ADD');
     if (!parsed) return [usageReply(userLanguage, 'QUOTE ADD 17 Widget,2')];
@@ -425,7 +444,7 @@ const quoteAddHandler: CommandHandler = {
       .catch(err => console.warn('quote-add: customer notify failed (non-fatal):', err));
 
     const { portalLink, pdfLink } = await getOrderLinks(parsed.orderId);
-    return [createQuotationJourneyFlexMessage(order, { role: 'admin', salesTier: profile.salesTier, portalLink, pdfLink }, userLanguage)];
+    return [createQuotationJourneyFlexMessage(order, staffCardOptions(profile, { portalLink, pdfLink }), userLanguage)];
   },
 };
 
@@ -437,7 +456,7 @@ const quoteEditHandler: CommandHandler = {
   match: (u) => u.startsWith('QUOTE EDIT'),
   handle: async (ctx) => {
     const { userLanguage, userId, profile, channel, requestId, text } = ctx;
-    if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
+    if (!canManageQuoteLines(profile)) return [adminOnlyReply(userLanguage)];
 
     const parsed = parseOrderIdAndProductQty(text, 'QUOTE EDIT');
     if (!parsed) return [usageReply(userLanguage, 'QUOTE EDIT 17 Widget,3')];
@@ -464,7 +483,7 @@ const quoteEditHandler: CommandHandler = {
       .catch(err => console.warn('quote-edit: customer notify failed (non-fatal):', err));
 
     const { portalLink, pdfLink } = await getOrderLinks(parsed.orderId);
-    return [createQuotationJourneyFlexMessage(order, { role: 'admin', salesTier: profile.salesTier, portalLink, pdfLink }, userLanguage)];
+    return [createQuotationJourneyFlexMessage(order, staffCardOptions(profile, { portalLink, pdfLink }), userLanguage)];
   },
 };
 
@@ -477,7 +496,7 @@ const quoteRemoveHandler: CommandHandler = {
   match: (u) => u.startsWith('QUOTE REMOVE'),
   handle: async (ctx) => {
     const { userLanguage, userId, profile, channel, requestId, text } = ctx;
-    if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
+    if (!canManageQuoteLines(profile)) return [adminOnlyReply(userLanguage)];
 
     const parsed = parseOrderIdAndProductName(text, 'QUOTE REMOVE');
     if (!parsed) return [usageReply(userLanguage, 'QUOTE REMOVE 17 Widget')];
@@ -504,7 +523,7 @@ const quoteRemoveHandler: CommandHandler = {
       .catch(err => console.warn('quote-remove: customer notify failed (non-fatal):', err));
 
     const { portalLink, pdfLink } = await getOrderLinks(parsed.orderId);
-    return [createQuotationJourneyFlexMessage(order, { role: 'admin', salesTier: profile.salesTier, portalLink, pdfLink }, userLanguage)];
+    return [createQuotationJourneyFlexMessage(order, staffCardOptions(profile, { portalLink, pdfLink }), userLanguage)];
   },
 };
 
@@ -516,7 +535,7 @@ const quoteCancelHandler: CommandHandler = {
   match: (u) => u.startsWith('QUOTE CANCEL'),
   handle: async (ctx) => {
     const { userLanguage, userId, profile, channel, requestId, text } = ctx;
-    if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
+    if (!canManageQuoteLines(profile)) return [adminOnlyReply(userLanguage)];
     // Manager-level action per Odoo's own convention — never trust which
     // buttons the client happened to render (same discipline as QUOTE
     // APPROVE's partner-id check). Undefined tier (no linked Odoo user,
@@ -549,7 +568,7 @@ const quoteCancelHandler: CommandHandler = {
       .catch(err => console.warn('quote-cancel: customer notify failed (non-fatal):', err));
 
     const { portalLink, pdfLink } = await getOrderLinks(orderId);
-    return [createQuotationJourneyFlexMessage(order, { role: 'admin', salesTier: profile.salesTier, portalLink, pdfLink }, userLanguage)];
+    return [createQuotationJourneyFlexMessage(order, staffCardOptions(profile, { portalLink, pdfLink }), userLanguage)];
   },
 };
 
@@ -561,7 +580,7 @@ const quoteInvoiceHandler: CommandHandler = {
   match: (u) => u.startsWith('QUOTE INVOICE'),
   handle: async (ctx) => {
     const { userLanguage, userId, profile, channel, requestId, text } = ctx;
-    if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
+    if (!canManageQuoteLines(profile)) return [adminOnlyReply(userLanguage)];
     // Manager-level action per Odoo's own convention — see the matching
     // check in quote-cancel above.
     if (profile.salesTier === 'salesperson') {
@@ -594,7 +613,7 @@ const quoteInvoiceHandler: CommandHandler = {
     }
 
     const { portalLink, pdfLink } = await getOrderLinks(orderId);
-    return [createQuotationJourneyFlexMessage(order, { role: 'admin', salesTier: profile.salesTier, portalLink, pdfLink }, userLanguage)];
+    return [createQuotationJourneyFlexMessage(order, staffCardOptions(profile, { portalLink, pdfLink }), userLanguage)];
   },
 };
 
@@ -636,7 +655,7 @@ const quoteListHandler: CommandHandler = {
 
     let partnerId: number | undefined;
     if (phoneArg && !phoneArg.startsWith('OFFSET') && !phoneArg.startsWith('FROM')) {
-      if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
+      if (!isQuoteStaff(profile)) return [staffOnlyReply(userLanguage)];
       const partner = await getPartnerByPhone(phoneArg);
       partnerId = partner?.id;
     } else {
@@ -672,7 +691,7 @@ const quoteMessageHandler: CommandHandler = {
   match: (u) => u.startsWith('QUOTE MESSAGE'),
   handle: async (ctx) => {
     const { userLanguage, userId, profile, channel, requestId, text } = ctx;
-    if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
+    if (!isQuoteStaff(profile)) return [staffOnlyReply(userLanguage)];
 
     const parsed = parseOrderIdAndMessage(text, 'QUOTE MESSAGE');
     if (!parsed) return [usageReply(userLanguage, 'QUOTE MESSAGE 17 Your quote is ready for review!')];
@@ -695,7 +714,47 @@ const quoteMessageHandler: CommandHandler = {
   },
 };
 
+const quoteCreateMoreHandler: CommandHandler = {
+  name: 'quote-create-more',
+  match: (u) => u.startsWith('QUOTE CREATE MORE'),
+  handle: async (ctx) => {
+    const { userLanguage, userId, profile, text, agentName } = ctx;
+    if (!isQuoteStaff(profile)) return [staffOnlyReply(userLanguage)];
+    const orderId = parseOrderId(text, 'QUOTE CREATE MORE');
+    if (!orderId) return [notFoundReply(userLanguage)];
+    const order = await getSaleOrderById(orderId);
+    if (!order?.partner_id) return [notFoundReply(userLanguage)];
+    const partner = await getPartnerById(order.partner_id[0]);
+    const customerName = order.partner_id[1];
+    const phone = partner?.phone || '';
+    if (!phone) {
+      return [botText(tr(userLanguage, 'ลูกค้านี้ยังไม่มีเบอร์โทรใน Odoo', 'This customer has no phone in Odoo.'), userLanguage)];
+    }
+    const flowSpec = FLOW_SPECS.QUOTE_CREATE;
+    const collected = { customerName, phone };
+    await setUserPendingFlow(userId, {
+      flow: flowSpec.key,
+      stepIndex: 0,
+      collected,
+      expiresAt: new Date(Date.now() + Number(process.env.GUIDED_FORM_TTL_MINUTES || 10) * 60 * 1000).toISOString(),
+    });
+    const options = flowSpec.fields[0].loadOptions
+      ? await flowSpec.fields[0].loadOptions(collected).catch(() => [])
+      : undefined;
+    return [createFormPromptFlexMessage({
+      title: tr(userLanguage, `${agentName} ${flowSpec.labelTh}`, `${agentName} ${flowSpec.labelEn}`),
+      prompt: tr(userLanguage, flowSpec.fields[0].promptTh, flowSpec.fields[0].promptEn),
+      stepIndex: 0,
+      totalSteps: flowSpec.fields.length,
+      language: userLanguage,
+      contextNote: tr(userLanguage, `ลูกค้า: ${customerName}`, `Customer: ${customerName}`),
+      options,
+    })];
+  },
+};
+
 export const quotationHandlers: CommandHandler[] = [
+  quoteCreateMoreHandler,
   quoteStatusHandler,
   quoteConfirmHandler,
   quoteSendConfirmHandler,

@@ -2,6 +2,7 @@ export {
   createPartnerFromLine,
   deletePartnerFromLine,
   getPartnerById,
+  getPartnerByName,
   getPartnerByPhone,
   listPartners,
   updatePartnerFromLine,

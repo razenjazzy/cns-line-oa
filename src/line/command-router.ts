@@ -33,7 +33,8 @@ import { resolveServiceForCommand } from '../services/service-catalog';
 import { FLOW_SPECS, getFlowByStartCommand } from '../services/guided-forms';
 import { createBotTextFlexMessage, createFormPromptFlexMessage, createOptionalSummaryFlexMessage, createServiceHomeFlexMessage } from './templates';
 import { getAvailableServices } from '../services/service-catalog';
-import { ChannelContext, getBrandTitle } from './channels';
+import { ChannelContext, DEFAULT_CHANNEL_ID, getBrandTitle } from './channels';
+import { linkUserRichMenu, trayVariantForCommand } from './rich-menu';
 import type { FlowSpec } from '../services/guided-forms';
 import { COMMAND_HANDLERS } from './handlers/index';
 import { buildKeywordGuidanceMessages } from './handlers/help';
@@ -57,6 +58,8 @@ export type CommandReplyContext = {
   requestId?: string;
   channel?: ChannelContext;
   isGroupContext?: boolean;
+  /** Set only after ACTION VERIFY so the original CUD can run once. */
+  actionOtpReplay?: boolean;
 };
 
 // ---------------------------------------------------------------------------
@@ -122,6 +125,12 @@ const buildFormPromptMessage = async (
   const options = field.loadOptions
     ? await field.loadOptions(collected).catch(err => { console.warn('buildFormPromptMessage: loadOptions failed (non-fatal):', err); return []; })
     : undefined;
+  const savedPhoneNote = field.key === 'phone' && options?.[0]
+    ? tr(language,
+      `เบอร์ใน Odoo: ${options[0]} — กดชิปด้านล่างหรือพิมพ์เบอร์ใหม่`,
+      `Saved in Odoo: ${options[0]}. Tap the chip below or type a new number.`,
+    )
+    : undefined;
   return createFormPromptFlexMessage({
     title: tr(language, `${agentName} ${flowSpec.labelTh}`, `${agentName} ${flowSpec.labelEn}`),
     prompt: promptOverride || tr(language, field.promptTh, field.promptEn),
@@ -130,7 +139,7 @@ const buildFormPromptMessage = async (
     language,
     optional: field.optional,
     options,
-    contextNote,
+    contextNote: contextNote || savedPhoneNote,
     datePickerData: field.widget === 'date' ? bindPostbackData(`form.date.${field.key}`, userId) : undefined,
   });
 };
@@ -160,6 +169,13 @@ const applyFieldDefaults = async (flowSpec: FlowSpec, collected: Record<string, 
     }
   }
   return withDefaults;
+};
+
+const nextUnfilledIndex = (flowSpec: FlowSpec, collected: Record<string, string>, fromIndex: number): number => {
+  const stop = flowSpec.optionalSummaryStartIndex ?? flowSpec.fields.length;
+  let i = fromIndex;
+  while (i < stop && collected[flowSpec.fields[i].key]) i += 1;
+  return i;
 };
 
 const buildOptionalSummaryMessage = (
@@ -275,9 +291,9 @@ const handleGuidedFormStep = async (ctx: CommandReplyContext): Promise<messaging
   }
 
   const collected = { ...pending.collected, [field.key]: value };
-  const nextIndex = pending.stepIndex + 1;
+  const nextIndex = nextUnfilledIndex(flowSpec, collected, pending.stepIndex + 1);
 
-  if (flowSpec.optionalSummaryStartIndex !== undefined && nextIndex === flowSpec.optionalSummaryStartIndex) {
+  if (flowSpec.optionalSummaryStartIndex !== undefined && nextIndex >= flowSpec.optionalSummaryStartIndex) {
     const collectedWithDefaults = await applyFieldDefaults(flowSpec, collected);
     await setUserPendingFlow(userId, {
       flow: flowSpec.key,
@@ -377,7 +393,17 @@ const handleFormCommand = async (ctx: CommandReplyContext): Promise<messagingApi
     collected: {},
     expiresAt: buildFlowExpiry(),
   });
-  return [await buildFormPromptMessage(userLanguage, agentName, flowSpec, 0, userId)];
+  const prompt = await buildFormPromptMessage(userLanguage, agentName, flowSpec, 0, userId);
+  if (flowSpec.key === 'VERIFY' && profile.odooVerified) {
+    return [
+      text(tr(userLanguage,
+        `${agentName} คุณยืนยันตัวตนแล้ว หากยืนยันอีกครั้ง ระบบจะยกเลิกเซสชันเดิมแล้วเริ่มใหม่`,
+        `${agentName} you are already verified. Verify again to replace the previous session and start over.`,
+      ), userLanguage),
+      prompt,
+    ];
+  }
+  return [prompt];
 };
 
 // ---------------------------------------------------------------------------
@@ -388,6 +414,10 @@ const dispatchCommandReply = async (ctx: CommandReplyContext): Promise<messaging
   const { profile, userId, userLanguage, agentName } = ctx;
   const trimmed = ctx.text.trim();
   const upperText = trimmed.toUpperCase();
+  const trayVariant = trayVariantForCommand(trimmed);
+  if (trayVariant && !ctx.isGroupContext) {
+    await linkUserRichMenu(userId, userLanguage, ctx.channel?.channelId || DEFAULT_CHANNEL_ID, trayVariant);
+  }
 
   // Step 1: Guided form intercept
   if (profile.pendingFlow) {

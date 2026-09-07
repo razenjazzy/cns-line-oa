@@ -17,7 +17,7 @@ const QUOTATION_STATE_SEQUENCE = ['draft', 'sent', 'sale'] as const;
  */
 export const createQuotationJourneyFlexMessage = (
   order: OdooSaleOrder,
-  options: { role: 'admin' | 'customer'; salesTier?: 'salesperson' | 'sales_manager'; portalLink?: string; pdfLink?: string },
+  options: { role: 'admin' | 'customer'; salesTier?: 'salesperson' | 'sales_manager'; canManageLines?: boolean; portalLink?: string; pdfLink?: string },
   language: Lang
 ): messagingApi.FlexMessage => {
   const customerName = order.partner_id?.[1] || '-';
@@ -85,32 +85,33 @@ export const createQuotationJourneyFlexMessage = (
   const isSale = order.state === 'sale';
 
   if (options.role === 'admin') {
-    if (!isCancelled && isDraft) {
+    // Draft ("Quotation") and sent share the same first row: Confirm | Send.
+    if (!isCancelled && (isDraft || isSent)) {
       footerRows.push([
         createMessageActionButton(t('confirm', language), `QUOTE CONFIRM ${order.id}`, 'primary', BRAND.teal),
         createMessageActionButton(t('sendNow', language), `QUOTE SEND ${order.id}`, 'secondary', BRAND.tealTint),
       ]);
-    } else if (!isCancelled && isSent) {
-      footerRows.push([
-        createMessageActionButton(t('confirm', language), `QUOTE CONFIRM ${order.id}`, 'primary', BRAND.teal),
-      ]);
     }
     if (options.portalLink || options.pdfLink) {
       footerRows.push([
-        ...(options.portalLink ? [createUriActionButton(t('preview', language), options.portalLink, 'secondary', BRAND.goldTint)] : []),
+        ...(options.portalLink ? [createUriActionButton(t('viewFullQuotation', language), options.portalLink, 'secondary', BRAND.goldTint)] : []),
         ...(options.pdfLink ? [createUriActionButton(t('downloadPdf', language), options.pdfLink, 'secondary', BRAND.goldTint)] : []),
       ]);
     }
     footerRows.push([
-      createMessageActionButton(t('moreActions', language), `QUOTE MORE ${order.id}`, 'secondary', BRAND.tealTint),
+      createMessageActionButton(t('createMore', language), `QUOTE CREATE MORE ${order.id}`, 'secondary', BRAND.tealTint),
     ]);
-    const homeButton = createMessageActionButton(t('home', language), 'NAV HOME', 'secondary', BRAND.goldTint);
-    const lastRow = footerRows[footerRows.length - 1];
-    if (lastRow && lastRow.length === 1) {
-      lastRow.push(homeButton);
-    } else {
-      footerRows.push([homeButton]);
+    const showLineTools = options.canManageLines !== undefined
+      ? options.canManageLines
+      : options.salesTier !== 'salesperson';
+    if (showLineTools) {
+      footerRows.push([
+        createMessageActionButton(t('moreActions', language), `QUOTE MORE ${order.id}`, 'secondary', BRAND.tealTint),
+      ]);
     }
+    footerRows.push([
+      createMessageActionButton(t('home', language), 'NAV HOME', 'secondary', BRAND.goldTint),
+    ]);
   } else if (!isCancelled && isSent) {
     footerRows.push([createMessageActionButton(t('approve', language), `QUOTE APPROVE ${order.id}`, 'primary', BRAND.teal)]);
     if (options.portalLink || options.pdfLink) {

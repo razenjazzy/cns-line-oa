@@ -272,6 +272,12 @@ const createOdooVerificationChallengeInMemory = (params: {
     const ttlMinutes = Math.max(1, Math.trunc(params.ttlMinutes || Number(process.env.ODOO_VERIFY_OTP_TTL_MINUTES || 10)));
     const createdAt = now.toISOString();
     const expiresAt = new Date(now.getTime() + ttlMinutes * 60 * 1000).toISOString();
+    for (const existing of inMemoryVerificationChallenges.values()) {
+      if (existing.userId === params.userId && existing.status === 'pending') {
+        existing.status = 'expired';
+        existing.updatedAt = createdAt;
+      }
+    }
 
     const challenge: OdooVerificationChallenge = {
         id: generateInMemoryId(),
@@ -563,6 +569,12 @@ const createActionOtpChallengeInMemory = (params: { userId: string; channelId: s
         createdAt,
         updatedAt: createdAt,
     };
+    for (const existing of inMemoryActionOtpChallenges.values()) {
+        if (existing.userId === params.userId && existing.status === 'pending') {
+            existing.status = 'expired';
+            existing.updatedAt = createdAt;
+        }
+    }
     inMemoryActionOtpChallenges.set(challenge.id, challenge);
     return { ok: true, data: challenge };
 };

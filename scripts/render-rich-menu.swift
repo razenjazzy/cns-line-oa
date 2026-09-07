@@ -35,6 +35,7 @@ let canvas = NSColor(srgbRed: 0xF3 / 255, green: 0xF5 / 255, blue: 0xF4 / 255, a
 let radius: CGFloat = 28
 let pad: CGFloat = 20
 let fontSize: CGFloat = 48
+let iconStroke: CGFloat = 10
 
 func fillColor(_ name: String?) -> NSColor {
   switch name {
@@ -56,13 +57,21 @@ func roundedRect(_ rect: NSRect, _ r: CGFloat) -> NSBezierPath {
   NSBezierPath(roundedRect: rect, xRadius: r, yRadius: r)
 }
 
+func strokeRoundedRect(_ rect: NSRect, _ r: CGFloat, width: CGFloat = iconStroke) {
+  let path = roundedRect(rect, r)
+  path.lineWidth = width
+  path.lineCapStyle = .round
+  path.lineJoinStyle = .round
+  path.stroke()
+}
+
 func strokeIcon(_ kind: String, in box: NSRect, color: NSColor) {
   let cx = box.midX
   let cy = box.midY
   color.setStroke()
   color.setFill()
   let path = NSBezierPath()
-  path.lineWidth = 8
+  path.lineWidth = iconStroke
   path.lineCapStyle = .round
   path.lineJoinStyle = .round
 
@@ -81,10 +90,10 @@ func strokeIcon(_ kind: String, in box: NSRect, color: NSColor) {
     path.stroke()
   case "verify":
     let circle = NSBezierPath(ovalIn: NSRect(x: cx - 38, y: cy - 38, width: 76, height: 76))
-    circle.lineWidth = 8
+    circle.lineWidth = iconStroke
     circle.stroke()
     let check = NSBezierPath()
-    check.lineWidth = 8
+    check.lineWidth = iconStroke
     check.lineCapStyle = .round
     check.lineJoinStyle = .round
     check.move(to: NSPoint(x: cx - 16, y: cy - 2))
@@ -105,30 +114,34 @@ func strokeIcon(_ kind: String, in box: NSRect, color: NSColor) {
   case "grid":
     for col in 0..<2 {
       for row in 0..<2 {
-        let x = cx - 32 + CGFloat(col) * 38
-        let y = cy - 32 + CGFloat(row) * 38
-        roundedRect(NSRect(x: x, y: y, width: 26, height: 26), 4).stroke()
+        let x = cx - 34 + CGFloat(col) * 38
+        let y = cy - 34 + CGFloat(row) * 38
+        strokeRoundedRect(NSRect(x: x, y: y, width: 30, height: 30), 5)
       }
     }
   case "help":
     let circle = NSBezierPath(ovalIn: NSRect(x: cx - 38, y: cy - 38, width: 76, height: 76))
-    circle.lineWidth = 8
+    circle.lineWidth = iconStroke
     circle.stroke()
     let q = NSBezierPath()
-    q.lineWidth = 8
+    q.lineWidth = iconStroke
     q.lineCapStyle = .round
     q.move(to: NSPoint(x: cx - 12, y: cy + 10))
     q.curve(to: NSPoint(x: cx, y: cy - 6), controlPoint1: NSPoint(x: cx - 12, y: cy + 28), controlPoint2: NSPoint(x: cx + 16, y: cy + 22))
     q.line(to: NSPoint(x: cx, y: cy - 14))
     q.stroke()
     NSBezierPath(ovalIn: NSRect(x: cx - 4, y: cy - 30, width: 8, height: 8)).fill()
-  default: // globe
+  default: // globe — meridians must use the same 8pt stroke as the rim
     let circle = NSBezierPath(ovalIn: NSRect(x: cx - 36, y: cy - 36, width: 72, height: 72))
-    circle.lineWidth = 8
+    circle.lineWidth = iconStroke
+    circle.lineCapStyle = .round
     circle.stroke()
-    NSBezierPath(ovalIn: NSRect(x: cx - 14, y: cy - 36, width: 28, height: 72)).stroke()
+    let meridian = NSBezierPath(ovalIn: NSRect(x: cx - 14, y: cy - 36, width: 28, height: 72))
+    meridian.lineWidth = iconStroke
+    meridian.lineCapStyle = .round
+    meridian.stroke()
     let equator = NSBezierPath()
-    equator.lineWidth = 8
+    equator.lineWidth = iconStroke
     equator.lineCapStyle = .round
     equator.move(to: NSPoint(x: cx - 36, y: cy))
     equator.line(to: NSPoint(x: cx + 36, y: cy))

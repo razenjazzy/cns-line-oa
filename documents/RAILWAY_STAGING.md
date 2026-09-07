@@ -21,8 +21,11 @@ Set these in the Railway service. Do not commit values.
 |---|---|
 | `APP_ENV` | **Must be `staging`.** Unset + image `NODE_ENV=production` fail-closes to delivery production and turns demo off. |
 | `LINE_CHANNEL_SECRET`, `LINE_CHANNEL_ACCESS_TOKEN` | Test OA, not production |
+| `LINE_CHANNEL_BASIC_ID` | OA `@handle`. Keep the `@`. Used by `/verify/odoo` Return to chat. |
+| `LINE_CHANNEL_ID` | Optional numeric channel id |
 | `LINE_AGENT_NAME_EN`, `LINE_AGENT_NAME_TH` | Optional; defaults Sora / โซระ |
-| `LINE_RICH_MENU_EN`, `LINE_RICH_MENU_TH` | Ids from laptop `npm run rich-menu:upload`. Railway does not publish LINE trays. |
+| `LINE_RICH_MENU_EN`, `LINE_RICH_MENU_TH` | Default trays (every tile mint). From laptop `npm run rich-menu:upload`. |
+| `LINE_RICH_MENU_JSON` | Active-cell variants. Railway does not publish LINE trays. |
 | `GOOGLE_CLOUD_PROJECT` | Firestore project |
 | `GOOGLE_APPLICATION_CREDENTIALS_JSON` | Single-line service account JSON (Railway has no GCP ADC) |
 | `ODOO_URL`, `ODOO_DB`, `ODOO_USERNAME`, `ODOO_API_KEY` | Sandbox Odoo |
