@@ -128,7 +128,7 @@ export const processLineMessageJob = async (input: LineMessageJobInput): Promise
     const client = new messagingApi.MessagingApiClient({ channelAccessToken: input.channelConfig.channelAccessToken });
     const userLanguage = await getUserLanguage(input.conversationId);
     const profile = await getUserProfile(input.conversationId);
-    const agentName = getAgentName();
+    const agentName = getAgentName(userLanguage);
 
     let inputText = input.text?.trim() || '';
     if (!inputText && input.audioMessageId) {

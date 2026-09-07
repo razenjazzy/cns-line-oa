@@ -130,7 +130,7 @@ export const registerDemoRoutes = (app: Express): void => {
 
             const userLanguage = await getUserLanguage(userId);
             const profile = await getUserProfile(userId);
-            const agentName = getAgentName();
+            const agentName = getAgentName(userLanguage);
             const baseUrl = `${req.protocol}://${req.get('host')}`;
 
             const botMessages = await resolveCommandReply({

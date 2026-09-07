@@ -51,7 +51,7 @@ export const createProductPickerFlexMessage = (
   },
 });
 
-export const createProductCardFlexMessage = (productName: string, price: number, stock: number, language: ReportLanguage): messagingApi.FlexMessage => {
+export const createProductCardFlexMessage = (productName: string, price: number, stock: number, language: ReportLanguage = 'en'): messagingApi.FlexMessage => {
   return {
     type: 'flex',
     altText: truncate(language === 'en' ? `Product: ${productName}` : `สินค้า: ${productName}`, 390),
@@ -132,7 +132,7 @@ export const createProductCardFlexMessage = (productName: string, price: number,
   };
 };
 
-export const createOrderSummaryFlexMessage = (total: number, language: ReportLanguage, orderId?: number): messagingApi.FlexMessage => {
+export const createOrderSummaryFlexMessage = (total: number, language: ReportLanguage = 'en', orderId?: number): messagingApi.FlexMessage => {
   return {
     type: 'flex',
     altText: language === 'en' ? 'Order summary' : 'สรุปคำสั่งซื้อ',

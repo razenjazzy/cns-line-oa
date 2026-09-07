@@ -21,6 +21,8 @@ Set these in the Railway service. Do not commit values.
 |---|---|
 | `APP_ENV` | **Must be `staging`.** Unset + image `NODE_ENV=production` fail-closes to delivery production and turns demo off. |
 | `LINE_CHANNEL_SECRET`, `LINE_CHANNEL_ACCESS_TOKEN` | Test OA, not production |
+| `LINE_AGENT_NAME_EN`, `LINE_AGENT_NAME_TH` | Optional; defaults Sora / โซระ |
+| `LINE_RICH_MENU_EN`, `LINE_RICH_MENU_TH` | Ids from laptop `npm run rich-menu:upload`. Railway does not publish LINE trays. |
 | `GOOGLE_CLOUD_PROJECT` | Firestore project |
 | `GOOGLE_APPLICATION_CREDENTIALS_JSON` | Single-line service account JSON (Railway has no GCP ADC) |
 | `ODOO_URL`, `ODOO_DB`, `ODOO_USERNAME`, `ODOO_API_KEY` | Sandbox Odoo |

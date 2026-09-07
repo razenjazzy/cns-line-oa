@@ -2,6 +2,7 @@ import { messagingApi } from '@line/bot-sdk';
 import { t } from '../../services/i18n';
 import { BRAND, createMessageActionButton, createPrefillButton, createTapRow, truncate, type ReportLanguage } from './shared';
 import { SERVICE_ICON } from './navigation';
+import { getBrandTitle } from '../channels';
 import {
   GUIDE_CATEGORY_LABELS,
   GUIDE_CATEGORY_NOTES,
@@ -29,7 +30,7 @@ const CATEGORY_ICON: Record<CommandCategoryKey, string> = {
  */
 export const createGuideCategoriesFlexMessage = (language: ReportLanguage, agentName: string): messagingApi.FlexMessage => ({
   type: 'flex',
-  altText: language === 'en' ? `${agentName} guide` : `คู่มือ ${agentName}`,
+  altText: language === 'en' ? `${getBrandTitle('en')} guide` : `คู่มือ ${getBrandTitle('th')}`,
   contents: {
     type: 'bubble',
     styles: {
@@ -42,7 +43,7 @@ export const createGuideCategoriesFlexMessage = (language: ReportLanguage, agent
       layout: 'vertical',
       paddingAll: 'md',
       contents: [
-        { type: 'text', text: language === 'en' ? `${agentName} guide` : `คู่มือ ${agentName}`, weight: 'bold', size: 'md', color: '#FFFFFF', wrap: true },
+        { type: 'text', text: getBrandTitle(language), weight: 'bold', size: 'md', color: '#FFFFFF', wrap: true },
         { type: 'text', text: language === 'en' ? 'Tap a topic to see its commands' : 'แตะหัวข้อเพื่อดูคำสั่ง', size: 'xs', color: '#DDEBE9', margin: 'xs', wrap: true },
       ],
     },
@@ -76,7 +77,7 @@ export const createGuideCategoryFlexMessage = (category: CommandCategoryKey, lan
 
   return {
     type: 'flex',
-    altText: truncate(`${agentName} guide — ${label}`, 390),
+        altText: truncate(`${getBrandTitle(language)} — ${label}`, 390),
     contents: {
       type: 'bubble',
       styles: {

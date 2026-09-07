@@ -334,7 +334,7 @@ export const processChatMessage = async (
   userText: string,
   language: ChatLanguage,
 ): Promise<ChatResult> => {
-  const agentName = getAgentName();
+  const agentName = getAgentName(language);
   const isThai = language === 'th';
 
   // AI disabled globally — skip straight to heuristic

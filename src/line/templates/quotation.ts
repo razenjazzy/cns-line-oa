@@ -80,13 +80,19 @@ export const createQuotationJourneyFlexMessage = (
   // simple regardless of how many actions the admin has available for this
   // state — mirrors Odoo web's own button visibility per state.
   const footerRows: messagingApi.FlexButton[][] = [];
-  const canStillAct = !isCancelled && order.state !== 'sale';
+  const isDraft = order.state === 'draft';
+  const isSent = order.state === 'sent';
+  const isSale = order.state === 'sale';
 
   if (options.role === 'admin') {
-    if (canStillAct) {
+    if (!isCancelled && isDraft) {
       footerRows.push([
         createMessageActionButton(t('confirm', language), `QUOTE CONFIRM ${order.id}`, 'primary', BRAND.teal),
         createMessageActionButton(t('sendNow', language), `QUOTE SEND ${order.id}`, 'secondary', BRAND.tealTint),
+      ]);
+    } else if (!isCancelled && isSent) {
+      footerRows.push([
+        createMessageActionButton(t('confirm', language), `QUOTE CONFIRM ${order.id}`, 'primary', BRAND.teal),
       ]);
     }
     if (options.portalLink || options.pdfLink) {
@@ -98,26 +104,28 @@ export const createQuotationJourneyFlexMessage = (
     footerRows.push([
       createMessageActionButton(t('moreActions', language), `QUOTE MORE ${order.id}`, 'secondary', BRAND.tealTint),
     ]);
-  } else {
-    if (canStillAct) {
-      footerRows.push([createMessageActionButton(t('confirm', language), `QUOTE APPROVE ${order.id}`, 'primary', BRAND.teal)]);
+    const homeButton = createMessageActionButton(t('home', language), 'NAV HOME', 'secondary', BRAND.goldTint);
+    const lastRow = footerRows[footerRows.length - 1];
+    if (lastRow && lastRow.length === 1) {
+      lastRow.push(homeButton);
+    } else {
+      footerRows.push([homeButton]);
     }
+  } else if (!isCancelled && isSent) {
+    footerRows.push([createMessageActionButton(t('approve', language), `QUOTE APPROVE ${order.id}`, 'primary', BRAND.teal)]);
     if (options.portalLink || options.pdfLink) {
       footerRows.push([
         ...(options.portalLink ? [createUriActionButton(t('viewFullQuotation', language), options.portalLink, 'secondary', BRAND.tealTint)] : []),
         ...(options.pdfLink ? [createUriActionButton(t('downloadPdf', language), options.pdfLink, 'secondary', BRAND.tealTint)] : []),
       ]);
     }
-  }
-  // Compactness: Home rides along on the last row if there's still room
-  // for a third button (rows stay legible up to 2 across; a row already
-  // at 2 gets Home as its own row rather than cramming to 3).
-  const homeButton = createMessageActionButton(t('home', language), 'NAV HOME', 'secondary', BRAND.goldTint);
-  const lastRow = footerRows[footerRows.length - 1];
-  if (lastRow && lastRow.length === 1) {
-    lastRow.push(homeButton);
-  } else {
-    footerRows.push([homeButton]);
+  } else if (!isCancelled && isSale && options.pdfLink) {
+    footerRows.push([createUriActionButton(t('downloadPdf', language), options.pdfLink, 'primary', BRAND.teal)]);
+  } else if (!isCancelled && (options.portalLink || options.pdfLink)) {
+    footerRows.push([
+      ...(options.portalLink ? [createUriActionButton(t('viewFullQuotation', language), options.portalLink, 'secondary', BRAND.tealTint)] : []),
+      ...(options.pdfLink ? [createUriActionButton(t('downloadPdf', language), options.pdfLink, 'secondary', BRAND.tealTint)] : []),
+    ]);
   }
 
   const footerContents: messagingApi.FlexComponent[] = footerRows.map(row =>
@@ -141,7 +149,8 @@ export const createQuotationJourneyFlexMessage = (
         layout: 'vertical',
         paddingAll: 'md',
         contents: [
-          { type: 'text', text: order.name, weight: 'bold', size: 'lg', color: '#FFFFFF', wrap: true },
+          { type: 'text', text: isCancelled ? stateLabel('cancel', language) : stateLabel(order.state, language), weight: 'bold', size: 'lg', color: '#FFFFFF', wrap: true },
+          { type: 'text', text: order.name, size: 'sm', color: '#DDEBE9', margin: 'xs', wrap: true },
           { type: 'text', text: `${t('customer', language)}: ${customerName}`, size: 'xs', color: '#DDEBE9', margin: 'xs', wrap: true },
         ],
       },
@@ -203,7 +212,7 @@ export const createQuotationJourneyFlexMessage = (
         type: 'box',
         layout: 'vertical',
         spacing: 'sm',
-        contents: footerContents,
+        contents: footerContents.length ? footerContents : [{ type: 'text', text: ' ', size: 'xs', color: BRAND.surface }],
       },
     },
   };
@@ -228,6 +237,9 @@ export const createQuotationMoreFlexMessage = (
         { ...createPrefillButton(t('editItem', language), `QUOTE EDIT ${order.id} `, 'secondary', BRAND.tealTint), flex: 1 },
       ],
     });
+    if (order.state === 'sent') {
+      rows.push(createMessageActionButton(t('sendNow', language), `QUOTE SEND ${order.id}`, 'secondary', BRAND.tealTint));
+    }
     if (!isRestrictedToSalesperson) {
       rows.push(createMessageActionButton(t('cancelQuote', language), `QUOTE CANCEL ${order.id}`, 'secondary', BRAND.goldTint));
     }
@@ -268,10 +280,23 @@ export const createQuoteSendComposerFlexMessage = (
   const body = language === 'en'
     ? `Please review quotation ${order.name} (${formatMoney(order.amount_total, language)}). Confirm in LINE or Odoo to proceed.`
     : `กรุณาตรวจสอบใบเสนอราคา ${order.name} (${formatMoney(order.amount_total, language)}) ยืนยันใน LINE หรือ Odoo เพื่อดำเนินการต่อ`;
+  const emailChips = email ? [email] : [];
 
   return {
     type: 'flex',
     altText: truncate(t('sendComposerTitle', language), 390),
+    quickReply: {
+      items: [
+        ...emailChips.map(value => ({
+          type: 'action' as const,
+          action: { type: 'message' as const, label: value, text: `QUOTE SEND CONFIRM ${order.id} ${value}` },
+        })),
+        {
+          type: 'action' as const,
+          action: { type: 'message' as const, label: t('sendNow', language), text: `QUOTE SEND CONFIRM ${order.id}` },
+        },
+      ],
+    },
     contents: {
       type: 'bubble',
       styles: { header: { backgroundColor: BRAND.teal }, body: { backgroundColor: BRAND.surface }, footer: { backgroundColor: BRAND.surface } },
@@ -302,7 +327,8 @@ export const createQuoteSendComposerFlexMessage = (
         layout: 'vertical',
         spacing: 'sm',
         contents: [
-          createMessageActionButton(t('sendNow', language), `QUOTE SEND CONFIRM ${order.id}`, 'primary', BRAND.teal),
+          createMessageActionButton(t('sendNow', language), `QUOTE SEND CONFIRM ${order.id}${email ? ` ${email}` : ''}`, 'primary', BRAND.teal),
+          createPrefillButton(t('typeEmail', language), `QUOTE SEND CONFIRM ${order.id} `, 'secondary', BRAND.tealTint),
           createMessageActionButton(t('back', language), `QUOTE STATUS ${order.id}`, 'secondary', BRAND.goldTint),
         ],
       },

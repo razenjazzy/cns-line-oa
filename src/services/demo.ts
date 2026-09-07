@@ -156,7 +156,7 @@ export const getDemoOverview = async (baseUrl?: string): Promise<DemoOverview> =
     connections: {
       lineOA: {
         configured: isLineConfigured(),
-        agentName: getAgentName(),
+        agentName: getAgentName(getDefaultLanguage()),
         webhookReady: isLineConfigured(),
       },
       odoo: {

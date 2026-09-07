@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FLOW_SPECS, getFlowByStartCommand } from '../src/services/guided-forms';
+import { pickDefaultPaymentTermName } from '../src/services/odoo/sales';
 
 describe('getFlowByStartCommand', () => {
   it('resolves each flow by its exact start command', () => {
@@ -171,5 +172,19 @@ describe('QUOTE_CREATE flow', () => {
 
     const otherOptionalFields = spec.fields.filter(f => f.optional && f.key !== 'validityDate');
     expect(otherOptionalFields.every(f => !f.defaultValue)).toBe(true);
+    expect(spec.fields.find(f => f.key === 'paymentTerm')?.loadDefault).toBeTypeOf('function');
+  });
+});
+
+describe('pickDefaultPaymentTermName', () => {
+  it('prefers Immediate Payment over the first Odoo row', () => {
+    expect(pickDefaultPaymentTermName([
+      { id: 1, name: '30 Days' },
+      { id: 2, name: 'Immediate Payment' },
+    ])).toBe('Immediate Payment');
+  });
+
+  it('falls back to the first named term', () => {
+    expect(pickDefaultPaymentTermName([{ id: 1, name: '15 Days' }])).toBe('15 Days');
   });
 });

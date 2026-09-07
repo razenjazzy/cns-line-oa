@@ -7,6 +7,8 @@ export {
   findOrderByReference,
   findPaymentTermByName,
   listPaymentTerms,
+  pickDefaultPaymentTermName,
+  getDefaultPaymentTermName,
   findSaleOrderLineByProduct,
   getSaleOrderById,
   getSaleOrderPdfLink,

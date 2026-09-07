@@ -33,7 +33,7 @@ import { resolveServiceForCommand } from '../services/service-catalog';
 import { FLOW_SPECS, getFlowByStartCommand } from '../services/guided-forms';
 import { createBotTextFlexMessage, createFormPromptFlexMessage, createOptionalSummaryFlexMessage, createServiceHomeFlexMessage } from './templates';
 import { getAvailableServices } from '../services/service-catalog';
-import { ChannelContext } from './channels';
+import { ChannelContext, getBrandTitle } from './channels';
 import type { FlowSpec } from '../services/guided-forms';
 import { COMMAND_HANDLERS } from './handlers/index';
 import { buildKeywordGuidanceMessages } from './handlers/help';
@@ -73,16 +73,14 @@ const inferTone = (value: string): 'info' | 'success' | 'warning' | 'error' => {
   return 'info';
 };
 
-const inferLanguage = (value: string): UserLanguage => /[\u0E00-\u0E7F]/.test(value) ? 'th' : 'en';
-
 export const text = (
   value: string,
-  language: UserLanguage = inferLanguage(value),
+  language: UserLanguage = 'en',
   title?: string,
   actions?: { label: string; text: string; style?: 'primary' | 'secondary' }[],
 ): messagingApi.Message =>
   createBotTextFlexMessage({
-    title: title || tr(language, 'ผู้ช่วย Cloudnex', 'Cloudnex assistant'),
+    title: title || getBrandTitle(language),
     body: value,
     language,
     tone: inferTone(value),
@@ -118,10 +116,11 @@ const buildFormPromptMessage = async (
   userId: string,
   promptOverride?: string,
   contextNote?: string,
+  collected: Record<string, string> = {},
 ): Promise<messagingApi.Message> => {
   const field = flowSpec.fields[stepIndex];
   const options = field.loadOptions
-    ? await field.loadOptions().catch(err => { console.warn('buildFormPromptMessage: loadOptions failed (non-fatal):', err); return []; })
+    ? await field.loadOptions(collected).catch(err => { console.warn('buildFormPromptMessage: loadOptions failed (non-fatal):', err); return []; })
     : undefined;
   return createFormPromptFlexMessage({
     title: tr(language, `${agentName} ${flowSpec.labelTh}`, `${agentName} ${flowSpec.labelEn}`),
@@ -143,14 +142,23 @@ const buildFormPromptMessage = async (
  * flow's earlier linear phase, before summary mode existed for this
  * field range). Never overwrites a value the user already provided.
  */
-const applyFieldDefaults = (flowSpec: FlowSpec, collected: Record<string, string>): Record<string, string> => {
+const applyFieldDefaults = async (flowSpec: FlowSpec, collected: Record<string, string>): Promise<Record<string, string>> => {
   const startIndex = flowSpec.optionalSummaryStartIndex ?? flowSpec.fields.length;
   const withDefaults = { ...collected };
-  flowSpec.fields.slice(startIndex).forEach(field => {
-    if (!withDefaults[field.key] && field.defaultValue) {
+  for (const field of flowSpec.fields.slice(startIndex)) {
+    if (withDefaults[field.key]) continue;
+    if (field.defaultValue) {
       withDefaults[field.key] = field.defaultValue();
+      continue;
     }
-  });
+    if (field.loadDefault) {
+      const loaded = await field.loadDefault().catch(err => {
+        console.warn('applyFieldDefaults: loadDefault failed (non-fatal):', err);
+        return undefined;
+      });
+      if (loaded) withDefaults[field.key] = loaded;
+    }
+  }
   return withDefaults;
 };
 
@@ -212,7 +220,7 @@ const handleGuidedFormStep = async (ctx: CommandReplyContext): Promise<messaging
       const idx = Number(fieldMatch[1]);
       if (flowSpec.fields[idx]) {
         await setUserPendingFlow(userId, { ...pending, editingFieldIndex: idx, expiresAt: buildFlowExpiry() });
-        return [await buildFormPromptMessage(userLanguage, agentName, flowSpec, idx, userId)];
+        return [await buildFormPromptMessage(userLanguage, agentName, flowSpec, idx, userId, undefined, undefined, pending.collected)];
       }
     }
 
@@ -228,6 +236,8 @@ const handleGuidedFormStep = async (ctx: CommandReplyContext): Promise<messaging
             `ค่าที่กรอกไม่ถูกต้อง กรุณาลองใหม่\n${field.promptTh}`,
             `That doesn't look right, please try again.\n${field.promptEn}`,
           ),
+          undefined,
+          pending.collected,
         )];
       }
 
@@ -259,6 +269,8 @@ const handleGuidedFormStep = async (ctx: CommandReplyContext): Promise<messaging
         `ค่าที่กรอกไม่ถูกต้อง กรุณาลองใหม่\n${field.promptTh}`,
         `That doesn't look right, please try again.\n${field.promptEn}`,
       ),
+      undefined,
+      pending.collected,
     )];
   }
 
@@ -266,7 +278,7 @@ const handleGuidedFormStep = async (ctx: CommandReplyContext): Promise<messaging
   const nextIndex = pending.stepIndex + 1;
 
   if (flowSpec.optionalSummaryStartIndex !== undefined && nextIndex === flowSpec.optionalSummaryStartIndex) {
-    const collectedWithDefaults = applyFieldDefaults(flowSpec, collected);
+    const collectedWithDefaults = await applyFieldDefaults(flowSpec, collected);
     await setUserPendingFlow(userId, {
       flow: flowSpec.key,
       stepIndex: nextIndex,
@@ -289,7 +301,7 @@ const handleGuidedFormStep = async (ctx: CommandReplyContext): Promise<messaging
     collected,
     expiresAt: buildFlowExpiry(),
   });
-  return [await buildFormPromptMessage(userLanguage, agentName, flowSpec, nextIndex, userId)];
+  return [await buildFormPromptMessage(userLanguage, agentName, flowSpec, nextIndex, userId, undefined, undefined, collected)];
 };
 
 // ---------------------------------------------------------------------------
@@ -302,6 +314,13 @@ const handleFormCommand = async (ctx: CommandReplyContext): Promise<messagingApi
 
   if (!upperText.startsWith('FORM ')) return null;
 
+  if (/^FORM FIELD \d+$/.test(upperText)) {
+    return [text(tr(userLanguage,
+      `${agentName} ฟิลด์นี้ไม่ได้เปิดอยู่ กรุณาเริ่มสร้างใบเสนอราคาใหม่`,
+      `${agentName} that field is no longer open. Start Create a quote again.`,
+    ), userLanguage)];
+  }
+
   if (upperText === 'FORM QUOTE CREATE FROM CARD') {
     const product = profile.lastProductContext;
     const flowSpec = FLOW_SPECS.QUOTE_CREATE;
@@ -309,13 +328,13 @@ const handleFormCommand = async (ctx: CommandReplyContext): Promise<messagingApi
       return handleFormCommand({ ...ctx, text: 'FORM QUOTE CREATE' });
     }
     if (flowSpec.requiresAdmin && profile.role !== 'admin') {
-      return [text(tr(userLanguage, 'คำสั่งนี้สำหรับแอดมินเท่านั้น', 'This command is admin-only.'))];
+      return [text(tr(userLanguage, 'คำสั่งนี้สำหรับแอดมินเท่านั้น', 'This command is admin-only.'), userLanguage)];
     }
     if (ctx.isGroupContext) {
       return [text(tr(userLanguage,
         `${agentName} แบบฟอร์มทีละขั้นใช้ไม่ได้ในแชทกลุ่ม กรุณาใช้คำสั่งบรรทัดเดียวแทน`,
         `${agentName} step-by-step forms aren't available in group chats.`,
-      ))];
+      ), userLanguage)];
     }
     const qtyIndex = Math.max(flowSpec.fields.findIndex(field => field.key === 'qty'), 1);
     await setUserPendingFlow(userId, {
@@ -332,23 +351,24 @@ const handleFormCommand = async (ctx: CommandReplyContext): Promise<messagingApi
       userId,
       undefined,
       tr(userLanguage, `ใช้สินค้า: ${product.productName}`, `Using: ${product.productName}`),
+      { productName: product.productName, productId: String(product.productId) },
     )];
   }
 
   const flowSpec = getFlowByStartCommand(upperText);
   if (!flowSpec) {
-    return [text(tr(userLanguage, `${agentName} ไม่พบแบบฟอร์มนี้`, `${agentName} form not found.`))];
+    return [text(tr(userLanguage, `${agentName} ไม่พบแบบฟอร์มนี้`, `${agentName} form not found.`), userLanguage)];
   }
 
   if (flowSpec.requiresAdmin && profile.role !== 'admin') {
-    return [text(tr(userLanguage, 'คำสั่งนี้สำหรับแอดมินเท่านั้น', 'This command is admin-only.'))];
+    return [text(tr(userLanguage, 'คำสั่งนี้สำหรับแอดมินเท่านั้น', 'This command is admin-only.'), userLanguage)];
   }
 
   if (ctx.isGroupContext) {
     return [text(tr(userLanguage,
       `${agentName} แบบฟอร์มทีละขั้นใช้ไม่ได้ในแชทกลุ่ม กรุณาใช้คำสั่งบรรทัดเดียวแทน เช่น: ${flowSpec.startCommand.replace('FORM ', '')} ...`,
       `${agentName} step-by-step forms aren't available in group chats. Please use the single-line command instead, e.g.: ${flowSpec.startCommand.replace('FORM ', '')} ...`,
-    ))];
+    ), userLanguage)];
   }
 
   await setUserPendingFlow(userId, {
@@ -399,14 +419,14 @@ const dispatchCommandReply = async (ctx: CommandReplyContext): Promise<messaging
     return [text(tr(userLanguage,
       `${agentName} บริการนี้ไม่เปิดใช้งานสำหรับช่องทางนี้`,
       `${agentName} this service is not available on this channel.`,
-    ))];
+    ), userLanguage)];
   }
 
   if (isCommandDisabled(upperText)) {
     return [text(tr(userLanguage,
       `${agentName} คำสั่งนี้ถูกปิดใช้งาน`,
       `${agentName} this command is disabled.`,
-    ))];
+    ), userLanguage)];
   }
 
   // Step 4: FORM * guided form start

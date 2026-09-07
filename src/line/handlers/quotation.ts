@@ -1,5 +1,6 @@
 import type { CommandHandler } from './index';
 import { createBotTextFlexMessage, createQuotationJourneyFlexMessage, createQuotationListFlexMessage, createQuotationMoreFlexMessage, createQuoteSendComposerFlexMessage } from '../templates';
+import { DEFAULT_CHANNEL_ID, getBrandTitle } from '../channels';
 import {
   getSaleOrderById,
   getSaleOrderPortalLink,
@@ -21,8 +22,7 @@ import type { UserLanguage } from '../../services/firestore';
 import { createApprovalRecord } from '../../services/approval-policy';
 import { saveApprovalRecord, transitionStoredApproval } from '../../services/firestore';
 import { t } from '../../services/i18n';
-import { sendTargetedMessage, sendTargetedFlexMessage } from '../messaging';
-import { DEFAULT_CHANNEL_ID } from '../channels';
+import { sendTargetedFlexMessage } from '../messaging';
 import { getErpAdapter } from '../../erp/registry';
 import { decodeQuoteListCursor, encodeQuoteListCursor } from '../quote-list-cursor';
 
@@ -37,7 +37,7 @@ const inferTone = (value: string): 'info' | 'success' | 'warning' | 'error' => {
 
 const botText = (value: string, language: UserLanguage, actions?: { label: string; text: string; style?: 'primary' | 'secondary' }[]) =>
   createBotTextFlexMessage({
-    title: tr(language, 'ผู้ช่วย Cloudnex', 'Cloudnex assistant'),
+    title: getBrandTitle(language),
     body: value,
     language,
     tone: inferTone(value),
@@ -67,8 +67,22 @@ const getOrderLinks = async (orderId: number): Promise<{ portalLink?: string; pd
 // CommandHandler.handle() call with mocked Odoo/Firestore.
 export const parseOrderId = (text: string, prefix: string): number | null => {
   const raw = text.trim().replace(new RegExp(`^${prefix}\\s*`, 'i'), '').trim();
-  const id = Number(raw);
+  const first = raw.split(/\s+/)[0] || '';
+  const id = Number(first);
   return Number.isFinite(id) && id > 0 ? id : null;
+};
+
+const isEmailLike = (value: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+
+export const parseOrderIdAndOptionalEmail = (text: string, prefix: string): { orderId: number; email?: string } | null => {
+  const raw = text.trim().replace(new RegExp(`^${prefix}\\s*`, 'i'), '').trim();
+  const [idRaw, ...rest] = raw.split(/\s+/);
+  const orderId = Number(idRaw);
+  if (!Number.isFinite(orderId) || orderId <= 0) return null;
+  const email = rest.join(' ').trim();
+  if (!email) return { orderId };
+  if (!isEmailLike(email)) return null;
+  return { orderId, email: email.toLowerCase() };
 };
 
 // "<prefix> <orderId> <product>,<qty>" — the orderId is a separate token
@@ -234,27 +248,33 @@ const quoteSendConfirmHandler: CommandHandler = {
     const { userLanguage, userId, profile, channel, requestId, text } = ctx;
     if (profile.role !== 'admin') return [adminOnlyReply(userLanguage)];
 
-    const orderId = parseOrderId(text, 'QUOTE SEND CONFIRM');
-    if (!orderId) return [notFoundReply(userLanguage)];
+    const parsed = parseOrderIdAndOptionalEmail(text, 'QUOTE SEND CONFIRM');
+    if (!parsed) return [notFoundReply(userLanguage)];
+    const { orderId } = parsed;
 
     const order = await getSaleOrderById(orderId);
     if (!order || !order.partner_id) return [notFoundReply(userLanguage)];
 
     const partner = await getPartnerById(order.partner_id[0]);
+    const sendEmail = parsed.email || partner?.email;
+    if (parsed.email && partner && parsed.email !== partner.email) {
+      await getErpAdapter().updateCustomer(partner.id, { email: parsed.email });
+    }
     const customerUserId = partner?.phone ? await findVerifiedUserIdByPhone(partner.phone) : null;
 
     await markSaleOrderSent(orderId);
-    if (partner?.email) {
+    if (sendEmail) {
       const subject = userLanguage === 'en' ? `Quotation ${order.name}` : `ใบเสนอราคา ${order.name}`;
       const body = userLanguage === 'en'
         ? `Please review quotation ${order.name}. Confirm in LINE to proceed.`
         : `กรุณาตรวจสอบใบเสนอราคา ${order.name} ยืนยันใน LINE เพื่อดำเนินการต่อ`;
-      await getErpAdapter().sendQuotationEmail(orderId, partner.email, subject, body);
+      await getErpAdapter().sendQuotationEmail(orderId, sendEmail, subject, body);
     }
 
     const sentOrder = (await getSaleOrderById(orderId)) || order;
     const { portalLink, pdfLink } = await getOrderLinks(orderId);
-    const customerCard = createQuotationJourneyFlexMessage(sentOrder, { role: 'customer', portalLink, pdfLink }, userLanguage);
+    const customerLanguage = customerUserId ? await getUserLanguage(customerUserId) : userLanguage;
+    const customerCard = createQuotationJourneyFlexMessage(sentOrder, { role: 'customer', portalLink, pdfLink }, customerLanguage);
 
     if (customerUserId) {
       await sendTargetedFlexMessage([customerUserId], customerCard, channel?.channelId || DEFAULT_CHANNEL_ID);
@@ -262,15 +282,15 @@ const quoteSendConfirmHandler: CommandHandler = {
 
     recordAuditEvent({
       action: 'quote_send',
-      outcome: customerUserId || partner?.email ? 'success' : 'failure',
+      outcome: customerUserId || sendEmail ? 'success' : 'failure',
       actorUserId: userId,
       channelId: channel?.channelId,
       requestId,
       targetId: String(orderId),
-      detail: customerUserId ? 'line' : (partner?.email ? 'email_only' : 'customer_not_linked'),
+      detail: customerUserId ? 'line' : (sendEmail ? 'email_only' : 'customer_not_linked'),
     });
 
-    if (!customerUserId && !partner?.email) {
+    if (!customerUserId && !sendEmail) {
       return [botText(t('quoteNotLinked', userLanguage), userLanguage), createQuotationJourneyFlexMessage(sentOrder, { role: 'admin', salesTier: profile.salesTier, portalLink, pdfLink }, userLanguage)];
     }
 
@@ -341,17 +361,17 @@ const quoteApproveHandler: CommandHandler = {
       // that real mutation completely unaudited.
       recordAuditEvent({ action: 'quote_approve', outcome: 'success', actorUserId: userId, channelId: channel?.channelId, requestId: ctx.requestId, targetId: String(orderId), detail: 'approval_record_save_failed' });
     }
+    const confirmed = (await getSaleOrderById(orderId)) || order;
+    const { portalLink, pdfLink } = await getOrderLinks(orderId);
     if (adminUserId) {
-      // Best-effort notification back to the salesperson — never blocks
-      // the customer's own success reply below.
-      sendTargetedMessage(
+      const adminLanguage = await getUserLanguage(adminUserId);
+      sendTargetedFlexMessage(
         [adminUserId],
-        tr(userLanguage, `ลูกค้าอนุมัติใบเสนอราคา ${order.name} แล้ว`, `Customer approved quotation ${order.name}.`),
+        createQuotationJourneyFlexMessage(confirmed, { role: 'admin', portalLink, pdfLink }, adminLanguage),
+        channel?.channelId || DEFAULT_CHANNEL_ID,
       ).catch(err => console.warn('quote-approve: admin notify failed (non-fatal):', err));
     }
 
-    const confirmed = (await getSaleOrderById(orderId)) || order;
-    const { portalLink, pdfLink } = await getOrderLinks(orderId);
     return [
       botText(t('quoteApproved', userLanguage), userLanguage),
       createQuotationJourneyFlexMessage(confirmed, { role: 'customer', portalLink, pdfLink }, userLanguage),

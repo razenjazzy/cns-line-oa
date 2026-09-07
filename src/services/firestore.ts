@@ -206,7 +206,7 @@ const userProfileRepository = createUserProfileRepository({
     deleteCached: userId => userStateCache.delete(userId),
     read: withFirestoreRead,
     write: withFirestoreWrite,
-    defaultLanguage: getDefaultLanguage('en'),
+    defaultLanguage: getDefaultLanguage(),
     pendingFlowIsActive: isPendingFlowActive,
 });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseOrderId, parseOrderIdAndProductName, parseOrderIdAndProductQty } from '../src/line/handlers/quotation';
+import { parseOrderId, parseOrderIdAndOptionalEmail, parseOrderIdAndProductName, parseOrderIdAndProductQty } from '../src/line/handlers/quotation';
 
 describe('parseOrderId', () => {
   it('parses a valid numeric order id after the prefix', () => {
@@ -16,6 +16,25 @@ describe('parseOrderId', () => {
     expect(parseOrderId('QUOTE CONFIRM 0', 'QUOTE CONFIRM')).toBeNull();
     expect(parseOrderId('QUOTE CONFIRM -5', 'QUOTE CONFIRM')).toBeNull();
     expect(parseOrderId('QUOTE CONFIRM abc', 'QUOTE CONFIRM')).toBeNull();
+  });
+
+  it('reads only the first token so a following email does not break the id', () => {
+    expect(parseOrderId('QUOTE SEND CONFIRM 17 user@example.com', 'QUOTE SEND CONFIRM')).toBe(17);
+  });
+});
+
+describe('parseOrderIdAndOptionalEmail', () => {
+  it('parses an order id with or without an email', () => {
+    expect(parseOrderIdAndOptionalEmail('QUOTE SEND CONFIRM 17', 'QUOTE SEND CONFIRM')).toEqual({ orderId: 17 });
+    expect(parseOrderIdAndOptionalEmail('QUOTE SEND CONFIRM 17 user@example.com', 'QUOTE SEND CONFIRM')).toEqual({
+      orderId: 17,
+      email: 'user@example.com',
+    });
+  });
+
+  it('rejects a missing id or a non-email remainder', () => {
+    expect(parseOrderIdAndOptionalEmail('QUOTE SEND CONFIRM', 'QUOTE SEND CONFIRM')).toBeNull();
+    expect(parseOrderIdAndOptionalEmail('QUOTE SEND CONFIRM 17 not-an-email', 'QUOTE SEND CONFIRM')).toBeNull();
   });
 });
 

@@ -2,12 +2,14 @@ import type { CommandHandler } from './index';
 import { setUserLanguage } from '../../services/firestore';
 import { createBotTextFlexMessage } from '../templates';
 import type { UserLanguage } from '../../services/firestore';
+import { DEFAULT_CHANNEL_ID, getBrandTitle } from '../channels';
+import { linkUserRichMenu } from '../rich-menu';
 
 const tr = (language: UserLanguage, th: string, en: string): string => (language === 'en' ? en : th);
 
 const botText = (value: string, language: UserLanguage) =>
   createBotTextFlexMessage({
-    title: tr(language, 'ผู้ช่วย Cloudnex', 'Cloudnex assistant'),
+    title: getBrandTitle(language),
     body: value,
     language,
     tone: 'success',
@@ -22,12 +24,13 @@ const langThHandler: CommandHandler = {
     const result = await setUserLanguage(userId, 'th');
     if (!result.ok) {
       return [createBotTextFlexMessage({
-        title: tr(userLanguage, 'ผู้ช่วย Cloudnex', 'Cloudnex assistant'),
+        title: getBrandTitle(userLanguage),
         body: tr(userLanguage, 'บันทึกภาษาไม่สำเร็จ กรุณาลองใหม่อีกครั้ง', 'Unable to save language preference. Please try again.'),
         language: userLanguage,
         tone: 'error',
       })];
     }
+    await linkUserRichMenu(userId, 'th', ctx.channel?.channelId || DEFAULT_CHANNEL_ID);
     return [botText(`${agentName} เปลี่ยนภาษาเป็นไทยแล้วค่ะ`, 'th')];
   },
 };
@@ -41,12 +44,13 @@ const langEnHandler: CommandHandler = {
     const result = await setUserLanguage(userId, 'en');
     if (!result.ok) {
       return [createBotTextFlexMessage({
-        title: 'Cloudnex assistant',
+        title: getBrandTitle(userLanguage),
         body: tr(userLanguage, 'บันทึกภาษาไม่สำเร็จ กรุณาลองใหม่อีกครั้ง', 'Unable to save language preference. Please try again.'),
         language: userLanguage,
         tone: 'error',
       })];
     }
+    await linkUserRichMenu(userId, 'en', ctx.channel?.channelId || DEFAULT_CHANNEL_ID);
     return [botText(`${agentName} switched language to English.`, 'en')];
   },
 };
@@ -65,12 +69,13 @@ const langToggleHandler: CommandHandler = {
     const result = await setUserLanguage(userId, target);
     if (!result.ok) {
       return [createBotTextFlexMessage({
-        title: tr(userLanguage, 'ผู้ช่วย Cloudnex', 'Cloudnex assistant'),
+        title: getBrandTitle(userLanguage),
         body: tr(userLanguage, 'บันทึกภาษาไม่สำเร็จ กรุณาลองใหม่อีกครั้ง', 'Unable to save language preference. Please try again.'),
         language: userLanguage,
         tone: 'error',
       })];
     }
+    await linkUserRichMenu(userId, target, ctx.channel?.channelId || DEFAULT_CHANNEL_ID);
     return [botText(target === 'en' ? `${ctx.agentName} switched language to English.` : `${ctx.agentName} เปลี่ยนภาษาเป็นไทยแล้วค่ะ`, target)];
   },
 };

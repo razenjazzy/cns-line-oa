@@ -380,6 +380,41 @@ export const findPaymentTermByName = async (query: string): Promise<{ id: number
   return { id: num(rows[0].id), name: str(rows[0].name) };
 };
 
+/** Prefer Odoo's Immediate Payment (or equivalent) over an arbitrary first row. */
+export const pickDefaultPaymentTermName = (terms: { id: number; name: string }[]): string | undefined => {
+  if (!terms.length) return undefined;
+  const immediate = terms.find(term => /immediate/i.test(term.name));
+  return immediate?.name || terms[0]?.name;
+};
+
+export const getDefaultPaymentTermName = async (): Promise<string | undefined> => {
+  const terms = await listPaymentTerms(20);
+  const config = getConfig();
+  if (config) {
+    const uid = await loginRead(config);
+    if (uid) {
+      try {
+        const defaults = await executeKwRead<Record<string, unknown>>(
+          config,
+          uid,
+          'sale.order',
+          'default_get',
+          [['payment_term_id']],
+        );
+        const raw = defaults?.payment_term_id;
+        const id = Array.isArray(raw) ? num(raw[0]) : num(raw);
+        if (id) {
+          const match = terms.find(term => term.id === id);
+          if (match) return match.name;
+        }
+      } catch (error) {
+        console.warn('Odoo sale.order default_get payment_term_id failed (non-fatal):', error);
+      }
+    }
+  }
+  return pickDefaultPaymentTermName(terms) || 'Immediate Payment';
+};
+
 export const listPaymentTerms = async (limit = 12): Promise<{ id: number; name: string }[]> => {
   const config = getConfig();
   if (!config) return [];
@@ -761,6 +796,25 @@ const getPartnerPhoneFields = async (config: OdooConfig, uid: number): Promise<s
 
   cachedPartnerPhoneFields = fields;
   return fields;
+};
+
+export const listPartners = async (limit = 12): Promise<OdooPartner[]> => {
+  const config = getConfig();
+  if (!config) return [];
+  const uid = await loginRead(config);
+  if (!uid) return [];
+  const fields = ['id', 'name', 'phone', 'email'];
+  const read = async (domain: unknown[]) => executeKwRead<Record<string, unknown>[]>(
+    config, uid, 'res.partner', 'search_read', [domain], { fields, limit, order: 'name asc' },
+  );
+  try {
+    const ranked = await read([['customer_rank', '>', 0]]);
+    if (ranked.length) return ranked.map(parsePartner);
+  } catch {
+    // Older databases without customer_rank fall through.
+  }
+  const withPhone = await read([['phone', '!=', false]]);
+  return withPhone.map(parsePartner);
 };
 
 export const getPartnerByPhone = async (phone: string): Promise<OdooPartner | null> => {

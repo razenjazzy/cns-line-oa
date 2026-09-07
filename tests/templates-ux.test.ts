@@ -1,5 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { createOptionalSummaryFlexMessage, createProductCardFlexMessage, createQuotationJourneyFlexMessage, createQuotationListFlexMessage } from '../src/line/templates';
+import { createFormPromptFlexMessage, createOptionalSummaryFlexMessage, createProductCardFlexMessage, createQuotationJourneyFlexMessage, createQuotationListFlexMessage, createQuoteSendComposerFlexMessage } from '../src/line/templates';
+
+describe('form prompt options', () => {
+  it('keeps product chips in quickReply and out of the bubble body', () => {
+    const message = createFormPromptFlexMessage({
+      title: 'Create a quote',
+      prompt: 'Product name?',
+      stepIndex: 0,
+      totalSteps: 9,
+      language: 'en',
+      options: ['App Premium', 'App Basic'],
+    });
+    const json = JSON.stringify(message);
+    expect(message.quickReply?.items.some(item => item.action.type === 'message' && item.action.text === 'App Premium')).toBe(true);
+    const body = JSON.stringify(message.contents);
+    expect(body).not.toContain('App Premium');
+    expect(json).toContain('Tap an option below');
+  });
+});
 
 describe('product card quote CTA', () => {
   it('starts quote create from the card without re-asking the product', () => {
@@ -11,17 +29,21 @@ describe('product card quote CTA', () => {
 });
 
 describe('optional summary', () => {
-  it('hides empty values and does not show not set', () => {
+  it('shows label left and value right in equal rows without not set', () => {
     const message = createOptionalSummaryFlexMessage({
       title: 'Quote',
-      fields: [{ index: 4, label: 'Note' }, { index: 5, label: 'Discount', value: '10' }],
+      fields: [{ index: 4, label: 'Note' }, { index: 5, label: 'Discount', value: '10' }, { index: 6, label: 'Valid until', value: '2026-10-06' }],
       language: 'en',
       finalizeLabel: 'Create now',
     });
     const json = JSON.stringify(message);
     expect(json).not.toContain('not set');
     expect(json).toContain('10');
-    expect(json).toContain('✓');
+    expect(json).toContain('Valid until');
+    expect(json).toContain('2026-10-06');
+    expect(json).toContain('"align":"end"');
+    expect(json).toContain('"weight":"bold"');
+    expect(json).not.toContain('✓');
   });
 });
 
@@ -38,6 +60,81 @@ describe('quotation journey invoice chip', () => {
       lines: [{ productName: 'App', qty: 1, priceUnit: 100, subtotal: 100 }],
     }, { role: 'admin' }, 'en');
     expect(JSON.stringify(message)).toContain('To invoice');
+  });
+});
+
+describe('quotation journey state actions', () => {
+  const order = {
+    id: 17,
+    name: 'S0017',
+    amount_total: 100,
+    partner_id: [9, 'Somchai'] as [number, string],
+    lines: [{ productName: 'App', qty: 1, priceUnit: 100, subtotal: 100 }],
+  };
+
+  it('shows Confirm and Send on a draft for admin', () => {
+    const json = JSON.stringify(createQuotationJourneyFlexMessage(
+      { ...order, state: 'draft' },
+      { role: 'admin', portalLink: 'https://example.com/q', pdfLink: 'https://example.com/p' },
+      'en',
+    ));
+    expect(json).toContain('Quotation');
+    expect(json).toContain('QUOTE CONFIRM 17');
+    expect(json).toContain('QUOTE SEND 17');
+  });
+
+  it('hides Send on a sent quotation for admin and labels Quotation Sent', () => {
+    const json = JSON.stringify(createQuotationJourneyFlexMessage(
+      { ...order, state: 'sent' },
+      { role: 'admin', portalLink: 'https://example.com/q', pdfLink: 'https://example.com/p' },
+      'en',
+    ));
+    expect(json).toContain('Quotation Sent');
+    expect(json).toContain('QUOTE CONFIRM 17');
+    expect(json).not.toContain('QUOTE SEND 17');
+  });
+
+  it('gives the customer View Quote, Download PDF, and Approve when sent', () => {
+    const json = JSON.stringify(createQuotationJourneyFlexMessage(
+      { ...order, state: 'sent' },
+      { role: 'customer', portalLink: 'https://example.com/q', pdfLink: 'https://example.com/p' },
+      'en',
+    ));
+    expect(json).toContain('QUOTE APPROVE 17');
+    expect(json).toContain('Approve');
+    expect(json).toContain('View Quote');
+    expect(json).toContain('Download PDF');
+    expect(json).not.toContain('NAV HOME');
+    expect(json).not.toContain('QUOTE CONFIRM');
+  });
+
+  it('gives the customer only Download PDF on a sales order', () => {
+    const json = JSON.stringify(createQuotationJourneyFlexMessage(
+      { ...order, state: 'sale' },
+      { role: 'customer', portalLink: 'https://example.com/q', pdfLink: 'https://example.com/p' },
+      'en',
+    ));
+    expect(json).toContain('Sales Order');
+    expect(json).toContain('Download PDF');
+    expect(json).not.toContain('QUOTE APPROVE');
+    expect(json).not.toContain('View Quote');
+    expect(json).not.toContain('NAV HOME');
+  });
+});
+
+describe('quote send composer', () => {
+  it('offers the Odoo partner email as a chip and a type-email prefill', () => {
+    const message = createQuoteSendComposerFlexMessage({
+      id: 17,
+      name: 'S0017',
+      state: 'draft',
+      amount_total: 100,
+      partner_id: [9, 'Somchai'],
+    }, 'somchai@example.com', 'en');
+    const json = JSON.stringify(message);
+    expect(json).toContain('QUOTE SEND CONFIRM 17 somchai@example.com');
+    expect(json).toContain('Type email');
+    expect(json).toContain('somchai@example.com');
   });
 });
 

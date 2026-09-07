@@ -1,6 +1,6 @@
 import { messagingApi } from '@line/bot-sdk';
 import { t, tFill } from '../../services/i18n';
-import { BRAND, buttonLabel, createDatePickerButton, createMessageActionButton, createTapRow, truncate, type ReportLanguage } from './shared';
+import { BRAND, buttonLabel, createDatePickerButton, createMessageActionButton, truncate, type ReportLanguage } from './shared';
 
 export const createFormPromptFlexMessage = (params: {
   title: string;
@@ -83,7 +83,6 @@ export const createFormPromptFlexMessage = (params: {
               { type: 'text', text: params.prompt, size: 'md', color: BRAND.ink, weight: 'bold', margin: 'sm', wrap: true },
             ],
           },
-          ...((params.options || []).slice(0, 8).map(value => createTapRow(value, value, BRAND.tealTint, BRAND.tealStrong))),
         ],
       },
       footer: {
@@ -149,34 +148,29 @@ export const createOptionalSummaryFlexMessage = (params: {
           spacing: 'md' as const,
           backgroundColor: BRAND.paper,
           cornerRadius: BRAND.radius,
-          paddingAll: 'sm' as const,
+          paddingAll: 'md' as const,
+          height: '52px',
           action: { type: 'message' as const, text: `FORM FIELD ${f.index}` },
           contents: [
             {
-              type: 'box' as const,
-              layout: 'vertical' as const,
-              flex: 0,
-              width: '28px',
-              height: '28px',
-              cornerRadius: '14px',
-              backgroundColor: f.value ? '#1B7F3A' : BRAND.paper,
-              justifyContent: 'center' as const,
-              alignItems: 'center' as const,
-              contents: [
-                { type: 'text' as const, text: f.value ? '✓' : '○', size: 'sm' as const, color: f.value ? '#FFFFFF' : BRAND.inkSoft, align: 'center' as const },
-              ],
+              type: 'text' as const,
+              text: f.label,
+              size: 'sm' as const,
+              color: BRAND.inkSoft,
+              wrap: true,
+              flex: 2,
+              gravity: 'center' as const,
             },
             {
-              type: 'box' as const,
-              layout: 'vertical' as const,
-              flex: 1,
-              spacing: 'xs' as const,
-              contents: [
-                { type: 'text' as const, text: f.label, size: 'sm' as const, color: BRAND.ink, wrap: true },
-                ...(f.value
-                  ? [{ type: 'text' as const, text: f.value, size: 'xs' as const, color: BRAND.tealStrong, wrap: true }]
-                  : []),
-              ],
+              type: 'text' as const,
+              text: f.value || '—',
+              size: 'sm' as const,
+              weight: 'bold' as const,
+              color: f.value ? BRAND.ink : BRAND.inkSoft,
+              wrap: true,
+              align: 'end' as const,
+              flex: 3,
+              gravity: 'center' as const,
             },
           ],
         })),

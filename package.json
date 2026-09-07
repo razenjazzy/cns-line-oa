@@ -40,6 +40,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:validators": "vitest run tests/command-validators.test.ts",
+    "rich-menu:generate": "node scripts/generate-rich-menu.mjs",
+    "rich-menu:upload": "node scripts/upload-rich-menu.mjs",
     "lint": "eslint src tests"
   },
   "keywords": [],

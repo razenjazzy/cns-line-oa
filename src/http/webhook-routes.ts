@@ -55,9 +55,9 @@ export const registerWebhookRoutes = (app: Express): void => {
 
             console.log(`[TEST] userId=${userId} channelId=${rawChannelId || 'default'} text="${toSafeLogText(text)}"`);
 
-            const agentName = getAgentName();
             const userLanguage = await getUserLanguage(userId);
             const profile = await getUserProfile(userId);
+            const agentName = getAgentName(userLanguage);
             const baseUrl = `${req.protocol}://${req.get('host')}`;
 
             const botMessages = await resolveCommandReply({

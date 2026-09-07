@@ -14,12 +14,14 @@ describe('application configuration', () => {
     else process.env.ENABLED_SERVICES = originalServices;
   });
 
-  it('supports Thai and English and falls back to Thai', () => {
+  it('supports Thai and English and falls back to English', () => {
     expect(parseAppLanguage('en')).toBe('en');
     expect(parseAppLanguage('TH')).toBe('th');
-    expect(parseAppLanguage('fr')).toBe('th');
-    process.env.DEFAULT_LANGUAGE = 'en';
+    expect(parseAppLanguage('fr')).toBe('en');
+    delete process.env.DEFAULT_LANGUAGE;
     expect(getDefaultLanguage()).toBe('en');
+    process.env.DEFAULT_LANGUAGE = 'th';
+    expect(getDefaultLanguage()).toBe('th');
   });
 
   it('treats an absent service allowlist as unrestricted', () => {

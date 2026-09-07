@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { DEFAULT_CHANNEL_ID, resolveChannelConfig } from '../src/line/channels';
+import { DEFAULT_CHANNEL_ID, getAgentName, getBrandTitle, resolveChannelConfig } from '../src/line/channels';
 
 const ENV_KEYS = [
   'LINE_CHANNEL_SECRET',
@@ -76,5 +76,31 @@ describe('resolveChannelConfig', () => {
 
   it('returns null for an empty channelId', () => {
     expect(resolveChannelConfig('   ')).toBeNull();
+  });
+});
+
+describe('agent name', () => {
+  const keys = ['LINE_AGENT_NAME_EN', 'LINE_AGENT_NAME_TH'];
+  const original: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const key of keys) {
+      original[key] = process.env[key];
+      delete process.env[key];
+    }
+  });
+
+  afterEach(() => {
+    for (const key of keys) {
+      if (original[key] === undefined) delete process.env[key];
+      else process.env[key] = original[key];
+    }
+  });
+
+  it('defaults to Sora in English and โซระ in Thai', () => {
+    expect(getAgentName('en')).toBe('Sora');
+    expect(getAgentName('th')).toBe('โซระ');
+    expect(getBrandTitle('en')).toBe('CloudNex Connect: Sora');
+    expect(getBrandTitle('th')).toBe('CloudNex Connect: โซระ');
   });
 });

@@ -1,5 +1,9 @@
 # Backlog
 
+LINE Flex and the native tray are **frozen** against `documents/USER_JOURNEY.md`
+until that book has staging screenshots. Do not add visual experiments here;
+file bugs found during capture as small follow-ups only.
+
 ## Standard implementation sequence for this repo
 
 This repo should follow a staged, enterprise-safe path:

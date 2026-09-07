@@ -1,0 +1,15 @@
+{
+  "size": { "width": 2500, "height": 843 },
+  "selected": true,
+  "name": "Cloudnex compact grid",
+  "chatBarTextEn": "Menu",
+  "chatBarTextTh": "เมนู",
+  "areas": [
+    { "bounds": { "x": 0, "y": 0, "width": 833, "height": 421 }, "action": { "type": "message", "text": "NAV HOME" }, "labelEn": "Home", "labelTh": "หน้าหลัก", "icon": "home", "fill": "tealTint" },
+    { "bounds": { "x": 833, "y": 0, "width": 833, "height": 421 }, "action": { "type": "message", "text": "FORM VERIFY" }, "labelEn": "Verify", "labelTh": "ยืนยันตัวตน", "icon": "verify", "fill": "teal" },
+    { "bounds": { "x": 1666, "y": 0, "width": 834, "height": 421 }, "action": { "type": "message", "text": "NAV commerce" }, "labelEn": "Products & Quotes", "labelTh": "สินค้าและใบเสนอราคา", "icon": "bag", "fill": "tealTint" },
+    { "bounds": { "x": 0, "y": 421, "width": 833, "height": 422 }, "action": { "type": "message", "text": "FORM ORDER STATUS" }, "labelEn": "Order Status", "labelTh": "สถานะออเดอร์", "icon": "grid", "fill": "tealTint" },
+    { "bounds": { "x": 833, "y": 421, "width": 833, "height": 422 }, "action": { "type": "message", "text": "GUIDE" }, "labelEn": "Help", "labelTh": "ช่วยเหลือ", "icon": "help", "fill": "tealTint" },
+    { "bounds": { "x": 1666, "y": 421, "width": 834, "height": 422 }, "action": { "type": "message", "text": "LANG" }, "labelEn": "Language", "labelTh": "ภาษา", "icon": "globe", "fill": "goldTint" }
+  ]
+}

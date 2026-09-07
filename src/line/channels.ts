@@ -17,7 +17,13 @@ export const DEFAULT_CHANNEL_ID = 'default';
  * future rename can't drift between call sites (previously duplicated as a
  * literal in six files).
  */
-export const getAgentName = (): string => process.env.LINE_AGENT_NAME?.trim() || 'น้องโซระ';
+export const getAgentName = (language: 'th' | 'en' = 'en'): string => {
+  if (language === 'th') return process.env.LINE_AGENT_NAME_TH?.trim() || 'โซระ';
+  return process.env.LINE_AGENT_NAME_EN?.trim() || 'Sora';
+};
+
+export const getBrandTitle = (language: 'th' | 'en' = 'en'): string =>
+  `CloudNex Connect: ${getAgentName(language)}`;
 
 const parseServiceList = (value: string | undefined): string[] | null => {
   if (value === undefined) return null;

@@ -19,7 +19,7 @@ const navServiceHandler: CommandHandler = {
   match: (u) => u.startsWith('NAV ') && u !== 'NAV HOME',
   handle: async (ctx) => {
     const { userLanguage, agentName, channel, profile } = ctx;
-    const key = ctx.text.trim().replace(/^NAV\s*/i, '').trim();
+    const key = ctx.text.trim().replace(/^NAV\s*/i, '').trim().toLowerCase();
 
     if (key.toUpperCase() === 'VERIFY') {
       // Redirect to guided verify form

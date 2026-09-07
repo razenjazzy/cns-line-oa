@@ -1,6 +1,7 @@
 import { messagingApi } from '@line/bot-sdk';
 import { t } from '../../services/i18n';
 import { BRAND, buttonLabel, createMessageActionButton, createTapRow, truncate, type ReportLanguage } from './shared';
+import { getBrandTitle } from '../channels';
 
 export const SERVICE_ICON: Record<string, string> = {
   VERIFY: '🔐',
@@ -18,7 +19,7 @@ export const createServiceHomeFlexMessage = (
 ): messagingApi.FlexMessage => {
   return {
     type: 'flex',
-    altText: language === 'en' ? `${agentName} services menu` : `เมนูบริการของ ${agentName}`,
+    altText: language === 'en' ? `${getBrandTitle('en')} menu` : `เมนู ${getBrandTitle('th')}`,
     contents: {
       type: 'bubble',
       styles: {
@@ -31,7 +32,7 @@ export const createServiceHomeFlexMessage = (
         layout: 'vertical',
         paddingAll: 'md',
         contents: [
-          { type: 'text', text: language === 'en' ? `${agentName} menu` : `เมนู ${agentName}`, weight: 'bold', size: 'md', color: '#FFFFFF', wrap: true },
+        { type: 'text', text: language === 'en' ? getBrandTitle('en') : getBrandTitle('th'), weight: 'bold', size: 'md', color: '#FFFFFF', wrap: true },
           { type: 'text', text: t('tapService', language), size: 'xs', color: '#DDEBE9', margin: 'xs', wrap: true },
         ],
       },

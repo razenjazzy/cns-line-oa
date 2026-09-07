@@ -1,5 +1,6 @@
 import { listProducts, listServiceCatalogItems } from './odoo/catalog';
-import { listPaymentTerms } from './odoo/sales';
+import { listPaymentTerms, getDefaultPaymentTermName } from './odoo/sales';
+import { listPartners } from './odoo/partners';
 import { loadOdooFieldSkills, type OdooFieldLoader } from './odoo-field-skills';
 
 // Dedupe by name — Odoo can have multiple product.product records sharing a
@@ -9,6 +10,15 @@ const dedupeNames = (names: string[]): string[] => Array.from(new Set(names));
 const loadProductOptions = async (): Promise<string[]> => dedupeNames((await listProducts(12)).map(p => p.name));
 const loadServiceOptions = async (): Promise<string[]> => dedupeNames((await listServiceCatalogItems(10)).map(s => s.name));
 const loadPaymentTermOptions = async (): Promise<string[]> => dedupeNames((await listPaymentTerms(12)).map(term => term.name));
+const loadCustomerNameOptions = async (): Promise<string[]> => dedupeNames((await listPartners(12)).map(partner => partner.name).filter(Boolean));
+const loadCustomerPhoneOptions = async (collected?: Record<string, string>): Promise<string[]> => {
+  const partners = await listPartners(12);
+  const matched = collected?.customerName
+    ? partners.find(partner => partner.name === collected.customerName)?.phone
+    : undefined;
+  const phones = partners.map(partner => partner.phone).filter((phone): phone is string => Boolean(phone));
+  return dedupeNames(matched ? [matched, ...phones] : phones);
+};
 
 export type FlowKey =
   | 'USER_CREATE'
@@ -42,7 +52,8 @@ export type FlowFieldSpec = {
    * chip sends the exact string as the answer, same as typing it — no
    * separate value/label distinction needed.
    */
-  loadOptions?: () => Promise<string[]>;
+  loadOptions?: (collected?: Record<string, string>) => Promise<string[]>;
+  loadDefault?: () => Promise<string | undefined>;
   widget?: 'text' | 'list' | 'date' | 'toggle';
   /**
    * Pre-fills this field the moment a flow enters grouped optional-fields
@@ -233,8 +244,8 @@ export const FLOW_SPECS: Record<FlowKey, FlowSpec> = {
     fields: [
       { key: 'productName', promptTh: 'ชื่อสินค้า?', promptEn: 'Product name?', validate: isNonEmpty, loadOptions: loadProductOptions },
       { key: 'qty', promptTh: 'จำนวน?', promptEn: 'Quantity?', validate: isPositiveNumber },
-      { key: 'customerName', promptTh: 'ชื่อลูกค้า?', promptEn: "Customer's name?", validate: isNonEmpty },
-      { key: 'phone', promptTh: 'เบอร์โทรลูกค้า?', promptEn: "Customer's phone?", validate: isPhoneLike },
+      { key: 'customerName', promptTh: 'ชื่อลูกค้า?', promptEn: "Customer's name?", validate: isNonEmpty, loadOptions: loadCustomerNameOptions },
+      { key: 'phone', promptTh: 'เบอร์โทรลูกค้า?', promptEn: "Customer's phone?", validate: isPhoneLike, loadOptions: loadCustomerPhoneOptions },
       // Optional, exactly like Odoo web — blank/SKIP leaves the field
       // entirely unset in Odoo rather than writing an empty value. Grouped
       // into one summary card (see optionalSummaryStartIndex below) rather
@@ -243,7 +254,7 @@ export const FLOW_SPECS: Record<FlowKey, FlowSpec> = {
       { key: 'discountPercent', promptTh: 'ส่วนลด % (ถ้ามี)?', promptEn: 'Discount %, if any?', optional: true, validate: isPercent, summaryLabelTh: 'ส่วนลด %', summaryLabelEn: 'Discount %' },
       { key: 'validityDate', promptTh: 'วันหมดอายุใบเสนอราคา (YYYY-MM-DD, ถ้ามี)?', promptEn: 'Quotation expiration date (YYYY-MM-DD), if any?', optional: true, validate: isIsoDate, summaryLabelTh: 'วันหมดอายุ', summaryLabelEn: 'Valid until', defaultValue: () => isoDatePlusDays(30) },
       { key: 'note', promptTh: 'หมายเหตุ (ถ้ามี)?', promptEn: 'Note, if any?', optional: true, validate: isCommaFreeText, summaryLabelTh: 'หมายเหตุ', summaryLabelEn: 'Note' },
-      { key: 'paymentTerm', promptTh: 'เงื่อนไขการชำระเงิน (เช่น 30 Days, ถ้ามี)?', promptEn: 'Payment term (e.g. 30 Days), if any?', optional: true, validate: isCommaFreeText, summaryLabelTh: 'เงื่อนไขชำระเงิน', summaryLabelEn: 'Payment term', loadOptions: loadPaymentTermOptions },
+      { key: 'paymentTerm', promptTh: 'เงื่อนไขการชำระเงิน (เช่น 30 Days, ถ้ามี)?', promptEn: 'Payment term (e.g. 30 Days), if any?', optional: true, validate: isCommaFreeText, summaryLabelTh: 'เงื่อนไขชำระเงิน', summaryLabelEn: 'Payment term', loadOptions: loadPaymentTermOptions, loadDefault: getDefaultPaymentTermName },
     ],
     optionalSummaryStartIndex: 4,
     buildFinalCommand: (c) => {

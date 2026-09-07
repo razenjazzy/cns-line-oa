@@ -114,7 +114,7 @@ export const createBotTextFlexMessage = (params: {
 };
 
 export const createDailyReportFlexMessage = (reportData: any, insights: string, language: ReportLanguage = 'th'): messagingApi.FlexMessage => {
-  const agentName = getAgentName();
+  const agentName = getAgentName(language);
   const rows = (() => {
     try {
       const parsed = JSON.parse(String(reportData)) as Array<{ product?: string; salesYesterday?: number; revenueYesterday?: number; stock?: number }>;

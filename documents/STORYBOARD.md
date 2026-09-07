@@ -1,6 +1,9 @@
 # Storyboard — Odoo Sales via LINE OA
 
-## Status as of 2026-09-04
+Screenshot capture list: `documents/USER_JOURNEY.md`. That book plus the live
+staging OA are the design freeze; this file is capability status, not shots.
+
+## Status as of 2026-09-07
 
 A step-by-step walkthrough of the actual Sales-user and customer journey as
 it exists today, built from what's actually shipped and verified this
@@ -86,14 +89,15 @@ real device · ⬜ not built · 🔒 blocked by Odoo-side configuration, not cod
 13. `QUOTE CANCEL <id>`. ✅
 14. `QUOTE CONFIRM <id>` — Quotation → Sales Order; customer is pushed the
     updated card automatically. ✅
-15. `QUOTE SEND <id>` — pushes the Approve/View card to the customer
-    (requires them already verified — LINE can't message someone who's
-    never interacted with the OA; the admin is told plainly if the
-    customer isn't linked, not left guessing). ✅
+15. `QUOTE SEND <id>` — send composer uses the Odoo partner email (chip +
+    type-in, `QUOTE SEND CONFIRM <id> [email]`). Marks the order sent,
+    emails if an address exists, and pushes the customer card (Approve /
+    View Quote / PDF) when the phone is LINE-verified. If they never
+    messaged the OA, the admin is told plainly. ✅
 16. `QUOTE APPROVE <id>` — customer-only; server-side checks the order's
-    `partner_id` actually matches the requester's own `odooPartnerId`
-    before approving, regardless of which buttons the client happened to
-    render. ✅
+    `partner_id` actually matches the requester's own `odooPartnerId`.
+    Sales is pushed the confirmation card. After sale, both sides show
+    **Sales Order**; the customer only gets Download PDF. ✅
 17. `QUOTE INVOICE <id>` — mirrors Odoo web's own "Create Invoice" button
     exactly (same wizard action, same `invoice_status === 'to invoice'`
     visibility condition). ✅
@@ -131,18 +135,11 @@ These come directly from your last two rounds of feedback. Three of the
 four are now shipped (rich menu, `GUIDE`, header consistency); the
 remaining two are real scope, just not attempted yet:
 
-- ✅ Rich-menu redesign — closed 2026-09-05. The live account's rich menu
-  (`richmenu-5e5e12e9...`, "Cloudnex Card Menu EN") wasn't set as default
-  and had two real bugs: "Order Status" sent `DEMO ORDER`, a command
-  renamed away long ago with zero handler matches left in the codebase
-  (would have silently done nothing for a real user); "Language" always
-  sent the fixed `LANG TH` (no real toggle). Created a new rich menu
-  (`richmenu-ca2d88b1...`, chatBarText "เมนู / Menu" replacing the generic
-  "Tap to open") with the same 6-button layout but `ORDER STATUS` and the
-  new bare `LANG` toggle (see `src/line/handlers/language.ts`) in place of
-  the two broken actions, and set it as the account's active default —
-  confirmed live via `get_rich_menu_list`. The old menu was left in place,
-  inactive, as a rollback option (user's choice) rather than deleted.
+- ✅ Rich-menu redesign — compact 2500×843 teal grid (2026-09-07): Home,
+  Verify, Products & Quotes, Order Status, Help, Language. Verify is the
+  filled teal “active” tile; Language is goldTint. Publish with
+  `npm run rich-menu:upload`; set `LINE_RICH_MENU_EN` / `_TH` on Railway.
+  `LANG` links the matching PNG. Older menus are left on the channel.
 - ✅ `GUIDE`/help command redesign — closed 2026-09-05. `GUIDE` now shows a
   tappable category menu (8 topics, mirroring service-catalog.ts's
   ServiceKeys plus 3 general ones); each topic drills into
