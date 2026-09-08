@@ -4,6 +4,8 @@ import { t, tFill, stateLabel, invoiceStatusLabel, type Lang } from '../../servi
 import { bindPostbackData } from '../postback';
 import { BRAND, createDatePickerButton, createMessageActionButton, createPrefillButton, createUriActionButton, formatMoney, truncate } from './shared';
 
+const tr = (language: Lang, th: string, en: string): string => (language === 'en' ? en : th);
+
 const QUOTATION_STATE_SEQUENCE = ['draft', 'sent', 'sale'] as const;
 
 /**
@@ -224,7 +226,7 @@ export const createQuotationMoreFlexMessage = (
   const isRestrictedToSalesperson = options.salesTier === 'salesperson';
   const rows: messagingApi.FlexComponent[] = [];
   if (canStillAct) {
-    rows.push(createMessageActionButton(t('editQuote', language), `QUOTE LINES ${order.id}`, 'primary', BRAND.teal));
+    rows.push(createMessageActionButton(tr(language, 'แก้ไขใบเสนอราคา', 'Edit Quote'), `QUOTE LINES ${order.id}`, 'primary', BRAND.teal));
     if (order.state === 'draft' || order.state === 'sent') {
       rows.push(createMessageActionButton(t('sendViaEmail', language), `QUOTE SEND OPTIONS ${order.id}`, 'secondary', BRAND.tealTint));
     }
@@ -292,7 +294,7 @@ export const createQuotationEditFlexMessage = (
             spacing: 'xs' as const,
             contents: [
               { ...createPrefillButton(t('editItem', language), `QUOTE EDIT ${order.id} ${line.productName},`, 'primary', BRAND.teal), flex: 1 },
-              { ...createPrefillButton(t('removeItem', language), `QUOTE REMOVE ${order.id} ${line.productName}`, 'secondary', BRAND.goldTint), flex: 1 },
+              { ...createPrefillButton(tr(language, 'ลบรายการ', 'Remove'), `QUOTE REMOVE ${order.id} ${line.productName}`, 'secondary', BRAND.goldTint), flex: 1 },
             ],
           },
         ],
@@ -300,7 +302,7 @@ export const createQuotationEditFlexMessage = (
 
   return {
     type: 'flex',
-    altText: truncate(`${t('editQuote', language)} ${order.name}`, 390),
+    altText: truncate(`${tr(language, 'แก้ไขใบเสนอราคา', 'Edit Quote')} ${order.name}`, 390),
     contents: {
       type: 'bubble',
       styles: { header: { backgroundColor: BRAND.teal }, body: { backgroundColor: BRAND.surface }, footer: { backgroundColor: BRAND.surface } },
@@ -309,7 +311,7 @@ export const createQuotationEditFlexMessage = (
         layout: 'vertical',
         paddingAll: 'md',
         contents: [
-          { type: 'text', text: t('editQuote', language), weight: 'bold', size: 'md', color: '#FFFFFF' },
+          { type: 'text', text: tr(language, 'แก้ไขใบเสนอราคา', 'Edit Quote'), weight: 'bold', size: 'md', color: '#FFFFFF' },
           { type: 'text', text: order.name, size: 'xs', color: '#DDEBE9', margin: 'xs' },
         ],
       },
@@ -319,7 +321,7 @@ export const createQuotationEditFlexMessage = (
         spacing: 'sm',
         paddingBottom: 'lg',
         contents: [
-          { type: 'text', text: t('editQuoteHint', language), size: 'xs', color: BRAND.inkSoft, wrap: true },
+          { type: 'text', text: tr(language, 'แตะรายการเพื่อแก้จำนวน เพิ่มหรือลบด้านล่าง', 'Tap a line to change qty. Add or remove below.'), size: 'xs', color: BRAND.inkSoft, wrap: true },
           ...lineRows,
         ],
       },

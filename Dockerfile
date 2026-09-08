@@ -15,9 +15,7 @@ RUN npm ci --ignore-scripts
 
 # Copy the source code
 COPY tsconfig.json ./
-COPY src/ ./src/
-
-# Build the TypeScript code
+COPY src ./src
 RUN npm run build
 
 # Stage 2: Create the production image
