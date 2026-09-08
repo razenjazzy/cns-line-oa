@@ -1,11 +1,9 @@
 import { createQuotationJourneyFlexMessage } from './templates';
-import { DEFAULT_CHANNEL_ID, getBrandTitle } from './channels';
+import { DEFAULT_CHANNEL_ID } from './channels';
 import { sendTargetedFlexMessage } from './messaging';
 import { getPartnerById, getSaleOrderPdfLink, getSaleOrderPortalLink } from '../services/odoo';
 import type { OdooSaleOrder } from '../services/odoo/types';
-import { findVerifiedUserIdByPartnerId, findLineUserIdByPhone, getUserLanguage, getUserProfile, listVerifiedSalesLineUserIds } from '../services/firestore';
-import { startOdooUserVerification } from '../services/user-verification';
-import { createBotTextFlexMessage } from './templates';
+import { findVerifiedUserIdByPartnerId, findLineUserIdByPhone, getUserLanguage, listVerifiedSalesLineUserIds } from '../services/firestore';
 import { getErpAdapter } from '../erp/registry';
 
 export type QuoteSendChannel = 'line' | 'email' | 'both';
@@ -39,10 +37,9 @@ const getOrderLinks = async (orderId: number) => {
 };
 
 /**
- * Push the journey Flex card to the verified customer (LINE, by phone or
- * linked Odoo partner) and to verified Odoo sales users on LINE (plus any
- * ADMIN_USER_ID operators). The actor already received a reply, so they
- * are skipped on the LINE push. LINE admin is not required for sales.
+ * Push the journey Flex card to the customer (LINE, by phone or linked
+ * partner — they do not need identity VERIFY to receive it) and to verified
+ * Odoo sales users. The actor already received a reply, so they are skipped.
  */
 export const notifyQuoteParties = async (input: {
   order: OdooSaleOrder;
@@ -69,29 +66,6 @@ export const notifyQuoteParties = async (input: {
       createQuotationJourneyFlexMessage(input.order, { role: 'customer', ...links }, language),
       channelId,
     );
-    const customerProfile = await getUserProfile(customerLineId);
-    if (!customerProfile.odooVerified && partner?.phone) {
-      const challenge = await startOdooUserVerification({
-        userId: customerLineId,
-        rawPhone: partner.phone,
-        language,
-        agentName: getBrandTitle(language),
-        channelId,
-      });
-      if (challenge.link) {
-        await sendTargetedFlexMessage(
-          [customerLineId],
-          createBotTextFlexMessage({
-            title: language === 'en' ? 'Verify your number' : 'ยืนยันเบอร์ของคุณ',
-            body: challenge.message,
-            language,
-            tone: 'info',
-            linkAction: { label: challenge.linkLabel || (language === 'en' ? 'Verify now' : 'ยืนยันตอนนี้'), uri: challenge.link },
-          }),
-          channelId,
-        );
-      }
-    }
   }
 
   const salesIds = notifySales

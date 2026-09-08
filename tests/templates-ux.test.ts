@@ -85,6 +85,7 @@ describe('quotation journey state actions', () => {
     expect(bubble.footer?.contents).toHaveLength(3);
     expect(JSON.stringify(bubble.body)).toContain('QUOTE CONFIRM 17');
     expect(JSON.stringify(bubble.body)).toContain('QUOTE SEND 17');
+    expect(JSON.stringify(bubble.body)).toContain('"spacing":"md"');
     expect(JSON.stringify(bubble.body)).not.toContain('QUOTE MORE');
     expect(JSON.stringify(bubble.footer?.contents?.[0])).toContain('View Quote');
     expect(JSON.stringify(bubble.footer?.contents?.[0])).toContain('Download PDF');
@@ -125,10 +126,11 @@ describe('quotation journey state actions', () => {
       { role: 'customer', portalLink: 'https://example.com/q', pdfLink: 'https://example.com/p' },
       'en',
     ));
-    expect(json).toContain('QUOTE APPROVE 17');
+    expect(json).toContain('https://example.com/q');
     expect(json).toContain('Confirm');
     expect(json).toContain('View Quote');
     expect(json).toContain('Download PDF');
+    expect(json).not.toContain('QUOTE APPROVE 17');
     expect(json).not.toContain('NAV HOME');
     expect(json).not.toContain('QUOTE CONFIRM');
     expect(json).not.toContain('QUOTE SEND');

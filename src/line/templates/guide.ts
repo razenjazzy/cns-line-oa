@@ -110,7 +110,7 @@ export const createGuideCategoryFlexMessage = (category: CommandCategoryKey, lan
       footer: {
         type: 'box',
         layout: 'horizontal',
-        spacing: 'sm',
+        spacing: 'md',
         contents: [
           { ...createMessageActionButton(language === 'en' ? 'Back' : 'ย้อนกลับ', 'GUIDE', 'secondary', BRAND.goldTint), flex: 1 },
           { ...createMessageActionButton(t('home', language), 'NAV HOME', 'secondary', BRAND.goldTint), flex: 1 },

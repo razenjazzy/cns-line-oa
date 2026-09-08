@@ -27,7 +27,7 @@ describe('NAV HOME rounded boxes', () => {
     expect(row?.contents?.[0]?.weight).toBeUndefined();
   });
 
-  it('keeps Verify teal when the viewer is not an Odoo user yet', () => {
+  it('keeps Verify gold when the viewer is not an Odoo user yet', () => {
     const message = createServiceHomeFlexMessage(
       [{ key: 'VERIFY', label: 'Verify account' }, { key: 'commerce', label: 'Products & Quotes' }],
       'en',
@@ -35,7 +35,7 @@ describe('NAV HOME rounded boxes', () => {
       true,
     );
     const bubble = message.contents as { body?: { contents?: Array<Record<string, unknown>> } };
-    expect(bubble.body?.contents?.[0]?.backgroundColor).toBe(BRAND.teal);
+    expect(bubble.body?.contents?.[0]?.backgroundColor).toBe(BRAND.gold);
     expect(bubble.body?.contents?.[1]?.backgroundColor).toBe(BRAND.tealTint);
   });
 

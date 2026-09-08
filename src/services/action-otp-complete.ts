@@ -1,15 +1,31 @@
 import { consumeActionOtpChallengeByToken, getUserLanguage, getUserProfile, setLastActionOtpAt } from './firestore';
 import { sendTargetedFlexMessage, sendTargetedMessage } from '../line/messaging';
 import { DEFAULT_CHANNEL_ID, getBrandTitle, resolveChannelConfig } from '../line/channels';
+import { getSaleOrderPortalLink } from './odoo';
 import { appLogger } from './logger';
 
-export const completeActionOtpByLinkToken = async (token: string): Promise<{ ok: boolean; message: string; channelId?: string }> => {
+/** After action OTP, these commands should open the Odoo portal instead of the identity-verify HTML page. */
+export const portalOrderIdFromPendingCommand = (text: string): number | null => {
+  const trimmed = text.trim();
+  if (/^QUOTE INVOICE SEND\b/i.test(trimmed)) return null;
+  const match = trimmed.match(/^(QUOTE CONFIRM|QUOTE APPROVE|QUOTE INVOICE)\s+(\d+)\b/i);
+  if (!match) return null;
+  const id = Number(match[2]);
+  return Number.isFinite(id) && id > 0 ? id : null;
+};
+
+export const completeActionOtpByLinkToken = async (token: string): Promise<{
+  ok: boolean;
+  message: string;
+  channelId?: string;
+  redirectUrl?: string;
+}> => {
   const consumed = await consumeActionOtpChallengeByToken({ token });
   if (!consumed.ok || !consumed.data) {
     const reason = consumed.error || '';
-    if (reason.includes('action_otp_expired')) return { ok: false, message: 'Verification link expired.' };
-    if (reason.includes('action_otp_locked')) return { ok: false, message: 'Too many attempts. Retry the action in LINE.' };
-    return { ok: false, message: 'Verification link is invalid or already used.' };
+    if (reason.includes('action_otp_expired')) return { ok: false, message: 'This action was not verified. The link expired. Retry from LINE.' };
+    if (reason.includes('action_otp_locked')) return { ok: false, message: 'This action was not verified. Too many attempts. Retry from LINE.' };
+    return { ok: false, message: 'This action was not verified. The link is invalid or already used.' };
   }
 
   await setLastActionOtpAt(consumed.data.userId);
@@ -38,10 +54,19 @@ export const completeActionOtpByLinkToken = async (token: string): Promise<{ ok:
     }
   }
 
+  const trimmed = consumed.data.pendingCommandText;
+  const replayFailed = messages.some(message => /failed to confirm|not found|staff-only|admin-only|ไม่สำเร็จ|ไม่พบ|for sales users/i.test(JSON.stringify(message)));
+  const portalOrderId = replayFailed ? null : portalOrderIdFromPendingCommand(trimmed);
+  const redirectUrl = portalOrderId ? (await getSaleOrderPortalLink(portalOrderId) || undefined) : undefined;
+
   appLogger.info('action_otp_web_verified', {
     gitCommit: process.env.RAILWAY_GIT_COMMIT_SHA || process.env.GIT_COMMIT || null,
-    pending: consumed.data.pendingCommandText.slice(0, 40),
+    pending: trimmed.slice(0, 40),
+    portalRedirect: Boolean(redirectUrl),
   });
 
-  return { ok: true, message: 'Action verified. You can return to LINE now.', channelId };
+  if (redirectUrl) {
+    return { ok: true, message: 'Action verified. Opening the quotation.', channelId, redirectUrl };
+  }
+  return { ok: true, message: 'Action verified. Return to LINE for the next step.', channelId };
 };

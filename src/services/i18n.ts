@@ -61,17 +61,17 @@ export const UI_STRINGS = {
   // "Download PDF", and a longer label gets visually clipped by the LINE
   // client itself (its width-based clipping, not the 20-char cap below).
   viewFullQuotation: { en: 'View Quote', th: 'ดูใบเสนอราคา' },
-  quoteSentToAdmin: { en: 'Sent to the customer for approval.', th: 'ส่งให้ลูกค้าเพื่ออนุมัติแล้ว' },
-  sentViaLine: { en: 'Sent to the customer on LINE.', th: 'ส่งให้ลูกค้าทาง LINE แล้ว' },
+  quoteSentToAdmin: { en: 'Quotation sent to the customer to Confirm or Approve.', th: 'ส่งใบเสนอราคาให้ลูกค้าเพื่อยืนยันหรืออนุมัติแล้ว' },
+  sentViaLine: { en: 'Quotation sent to the customer on LINE to Confirm or Approve.', th: 'ส่งใบเสนอราคาให้ลูกค้าทาง LINE เพื่อยืนยันหรืออนุมัติแล้ว' },
   sentViaEmail: { en: 'Sent to the customer by email.', th: 'ส่งให้ลูกค้าทางอีเมลแล้ว' },
-  sentViaBoth: { en: 'Sent to the customer on LINE and by email.', th: 'ส่งให้ลูกค้าทาง LINE และอีเมลแล้ว' },
+  sentViaBoth: { en: 'Quotation sent on LINE and by email for the customer to Confirm or Approve.', th: 'ส่งใบเสนอราคาทาง LINE และอีเมลให้ลูกค้าเพื่อยืนยันหรืออนุมัติแล้ว' },
   sendViaLine: { en: 'Send LINE', th: 'ส่ง LINE' },
   sendViaEmail: { en: 'Send Email', th: 'ส่งอีเมล' },
   sendViaBoth: { en: 'Send both', th: 'ส่งทั้งคู่' },
   phoneField: { en: 'Phone', th: 'เบอร์โทร' },
   quoteNotLinked: {
-    en: 'This customer has not verified with the bot yet, so LINE cannot message them. Ask them to message the bot and complete VERIFY first.',
-    th: 'ลูกค้ารายนี้ยังไม่ได้ยืนยันตัวตนกับบอท จึงยังส่งข้อความทาง LINE ไม่ได้ กรุณาให้ลูกค้าทักบอทและทำการ VERIFY ก่อน',
+    en: 'LINE cannot message this customer yet. Ask them to open this Official Account first so the quotation can be delivered. They do not need to VERIFY just to receive it.',
+    th: 'ยังส่งข้อความทาง LINE ให้ลูกค้ารายนี้ไม่ได้ กรุณาให้ลูกค้าทัก Official Account นี้ก่อน จึงจะส่งใบเสนอราคาได้ ลูกค้าไม่ต้อง VERIFY เพียงเพื่อรับใบเสนอราคา',
   },
   quoteNotYours: {
     en: "This quotation isn't linked to your account.",

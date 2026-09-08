@@ -16,10 +16,11 @@ const TEAL_STRONG = '#063F3D';
 const TEAL_TINT = '#E3F0EE';
 const GOLD = '#A97A2B';
 const GOLD_TINT = '#F4E9D4';
-const fills = { teal: TEAL, tealTint: TEAL_TINT, goldTint: GOLD_TINT };
-const inks = { teal: '#FFFFFF', tealTint: TEAL_STRONG, goldTint: GOLD };
+const fills = { teal: TEAL, tealTint: TEAL_TINT, gold: GOLD, goldTint: GOLD_TINT };
+const inks = { teal: '#FFFFFF', tealTint: TEAL_STRONG, gold: '#FFFFFF', goldTint: GOLD };
 
 const tileFill = (area, activeId, lang) => {
+  if (area.id === 'verify') return 'gold';
   if (area.id === 'language') return lang === 'th' ? 'teal' : 'goldTint';
   if (area.id === activeId) return 'teal';
   return 'tealTint';

@@ -179,12 +179,10 @@ const parseOrderIdAndMessage = (text: string, prefix: string): { orderId: number
   return { orderId, message };
 };
 
-// Push the customer their order's current card after an admin-side state
-// change (e.g. QUOTE CONFIRM) that they weren't the one who triggered.
-// Silent no-op — not a failure — when the order has no linked partner or
-// that partner hasn't verified with the bot yet (same platform constraint
-// as quote-send); best-effort beyond that, since it's a courtesy push on
-// top of a state change that already succeeded.
+// Push the customer their order's current card after a staff-side state
+// change (e.g. QUOTE CONFIRM). Silent no-op when LINE cannot reach them
+// yet (they have not messaged the OA). They do not need identity VERIFY
+// to receive the quotation.
 const sendChannelSummary = (
   language: UserLanguage,
   result: { customerLineId: string | null; emailed: boolean },
@@ -196,7 +194,7 @@ const sendChannelSummary = (
   if (wanted === 'email' && !emailOk) return t('noPartnerEmail', language);
   if (!lineOk && !emailOk) return t('quoteNotLinked', language);
   if (lineOk && emailOk) return t('sentViaBoth', language);
-  if (lineOk) return t('sentViaLine', language);
+  if (lineOk) return t('quoteSentToAdmin', language);
   return t('sentViaEmail', language);
 };
 
@@ -259,7 +257,13 @@ const quoteConfirmHandler: CommandHandler = {
       .catch(err => console.warn('quote-confirm: customer notify failed (non-fatal):', err));
 
     const { portalLink, pdfLink } = await getOrderLinks(orderId);
-    return [createQuotationJourneyFlexMessage(order, staffCardOptions(profile, { portalLink, pdfLink }, order), userLanguage)];
+    return [
+      botText(
+        tr(userLanguage, 'ยืนยันใบเสนอราคาแล้ว หน้าอนุมัติของลูกค้าพร้อมเปิด', 'Quotation confirmed. The customer quote page is ready to approve.'),
+        userLanguage,
+      ),
+      createQuotationJourneyFlexMessage(order, staffCardOptions(profile, { portalLink, pdfLink }, order), userLanguage),
+    ];
   },
 };
 

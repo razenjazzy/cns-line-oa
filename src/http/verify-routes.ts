@@ -5,8 +5,8 @@ import { oaChatDeepLink, DEFAULT_CHANNEL_ID } from '../line/channels';
 import { escapeHtml } from '../utils/html';
 import { verifyLinkLimiter } from './middleware';
 
-const verificationPage = (ok: boolean, message: string, channelId?: string) => {
-        const title = ok ? 'Verification Completed' : 'Verification Failed';
+const statusPage = (ok: boolean, message: string, channelId?: string, titles?: { ok: string; fail: string }) => {
+        const title = ok ? (titles?.ok || 'Verification Completed') : (titles?.fail || 'Verification Failed');
         const returnLink = oaChatDeepLink(channelId || DEFAULT_CHANNEL_ID);
         const cta = ok ? 'Return to chat' : 'Open LINE';
         const button = returnLink
@@ -22,12 +22,21 @@ export const registerVerifyRoutes = (app: Express): void => {
     app.get('/verify/odoo', verifyLinkLimiter, async (req, res) => {
         const token = String(req.query.token || '');
         const result = await verifyOdooUserByToken(token);
-        res.status(result.ok ? 200 : 400).type('html').send(verificationPage(result.ok, result.message, result.channelId));
+        res.status(result.ok ? 200 : 400).type('html').send(statusPage(result.ok, result.message, result.channelId));
     });
 
     app.get('/verify/action', verifyLinkLimiter, async (req, res) => {
         const token = String(req.query.token || '');
         const result = await completeActionOtpByLinkToken(token);
-        res.status(result.ok ? 200 : 400).type('html').send(verificationPage(result.ok, result.message, result.channelId));
+        if (result.ok && result.redirectUrl) {
+          res.redirect(302, result.redirectUrl);
+          return;
+        }
+        res.status(result.ok ? 200 : 400).type('html').send(statusPage(
+          result.ok,
+          result.message,
+          result.channelId,
+          { ok: 'Done', fail: 'Action not verified' },
+        ));
     });
 };

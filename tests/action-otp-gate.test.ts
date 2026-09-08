@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { isGatedMutation } from '../src/line/handlers/action-otp';
+import { portalOrderIdFromPendingCommand } from '../src/services/action-otp-complete';
 
 describe('isGatedMutation', () => {
   it('gates the quote lifecycle mutations', () => {
@@ -36,5 +37,18 @@ describe('isGatedMutation', () => {
 
   it('is not fooled by a prefix appearing mid-string', () => {
     expect(isGatedMutation('NOT A QUOTE CREATE COMMAND')).toBe(false);
+  });
+});
+
+describe('portalOrderIdFromPendingCommand', () => {
+  it('opens the Odoo quote page after Confirm or Approve', () => {
+    expect(portalOrderIdFromPendingCommand('QUOTE CONFIRM 17')).toBe(17);
+    expect(portalOrderIdFromPendingCommand('QUOTE APPROVE 17')).toBe(17);
+    expect(portalOrderIdFromPendingCommand('QUOTE INVOICE 17')).toBe(17);
+  });
+
+  it('returns to chat after Send', () => {
+    expect(portalOrderIdFromPendingCommand('QUOTE SEND 17')).toBeNull();
+    expect(portalOrderIdFromPendingCommand('QUOTE INVOICE SEND 17')).toBeNull();
   });
 });

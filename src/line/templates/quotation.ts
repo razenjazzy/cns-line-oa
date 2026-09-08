@@ -85,7 +85,7 @@ export const createQuotationJourneyFlexMessage = (
   const pairButtons = (left: messagingApi.FlexButton, right: messagingApi.FlexButton): messagingApi.FlexBox => ({
     type: 'box',
     layout: 'horizontal',
-    spacing: 'xs',
+    spacing: 'md',
     contents: [
       { ...left, flex: 1 },
       { ...right, flex: 1 },
@@ -112,7 +112,9 @@ export const createQuotationJourneyFlexMessage = (
         : createMessageActionButton(t('sendInvoice', language), `QUOTE INVOICE SEND ${order.id}`, 'secondary', BRAND.tealTint));
     }
   } else if (!isCancelled && isSent) {
-    bodyActions.push(createMessageActionButton(t('confirm', language), `QUOTE APPROVE ${order.id}`, 'primary', BRAND.teal));
+    bodyActions.push(options.portalLink
+      ? createUriActionButton(t('confirm', language), options.portalLink, 'primary', BRAND.teal)
+      : createMessageActionButton(t('confirm', language), `QUOTE APPROVE ${order.id}`, 'primary', BRAND.teal));
   }
 
   const footerContents: messagingApi.FlexComponent[] = [];
@@ -123,7 +125,7 @@ export const createQuotationJourneyFlexMessage = (
     ];
     footerContents.push(linkRow.length === 1
       ? linkRow[0]
-      : { type: 'box', layout: 'horizontal', spacing: 'xs', contents: linkRow.map(button => ({ ...button, flex: 1 })) });
+      : { type: 'box', layout: 'horizontal', spacing: 'md', contents: linkRow.map(button => ({ ...button, flex: 1 })) });
   }
   if (options.role === 'admin') {
     footerContents.push(createMessageActionButton(t('moreActions', language), `QUOTE MORE ${order.id}`, 'secondary', BRAND.tealTint));
@@ -209,7 +211,7 @@ export const createQuotationJourneyFlexMessage = (
       footer: {
         type: 'box',
         layout: 'vertical',
-        spacing: 'sm',
+        spacing: 'md',
         contents: footerContents.length
           ? footerContents.slice(0, 3)
           : [{ type: 'text', text: ' ', size: 'xs', color: BRAND.surface }],
@@ -264,7 +266,7 @@ export const createQuotationMoreFlexMessage = (
           { type: 'text', text: order.name, size: 'xs', color: '#DDEBE9', margin: 'xs' },
         ],
       },
-      body: { type: 'box', layout: 'vertical', spacing: 'sm', paddingBottom: 'lg', contents: rows },
+      body: { type: 'box', layout: 'vertical', spacing: 'md', paddingBottom: 'lg', contents: rows },
     },
   };
 };
@@ -293,7 +295,7 @@ export const createQuotationEditFlexMessage = (
           {
             type: 'box' as const,
             layout: 'horizontal' as const,
-            spacing: 'xs' as const,
+            spacing: 'md' as const,
             contents: [
               { ...createPrefillButton(t('editItem', language), `QUOTE EDIT ${order.id} ${line.productName},`, 'primary', BRAND.teal), flex: 1 },
               { ...createPrefillButton(tr(language, 'ลบรายการ', 'Remove'), `QUOTE REMOVE ${order.id} ${line.productName}`, 'secondary', BRAND.goldTint), flex: 1 },
@@ -413,7 +415,7 @@ export const createQuoteSendComposerFlexMessage = (
           {
             type: 'box',
             layout: 'horizontal',
-            spacing: 'xs',
+            spacing: 'md',
             contents: [
               { ...createMessageActionButton(t('sendViaLine', language), `${confirmPrefix} LINE`, 'secondary', BRAND.tealTint), flex: 1 },
               { ...createMessageActionButton(t('sendViaEmail', language), `${confirmPrefix} EMAIL${emailSuffix}`, 'secondary', BRAND.tealTint), flex: 1 },
@@ -508,7 +510,7 @@ export const createQuotationListFlexMessage = (
         layout: 'vertical',
         spacing: 'sm',
         contents: [
-          { type: 'box', layout: 'horizontal', spacing: 'sm', contents: [
+          { type: 'box', layout: 'horizontal', spacing: 'md', contents: [
             { ...createDatePickerButton(t('dateFrom', language), bindPostbackData('quote.list.from', userId)), flex: 1 },
             { ...createDatePickerButton(t('dateTo', language), bindPostbackData('quote.list.to', userId)), flex: 1 },
           ] },

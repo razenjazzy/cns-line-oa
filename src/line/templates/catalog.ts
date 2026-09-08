@@ -120,7 +120,7 @@ export const createProductCardFlexMessage = (productName: string, price: number,
           {
             type: 'box',
             layout: 'horizontal',
-            spacing: 'xs',
+            spacing: 'md',
             contents: [
               { ...createMessageActionButton(t('searchAgain', language), 'FORM PRODUCT FIND', 'secondary', BRAND.tealTint), flex: 1 },
               { ...createMessageActionButton(t('home', language), 'NAV HOME', 'secondary', BRAND.goldTint), flex: 1 },

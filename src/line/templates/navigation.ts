@@ -47,7 +47,7 @@ export const createServiceHomeFlexMessage = (
           return createTapRow(
             `${SERVICE_ICON[service.key] || ''} ${service.label}`.trim(),
             `NAV ${service.key}`,
-            active || !highlightVerify ? BRAND.teal : BRAND.tealTint,
+            active ? BRAND.gold : !highlightVerify ? BRAND.teal : BRAND.tealTint,
             active || !highlightVerify ? '#FFFFFF' : BRAND.tealStrong,
             'lg',
           );
@@ -56,7 +56,7 @@ export const createServiceHomeFlexMessage = (
       footer: {
         type: 'box',
         layout: 'horizontal',
-        spacing: 'sm',
+        spacing: 'md',
         contents: [
           { ...createTapRow(`🌐 ${t('languageToggle', language)}`, language === 'en' ? 'LANG TH' : 'LANG EN', BRAND.tealTint, BRAND.tealStrong, 'lg'), flex: 1 },
           { ...createTapRow(`📖 ${t('guide', language)}`, 'GUIDE', BRAND.tealTint, BRAND.tealStrong, 'lg'), flex: 1 },
