@@ -74,7 +74,7 @@ describe('quotation journey state actions', () => {
     lines: [{ productName: 'App', qty: 1, priceUnit: 100, subtotal: 100 }],
   };
 
-  it('shows Confirm beside Send on a draft, then View Quote, Download PDF, More, and Home', () => {
+  it('puts Confirm|Send in the body and View Quote|PDF, More, Home in the footer', () => {
     const message = createQuotationJourneyFlexMessage(
       { ...order, state: 'draft' },
       { role: 'admin', portalLink: 'https://example.com/q', pdfLink: 'https://example.com/p' },
@@ -82,16 +82,14 @@ describe('quotation journey state actions', () => {
     );
     const json = JSON.stringify(message);
     const bubble = message.contents as { body?: { contents?: unknown[] }; footer?: { contents?: unknown[] } };
-    expect(json).toContain('QUOTE CONFIRM 17');
-    expect(json).toContain('QUOTE SEND 17');
-    expect(json).toContain('QUOTE MORE 17');
-    expect(json).toContain('NAV HOME');
-    expect(json).toContain('View Quote');
-    expect(json).toContain('Download PDF');
+    expect(bubble.footer?.contents).toHaveLength(3);
     expect(JSON.stringify(bubble.body)).toContain('QUOTE CONFIRM 17');
-    expect(JSON.stringify(bubble.body)).toContain('QUOTE MORE 17');
-    expect(JSON.stringify(bubble.footer)).toContain('View Quote');
-    expect(JSON.stringify(bubble.footer)).not.toContain('QUOTE CONFIRM');
+    expect(JSON.stringify(bubble.body)).toContain('QUOTE SEND 17');
+    expect(JSON.stringify(bubble.body)).not.toContain('QUOTE MORE');
+    expect(JSON.stringify(bubble.footer?.contents?.[0])).toContain('View Quote');
+    expect(JSON.stringify(bubble.footer?.contents?.[0])).toContain('Download PDF');
+    expect(JSON.stringify(bubble.footer?.contents?.[1])).toContain('QUOTE MORE 17');
+    expect(JSON.stringify(bubble.footer?.contents?.[2])).toContain('NAV HOME');
     expect(json).toContain('Quotation');
     expect(json).toContain('"text":"S0017"');
   });
@@ -105,6 +103,7 @@ describe('quotation journey state actions', () => {
     expect(json).toContain('QUOTE CONFIRM 17');
     expect(json).toContain('QUOTE SEND 17');
     expect(json).toContain('QUOTE MORE 17');
+    expect(json).toContain('NAV HOME');
   });
 
   it('keeps Confirm and Send half-width on a sent quotation and labels Quotation Sent', () => {

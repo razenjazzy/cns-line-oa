@@ -90,8 +90,8 @@ export const createQuotationJourneyFlexMessage = (
     ],
   });
 
-  // Message-action buttons in the footer are dropped by LINE (only URI
-  // View/PDF survived). Confirm, Send, More, and Home live in the body.
+  // Screenshot layout: Confirm|Send in the body; footer is exactly three
+  // rows — View Quote|Download PDF, More, Home.
   const bodyActions: messagingApi.FlexComponent[] = [];
   if (options.role === 'admin') {
     if (!isCancelled && (isDraft || isSent)) {
@@ -109,27 +109,24 @@ export const createQuotationJourneyFlexMessage = (
           )
         : createMessageActionButton(t('sendInvoice', language), `QUOTE INVOICE SEND ${order.id}`, 'secondary', BRAND.tealTint));
     }
-    bodyActions.push(pairButtons(
-      createMessageActionButton(t('moreActions', language), `QUOTE MORE ${order.id}`, 'secondary', BRAND.tealTint),
-      createMessageActionButton(t('home', language), 'NAV HOME', 'secondary', BRAND.goldTint),
-    ));
   } else if (!isCancelled && isSent) {
     bodyActions.push(createMessageActionButton(t('approve', language), `QUOTE APPROVE ${order.id}`, 'primary', BRAND.teal));
   }
 
-  const footerRows: messagingApi.FlexButton[][] = [];
+  const footerContents: messagingApi.FlexComponent[] = [];
   if (!isCancelled && (options.portalLink || options.pdfLink)) {
-    footerRows.push([
+    const linkRow = [
       ...(options.portalLink ? [createUriActionButton(t('viewFullQuotation', language), options.portalLink, 'secondary', BRAND.goldTint)] : []),
       ...(options.pdfLink ? [createUriActionButton(t('downloadPdf', language), options.pdfLink, 'secondary', BRAND.goldTint)] : []),
-    ]);
+    ];
+    footerContents.push(linkRow.length === 1
+      ? linkRow[0]
+      : { type: 'box', layout: 'horizontal', spacing: 'xs', contents: linkRow.map(button => ({ ...button, flex: 1 })) });
   }
-
-  const footerContents: messagingApi.FlexComponent[] = footerRows.map(row =>
-    row.length === 1
-      ? row[0]
-      : { type: 'box', layout: 'horizontal', spacing: 'xs', contents: row.map(button => ({ ...button, flex: 1 })) }
-  );
+  if (options.role === 'admin') {
+    footerContents.push(createMessageActionButton(t('moreActions', language), `QUOTE MORE ${order.id}`, 'secondary', BRAND.tealTint));
+    footerContents.push(createMessageActionButton(t('home', language), 'NAV HOME', 'secondary', BRAND.goldTint));
+  }
 
   return {
     type: 'flex',
