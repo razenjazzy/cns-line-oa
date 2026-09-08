@@ -2,7 +2,7 @@ import { messagingApi } from '@line/bot-sdk';
 import type { OdooSaleOrder } from '../../services/odoo/types';
 import { t, tFill, stateLabel, invoiceStatusLabel, type Lang } from '../../services/i18n';
 import { bindPostbackData } from '../postback';
-import { BRAND, buttonLabel, createDatePickerButton, createMessageActionButton, createPrefillButton, createUriActionButton, formatMoney, truncate } from './shared';
+import { BRAND, createDatePickerButton, createMessageActionButton, createPrefillButton, createUriActionButton, formatMoney, truncate } from './shared';
 
 const QUOTATION_STATE_SEQUENCE = ['draft', 'sent', 'sale'] as const;
 
@@ -76,59 +76,52 @@ export const createQuotationJourneyFlexMessage = (
         })),
       };
 
-  // LINE only paints about three footer rows. Extra rows (Send, Create More,
-  // More, Home) were being dropped, which is why Confirm showed full-width
-  // and the card could not reach Quotation Sent. Keep the screenshot actions
-  // plus Send in those three slots; Create More / More go on quick replies.
-  const footerRows: messagingApi.FlexButton[][] = [];
   const isDraft = order.state === 'draft';
   const isSent = order.state === 'sent';
   const isSale = order.state === 'sale';
 
+  const pairButtons = (left: messagingApi.FlexButton, right: messagingApi.FlexButton): messagingApi.FlexBox => ({
+    type: 'box',
+    layout: 'horizontal',
+    spacing: 'xs',
+    contents: [
+      { ...left, flex: 1 },
+      { ...right, flex: 1 },
+    ],
+  });
+
+  // Message-action buttons in the footer are dropped by LINE (only URI
+  // View/PDF survived). Confirm, Send, More, and Home live in the body.
+  const bodyActions: messagingApi.FlexComponent[] = [];
   if (options.role === 'admin') {
     if (!isCancelled && (isDraft || isSent)) {
-      footerRows.push([
+      bodyActions.push(pairButtons(
         createMessageActionButton(t('confirm', language), `QUOTE CONFIRM ${order.id}`, 'primary', BRAND.teal),
         createMessageActionButton(t('sendNow', language), `QUOTE SEND ${order.id}`, 'secondary', BRAND.tealTint),
-      ]);
+      ));
     }
     if (!isCancelled && isSale) {
       const canCreateInvoice = order.invoice_status === 'to invoice';
-      footerRows.push(canCreateInvoice
-        ? [
+      bodyActions.push(canCreateInvoice
+        ? pairButtons(
             createMessageActionButton(t('createInvoice', language), `QUOTE INVOICE ${order.id}`, 'primary', BRAND.teal),
             createMessageActionButton(t('sendInvoice', language), `QUOTE INVOICE SEND ${order.id}`, 'secondary', BRAND.tealTint),
-          ]
-        : [
-            createMessageActionButton(t('sendInvoice', language), `QUOTE INVOICE SEND ${order.id}`, 'secondary', BRAND.tealTint),
-          ]);
+          )
+        : createMessageActionButton(t('sendInvoice', language), `QUOTE INVOICE SEND ${order.id}`, 'secondary', BRAND.tealTint));
     }
-    if (options.portalLink || options.pdfLink) {
-      footerRows.push([
-        ...(options.portalLink ? [createUriActionButton(t('viewFullQuotation', language), options.portalLink, 'secondary', BRAND.goldTint)] : []),
-        ...(options.pdfLink ? [createUriActionButton(t('downloadPdf', language), options.pdfLink, 'secondary', BRAND.goldTint)] : []),
-      ]);
-    }
-    footerRows.push([
+    bodyActions.push(pairButtons(
+      createMessageActionButton(t('moreActions', language), `QUOTE MORE ${order.id}`, 'secondary', BRAND.tealTint),
       createMessageActionButton(t('home', language), 'NAV HOME', 'secondary', BRAND.goldTint),
-    ]);
+    ));
   } else if (!isCancelled && isSent) {
-    footerRows.push([createMessageActionButton(t('approve', language), `QUOTE APPROVE ${order.id}`, 'primary', BRAND.teal)]);
-    if (options.portalLink || options.pdfLink) {
-      footerRows.push([
-        ...(options.portalLink ? [createUriActionButton(t('viewFullQuotation', language), options.portalLink, 'secondary', BRAND.tealTint)] : []),
-        ...(options.pdfLink ? [createUriActionButton(t('downloadPdf', language), options.pdfLink, 'secondary', BRAND.tealTint)] : []),
-      ]);
-    }
-  } else if (!isCancelled && isSale && (options.portalLink || options.pdfLink)) {
+    bodyActions.push(createMessageActionButton(t('approve', language), `QUOTE APPROVE ${order.id}`, 'primary', BRAND.teal));
+  }
+
+  const footerRows: messagingApi.FlexButton[][] = [];
+  if (!isCancelled && (options.portalLink || options.pdfLink)) {
     footerRows.push([
-      ...(options.portalLink ? [createUriActionButton(t('viewFullQuotation', language), options.portalLink, 'secondary', BRAND.tealTint)] : []),
-      ...(options.pdfLink ? [createUriActionButton(t('downloadPdf', language), options.pdfLink, 'secondary', BRAND.tealTint)] : []),
-    ]);
-  } else if (!isCancelled && (options.portalLink || options.pdfLink)) {
-    footerRows.push([
-      ...(options.portalLink ? [createUriActionButton(t('viewFullQuotation', language), options.portalLink, 'secondary', BRAND.tealTint)] : []),
-      ...(options.pdfLink ? [createUriActionButton(t('downloadPdf', language), options.pdfLink, 'secondary', BRAND.tealTint)] : []),
+      ...(options.portalLink ? [createUriActionButton(t('viewFullQuotation', language), options.portalLink, 'secondary', BRAND.goldTint)] : []),
+      ...(options.pdfLink ? [createUriActionButton(t('downloadPdf', language), options.pdfLink, 'secondary', BRAND.goldTint)] : []),
     ]);
   }
 
@@ -141,14 +134,6 @@ export const createQuotationJourneyFlexMessage = (
   return {
     type: 'flex',
     altText: truncate(`${t('quotation', language)} ${order.name} — ${customerName} — ${formatMoney(order.amount_total, language)}`, 390),
-    ...(options.role === 'admin' ? {
-      quickReply: {
-        items: [
-          { type: 'action' as const, action: { type: 'message' as const, label: buttonLabel(t('createMore', language)), text: `QUOTE CREATE MORE ${order.id}` } },
-          { type: 'action' as const, action: { type: 'message' as const, label: buttonLabel(t('moreActions', language)), text: `QUOTE MORE ${order.id}` } },
-        ],
-      },
-    } : {}),
     contents: {
       type: 'bubble',
       styles: {
@@ -217,6 +202,7 @@ export const createQuotationJourneyFlexMessage = (
                 : []),
             ],
           },
+          ...bodyActions,
         ],
       },
       footer: {
@@ -241,15 +227,7 @@ export const createQuotationMoreFlexMessage = (
   const isRestrictedToSalesperson = options.salesTier === 'salesperson';
   const rows: messagingApi.FlexComponent[] = [];
   if (canStillAct) {
-    rows.push({
-      type: 'box',
-      layout: 'horizontal',
-      spacing: 'sm',
-      contents: [
-        { ...createPrefillButton(t('addItem', language), `QUOTE ADD ${order.id} `, 'secondary', BRAND.tealTint), flex: 1 },
-        { ...createPrefillButton(t('editItem', language), `QUOTE EDIT ${order.id} `, 'secondary', BRAND.tealTint), flex: 1 },
-      ],
-    });
+    rows.push(createMessageActionButton(t('editQuote', language), `QUOTE LINES ${order.id}`, 'primary', BRAND.teal));
     if (order.state === 'draft' || order.state === 'sent') {
       rows.push(createMessageActionButton(t('sendViaEmail', language), `QUOTE SEND OPTIONS ${order.id}`, 'secondary', BRAND.tealTint));
     }
@@ -264,6 +242,7 @@ export const createQuotationMoreFlexMessage = (
     rows.push(createMessageActionButton(t('createInvoice', language), `QUOTE INVOICE ${order.id}`, 'primary', BRAND.teal));
   }
   rows.push(createPrefillButton(t('messageCustomer', language), `QUOTE MESSAGE ${order.id} `, 'secondary', BRAND.tealTint));
+  rows.push(createMessageActionButton(t('createMore', language), `QUOTE CREATE MORE ${order.id}`, 'secondary', BRAND.tealTint));
   rows.push(createMessageActionButton(t('back', language), `QUOTE STATUS ${order.id}`, 'secondary', BRAND.goldTint));
 
   return {
@@ -282,6 +261,77 @@ export const createQuotationMoreFlexMessage = (
         ],
       },
       body: { type: 'box', layout: 'vertical', spacing: 'sm', paddingBottom: 'lg', contents: rows },
+    },
+  };
+};
+
+export const createQuotationEditFlexMessage = (
+  order: OdooSaleOrder,
+  language: Lang,
+): messagingApi.FlexMessage => {
+  const lines = (order.lines || []).slice(0, 8);
+  const lineRows: messagingApi.FlexComponent[] = lines.map(line => ({
+        type: 'box' as const,
+        layout: 'vertical' as const,
+        spacing: 'xs' as const,
+        backgroundColor: BRAND.paper,
+        cornerRadius: BRAND.radius,
+        paddingAll: 'sm' as const,
+        contents: [
+          {
+            type: 'box' as const,
+            layout: 'horizontal' as const,
+            contents: [
+              { type: 'text' as const, text: line.productName, size: 'sm' as const, color: BRAND.ink, wrap: true, flex: 3 },
+              { type: 'text' as const, text: `× ${line.qty}`, size: 'sm' as const, color: BRAND.inkSoft, align: 'end' as const, flex: 1 },
+            ],
+          },
+          {
+            type: 'box' as const,
+            layout: 'horizontal' as const,
+            spacing: 'xs' as const,
+            contents: [
+              { ...createPrefillButton(t('editItem', language), `QUOTE EDIT ${order.id} ${line.productName},`, 'primary', BRAND.teal), flex: 1 },
+              { ...createPrefillButton(t('removeItem', language), `QUOTE REMOVE ${order.id} ${line.productName}`, 'secondary', BRAND.goldTint), flex: 1 },
+            ],
+          },
+        ],
+      }));
+
+  return {
+    type: 'flex',
+    altText: truncate(`${t('editQuote', language)} ${order.name}`, 390),
+    contents: {
+      type: 'bubble',
+      styles: { header: { backgroundColor: BRAND.teal }, body: { backgroundColor: BRAND.surface }, footer: { backgroundColor: BRAND.surface } },
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: 'md',
+        contents: [
+          { type: 'text', text: t('editQuote', language), weight: 'bold', size: 'md', color: '#FFFFFF' },
+          { type: 'text', text: order.name, size: 'xs', color: '#DDEBE9', margin: 'xs' },
+        ],
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        paddingBottom: 'lg',
+        contents: [
+          { type: 'text', text: t('editQuoteHint', language), size: 'xs', color: BRAND.inkSoft, wrap: true },
+          ...lineRows,
+        ],
+      },
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        contents: [
+          createPrefillButton(t('addItem', language), `QUOTE ADD ${order.id} `, 'primary', BRAND.teal),
+          createMessageActionButton(t('back', language), `QUOTE MORE ${order.id}`, 'secondary', BRAND.goldTint),
+        ],
+      },
     },
   };
 };

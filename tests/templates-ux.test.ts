@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createFormPromptFlexMessage, createOptionalSummaryFlexMessage, createProductCardFlexMessage, createQuotationJourneyFlexMessage, createQuotationListFlexMessage, createQuoteSendComposerFlexMessage } from '../src/line/templates';
+import { createFormPromptFlexMessage, createOptionalSummaryFlexMessage, createProductCardFlexMessage, createQuotationEditFlexMessage, createQuotationJourneyFlexMessage, createQuotationListFlexMessage, createQuotationMoreFlexMessage, createQuoteSendComposerFlexMessage } from '../src/line/templates';
 
 describe('form prompt options', () => {
   it('keeps product chips in quickReply and out of the bubble body', () => {
@@ -74,26 +74,25 @@ describe('quotation journey state actions', () => {
     lines: [{ productName: 'App', qty: 1, priceUnit: 100, subtotal: 100 }],
   };
 
-  it('shows Confirm beside Send on a draft, then View Quote, Download PDF, and Home', () => {
+  it('shows Confirm beside Send on a draft, then View Quote, Download PDF, More, and Home', () => {
     const message = createQuotationJourneyFlexMessage(
       { ...order, state: 'draft' },
       { role: 'admin', portalLink: 'https://example.com/q', pdfLink: 'https://example.com/p' },
       'en',
     );
     const json = JSON.stringify(message);
-    const bubble = message.contents as { footer?: { contents?: unknown[] } };
-    expect(bubble.footer?.contents).toHaveLength(3);
-    const firstRow = JSON.stringify(bubble.footer?.contents?.[0]);
-    expect(firstRow).toContain('QUOTE CONFIRM 17');
-    expect(firstRow).toContain('QUOTE SEND 17');
-    expect(firstRow).toContain('"layout":"horizontal"');
-    expect(json).toContain('Quotation');
+    const bubble = message.contents as { body?: { contents?: unknown[] }; footer?: { contents?: unknown[] } };
+    expect(json).toContain('QUOTE CONFIRM 17');
+    expect(json).toContain('QUOTE SEND 17');
+    expect(json).toContain('QUOTE MORE 17');
+    expect(json).toContain('NAV HOME');
     expect(json).toContain('View Quote');
     expect(json).toContain('Download PDF');
-    expect(json).toContain('NAV HOME');
-    expect(json).toContain('QUOTE CREATE MORE 17');
-    expect(json).toContain('Create More');
-    expect(JSON.stringify(message.quickReply)).toContain('QUOTE MORE 17');
+    expect(JSON.stringify(bubble.body)).toContain('QUOTE CONFIRM 17');
+    expect(JSON.stringify(bubble.body)).toContain('QUOTE MORE 17');
+    expect(JSON.stringify(bubble.footer)).toContain('View Quote');
+    expect(JSON.stringify(bubble.footer)).not.toContain('QUOTE CONFIRM');
+    expect(json).toContain('Quotation');
     expect(json).toContain('"text":"S0017"');
   });
 
@@ -105,7 +104,6 @@ describe('quotation journey state actions', () => {
     ));
     expect(json).toContain('QUOTE CONFIRM 17');
     expect(json).toContain('QUOTE SEND 17');
-    expect(json).toContain('QUOTE CREATE MORE 17');
     expect(json).toContain('QUOTE MORE 17');
   });
 
@@ -165,6 +163,37 @@ describe('quotation journey state actions', () => {
     expect(json).toContain('Download PDF');
     expect(json).toContain('NAV HOME');
     expect(json).not.toContain('QUOTE APPROVE');
+  });
+});
+
+describe('quotation edit card', () => {
+  it('opens from More as Edit Quote', () => {
+    const json = JSON.stringify(createQuotationMoreFlexMessage({
+      id: 17,
+      name: 'S0017',
+      state: 'draft',
+      amount_total: 100,
+      partner_id: [9, 'Somchai'],
+    }, {}, 'en'));
+    expect(json).toContain('Edit Quote');
+    expect(json).toContain('QUOTE LINES 17');
+  });
+
+  it('lists lines with edit and remove prefills from More', () => {
+    const message = createQuotationEditFlexMessage({
+      id: 17,
+      name: 'S0017',
+      state: 'draft',
+      amount_total: 100,
+      partner_id: [9, 'Somchai'],
+      lines: [{ productName: 'App Support Package', qty: 10, priceUnit: 539, subtotal: 5390 }],
+    }, 'en');
+    const json = JSON.stringify(message);
+    expect(json).toContain('Edit Quote');
+    expect(json).toContain('QUOTE EDIT 17 App Support Package,');
+    expect(json).toContain('QUOTE REMOVE 17 App Support Package');
+    expect(json).toContain('QUOTE ADD 17 ');
+    expect(json).toContain('QUOTE MORE 17');
   });
 });
 
