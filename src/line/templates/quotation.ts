@@ -2,7 +2,7 @@ import { messagingApi } from '@line/bot-sdk';
 import type { OdooSaleOrder } from '../../services/odoo/types';
 import { t, tFill, stateLabel, invoiceStatusLabel, type Lang } from '../../services/i18n';
 import { bindPostbackData } from '../postback';
-import { BRAND, createDatePickerButton, createMessageActionButton, createPrefillButton, createUriActionButton, formatMoney, truncate } from './shared';
+import { BRAND, buttonLabel, createDatePickerButton, createMessageActionButton, createPrefillButton, createUriActionButton, formatMoney, truncate } from './shared';
 
 const QUOTATION_STATE_SEQUENCE = ['draft', 'sent', 'sale'] as const;
 
@@ -76,16 +76,16 @@ export const createQuotationJourneyFlexMessage = (
         })),
       };
 
-  // Organized as rows (rather than one flat button list) so each row stays
-  // simple regardless of how many actions the admin has available for this
-  // state — mirrors Odoo web's own button visibility per state.
+  // LINE only paints about three footer rows. Extra rows (Send, Create More,
+  // More, Home) were being dropped, which is why Confirm showed full-width
+  // and the card could not reach Quotation Sent. Keep the screenshot actions
+  // plus Send in those three slots; Create More / More go on quick replies.
   const footerRows: messagingApi.FlexButton[][] = [];
   const isDraft = order.state === 'draft';
   const isSent = order.state === 'sent';
   const isSale = order.state === 'sale';
 
   if (options.role === 'admin') {
-    // Draft ("Quotation") and sent share the same first row: Confirm | Send.
     if (!isCancelled && (isDraft || isSent)) {
       footerRows.push([
         createMessageActionButton(t('confirm', language), `QUOTE CONFIRM ${order.id}`, 'primary', BRAND.teal),
@@ -109,12 +109,6 @@ export const createQuotationJourneyFlexMessage = (
         ...(options.pdfLink ? [createUriActionButton(t('downloadPdf', language), options.pdfLink, 'secondary', BRAND.goldTint)] : []),
       ]);
     }
-    footerRows.push([
-      createMessageActionButton(t('createMore', language), `QUOTE CREATE MORE ${order.id}`, 'secondary', BRAND.tealTint),
-    ]);
-    footerRows.push([
-      createMessageActionButton(t('moreActions', language), `QUOTE MORE ${order.id}`, 'secondary', BRAND.tealTint),
-    ]);
     footerRows.push([
       createMessageActionButton(t('home', language), 'NAV HOME', 'secondary', BRAND.goldTint),
     ]);
@@ -147,6 +141,14 @@ export const createQuotationJourneyFlexMessage = (
   return {
     type: 'flex',
     altText: truncate(`${t('quotation', language)} ${order.name} — ${customerName} — ${formatMoney(order.amount_total, language)}`, 390),
+    ...(options.role === 'admin' ? {
+      quickReply: {
+        items: [
+          { type: 'action' as const, action: { type: 'message' as const, label: buttonLabel(t('createMore', language)), text: `QUOTE CREATE MORE ${order.id}` } },
+          { type: 'action' as const, action: { type: 'message' as const, label: buttonLabel(t('moreActions', language)), text: `QUOTE MORE ${order.id}` } },
+        ],
+      },
+    } : {}),
     contents: {
       type: 'bubble',
       styles: {
@@ -222,7 +224,7 @@ export const createQuotationJourneyFlexMessage = (
         layout: 'vertical',
         spacing: 'sm',
         contents: footerContents.length
-          ? [{ type: 'box', layout: 'vertical', spacing: 'sm', contents: footerContents }]
+          ? footerContents.slice(0, 3)
           : [{ type: 'text', text: ' ', size: 'xs', color: BRAND.surface }],
       },
     },
@@ -248,8 +250,8 @@ export const createQuotationMoreFlexMessage = (
         { ...createPrefillButton(t('editItem', language), `QUOTE EDIT ${order.id} `, 'secondary', BRAND.tealTint), flex: 1 },
       ],
     });
-    if (order.state === 'sent') {
-      rows.push(createMessageActionButton(t('sendNow', language), `QUOTE SEND ${order.id}`, 'secondary', BRAND.tealTint));
+    if (order.state === 'draft' || order.state === 'sent') {
+      rows.push(createMessageActionButton(t('sendViaEmail', language), `QUOTE SEND OPTIONS ${order.id}`, 'secondary', BRAND.tealTint));
     }
     if (!isRestrictedToSalesperson) {
       rows.push(createMessageActionButton(t('cancelQuote', language), `QUOTE CANCEL ${order.id}`, 'secondary', BRAND.goldTint));

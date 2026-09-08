@@ -44,8 +44,8 @@ Admin chain must already be complete (`odooVerified` + `ADMIN_USER_ID` + Odoo ad
 | B3 | Customer name | Odoo partner **name chips** plus type-in | `journey/b3-quote-customer-name.png` |
 | B4 | Customer phone | Odoo **phone chips** (matched partner first) plus type-in | `journey/b4-quote-phone.png` |
 | B5 | Optional summary | Equal rows: label left, **value right bold**. Payment term default Immediate Payment (or Odoo `default_get`) | `journey/b5-quote-optional.png` |
-| B6 | Create now (after step-up OTP if asked) | Journey card label **Quotation**; footer **Confirm \| Send**, View Quote, Download PDF, **Create More**, Home. Edit/Cancel stay under More for admin / sales manager | `journey/b6-quote-draft.png` |
-| B7 | `QUOTE SEND <id>` | Send composer: partner email as To, chip + Type email + Send | `journey/b7-quote-send-composer.png` |
+| B6 | Create now (after step-up OTP if asked) | Journey card **Quotation**; footer (3 rows only): **Confirm \| Send**, View Quote \| Download PDF, Home. Create More and More are chips under the card. | `journey/b6-quote-draft.png` |
+| B7 | Footer **Send** | Marks the quote **Quotation Sent** and pushes the customer Flex (Approve, View Quote, Download PDF). Email/LINE/both composer is **More → Send Email**. | `journey/b7-quote-send-composer.png` |
 | B8 | `QUOTE SEND CONFIRM <id>` or chip with email | Admin card **Quotation Sent**; Confirm remains. Customer (if verified) gets Approve / View Quote / Download PDF | `journey/b8-quote-sent-admin.png` |
 | B9 | Same order, customer chat | Customer card: Approve, View Quote, Download PDF. No Confirm/Home | `journey/b9-quote-sent-customer.png` |
 

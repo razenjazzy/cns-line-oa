@@ -245,25 +245,60 @@ const quoteConfirmHandler: CommandHandler = {
   },
 };
 
-// QUOTE SEND <orderId> — sales staff. Pushes the customer-facing journey
-// card (Approve + View) to whichever LINE user has already verified with
-// this order's customer phone. LINE can only message a userId that has
-// interacted with the OA before, so a customer who's never messaged the
-// bot genuinely cannot be reached here — the admin is told so, not left
-// guessing why nothing happened.
-const quoteSendHandler: CommandHandler = {
-  name: 'quote-send',
-  match: (u) => u.startsWith('QUOTE SEND') && !u.startsWith('QUOTE SEND CONFIRM'),
+// QUOTE SEND OPTIONS <orderId> — email / LINE / both composer (More).
+const quoteSendOptionsHandler: CommandHandler = {
+  name: 'quote-send-options',
+  match: (u) => u.startsWith('QUOTE SEND OPTIONS'),
   handle: async (ctx) => {
     const { userLanguage, text } = ctx;
     const profile = await syncStaffProfile(ctx.userId, ctx.profile);
     if (!isQuoteStaff(profile)) return [staffOnlyReply(userLanguage)];
-    const orderId = parseOrderId(text, 'QUOTE SEND');
+    const orderId = parseOrderId(text, 'QUOTE SEND OPTIONS');
     if (!orderId) return [notFoundReply(userLanguage)];
     const order = await getSaleOrderById(orderId);
     if (!order || !order.partner_id) return [notFoundReply(userLanguage)];
     const partner = await getPartnerById(order.partner_id[0]);
     return [createQuoteSendComposerFlexMessage(order, partner?.email, userLanguage, 'quotation', partner?.phone)];
+  },
+};
+
+// QUOTE SEND <orderId> — staff footer Send. Marks Odoo sent and pushes the
+// customer Flex (Approve, View Quote, Download PDF) so the bar can move to
+// Quotation Sent. Confirm on the same row still converts to Sales Order.
+const quoteSendHandler: CommandHandler = {
+  name: 'quote-send',
+  match: (u) => u.startsWith('QUOTE SEND') && !u.startsWith('QUOTE SEND CONFIRM') && !u.startsWith('QUOTE SEND OPTIONS'),
+  handle: async (ctx) => {
+    const { userLanguage, userId, channel, requestId, text } = ctx;
+    const profile = await syncStaffProfile(userId, ctx.profile);
+    if (!isQuoteStaff(profile)) return [staffOnlyReply(userLanguage)];
+    const orderId = parseOrderId(text, 'QUOTE SEND');
+    if (!orderId) return [notFoundReply(userLanguage)];
+    const order = await getSaleOrderById(orderId);
+    if (!order || !order.partner_id) return [notFoundReply(userLanguage)];
+
+    await markSaleOrderSent(orderId);
+    const sentOrder = (await getSaleOrderById(orderId)) || { ...order, state: 'sent' };
+    const result = await notifyQuoteParties({
+      order: sentOrder,
+      channelId: channel?.channelId,
+      actorUserId: userId,
+      viaLine: true,
+    });
+    const { portalLink, pdfLink } = await getOrderLinks(orderId);
+    recordAuditEvent({
+      action: 'quote_send',
+      outcome: result.customerLineId ? 'success' : 'failure',
+      actorUserId: userId,
+      channelId: channel?.channelId,
+      requestId,
+      targetId: String(orderId),
+      detail: `line:${result.customerLineId ? 'line' : 'no_line'}`,
+    });
+    return [
+      botText(sendChannelSummary(userLanguage, result, 'line'), userLanguage),
+      createQuotationJourneyFlexMessage(sentOrder, staffCardOptions(profile, { portalLink, pdfLink }), userLanguage),
+    ];
   },
 };
 
@@ -841,6 +876,7 @@ export const quotationHandlers: CommandHandler[] = [
   quoteStatusHandler,
   quoteConfirmHandler,
   quoteSendConfirmHandler,
+  quoteSendOptionsHandler,
   quoteSendHandler,
   quoteMoreHandler,
   quoteApproveHandler,

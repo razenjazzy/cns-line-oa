@@ -81,15 +81,19 @@ describe('quotation journey state actions', () => {
       'en',
     );
     const json = JSON.stringify(message);
+    const bubble = message.contents as { footer?: { contents?: unknown[] } };
+    expect(bubble.footer?.contents).toHaveLength(3);
+    const firstRow = JSON.stringify(bubble.footer?.contents?.[0]);
+    expect(firstRow).toContain('QUOTE CONFIRM 17');
+    expect(firstRow).toContain('QUOTE SEND 17');
+    expect(firstRow).toContain('"layout":"horizontal"');
     expect(json).toContain('Quotation');
-    expect(json).toContain('QUOTE CONFIRM 17');
-    expect(json).toContain('QUOTE SEND 17');
     expect(json).toContain('View Quote');
     expect(json).toContain('Download PDF');
     expect(json).toContain('NAV HOME');
     expect(json).toContain('QUOTE CREATE MORE 17');
     expect(json).toContain('Create More');
-    expect(json).toContain('"layout":"horizontal"');
+    expect(JSON.stringify(message.quickReply)).toContain('QUOTE MORE 17');
     expect(json).toContain('"text":"S0017"');
   });
 
