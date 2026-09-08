@@ -59,7 +59,7 @@ Admin chain must already be complete (`odooVerified` + `ADMIN_USER_ID` + Odoo ad
 | C2 | Sales `QUOTE CONFIRM <id>` on a sent quote (if not already sale) | Label **Sales Order** | `journey/c2-sales-order-admin.png` |
 | C3 | Customer chat after sale | **Sales Order**; only **Download PDF** | `journey/c3-sales-order-customer.png` |
 
-Odoo web analog: email send uses partner email; confirm converts quotation → sales order; PDF is the order report. Not in this card: e-sign, payment, customer-side invoice (sales **More** only).
+Odoo web analog: email send uses partner email; confirm converts quotation → sales order; PDF is the order report. Sales Order staff card: **Create Invoice | Send Invoice**, then the same footer as quotation (View Quote | Download PDF, More, Home). Not in this card: e-sign, payment capture, delivery.
 
 ---
 

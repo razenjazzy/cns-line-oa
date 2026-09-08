@@ -101,7 +101,7 @@ export const createQuotationJourneyFlexMessage = (
       ));
     }
     if (!isCancelled && isSale) {
-      const canCreateInvoice = order.invoice_status === 'to invoice';
+      const canCreateInvoice = order.invoice_status === 'to invoice' || order.invoice_status === 'upselling';
       bodyActions.push(canCreateInvoice
         ? pairButtons(
             createMessageActionButton(t('createInvoice', language), `QUOTE INVOICE ${order.id}`, 'primary', BRAND.teal),
@@ -220,7 +220,7 @@ export const createQuotationMoreFlexMessage = (
   language: Lang,
 ): messagingApi.FlexMessage => {
   const canStillAct = order.state !== 'cancel' && order.state !== 'sale';
-  const canInvoice = order.state === 'sale' && order.invoice_status === 'to invoice';
+  const canInvoice = order.state === 'sale' && (order.invoice_status === 'to invoice' || order.invoice_status === 'upselling');
   const isRestrictedToSalesperson = options.salesTier === 'salesperson';
   const rows: messagingApi.FlexComponent[] = [];
   if (canStillAct) {
@@ -233,10 +233,13 @@ export const createQuotationMoreFlexMessage = (
     }
   }
   if (order.state === 'sale') {
+    if (canInvoice) {
+      rows.push(createMessageActionButton(t('createInvoice', language), `QUOTE INVOICE ${order.id}`, 'primary', BRAND.teal));
+    }
     rows.push(createMessageActionButton(t('sendInvoice', language), `QUOTE INVOICE SEND ${order.id}`, 'secondary', BRAND.tealTint));
-  }
-  if (canInvoice && !isRestrictedToSalesperson) {
-    rows.push(createMessageActionButton(t('createInvoice', language), `QUOTE INVOICE ${order.id}`, 'primary', BRAND.teal));
+    if (!isRestrictedToSalesperson && order.invoice_status !== 'invoiced') {
+      rows.push(createMessageActionButton(t('cancelQuote', language), `QUOTE CANCEL ${order.id}`, 'secondary', BRAND.goldTint));
+    }
   }
   rows.push(createPrefillButton(t('messageCustomer', language), `QUOTE MESSAGE ${order.id} `, 'secondary', BRAND.tealTint));
   rows.push(createMessageActionButton(t('createMore', language), `QUOTE CREATE MORE ${order.id}`, 'secondary', BRAND.tealTint));

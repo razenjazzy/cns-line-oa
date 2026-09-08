@@ -149,19 +149,24 @@ describe('quotation journey state actions', () => {
     expect(json).not.toContain('NAV HOME');
   });
 
-  it('shows Create Invoice beside Send Invoice on a sales order for staff', () => {
-    const json = JSON.stringify(createQuotationJourneyFlexMessage(
+  it('shows Create Invoice beside Send Invoice on a sales order, with the same three footer rows', () => {
+    const message = createQuotationJourneyFlexMessage(
       { ...order, state: 'sale', invoice_status: 'to invoice' },
       { role: 'admin', portalLink: 'https://example.com/q', pdfLink: 'https://example.com/p' },
       'en',
-    ));
+    );
+    const json = JSON.stringify(message);
+    const bubble = message.contents as { body?: { contents?: unknown[] }; footer?: { contents?: unknown[] } };
     expect(json).toContain('Sales Order');
-    expect(json).toContain('QUOTE INVOICE 17');
-    expect(json).toContain('QUOTE INVOICE SEND 17');
-    expect(json).toContain('View Quote');
-    expect(json).toContain('Download PDF');
-    expect(json).toContain('NAV HOME');
+    expect(JSON.stringify(bubble.body)).toContain('QUOTE INVOICE 17');
+    expect(JSON.stringify(bubble.body)).toContain('QUOTE INVOICE SEND 17');
+    expect(bubble.footer?.contents).toHaveLength(3);
+    expect(JSON.stringify(bubble.footer?.contents?.[0])).toContain('View Quote');
+    expect(JSON.stringify(bubble.footer?.contents?.[0])).toContain('Download PDF');
+    expect(JSON.stringify(bubble.footer?.contents?.[1])).toContain('QUOTE MORE 17');
+    expect(JSON.stringify(bubble.footer?.contents?.[2])).toContain('NAV HOME');
     expect(json).not.toContain('QUOTE APPROVE');
+    expect(JSON.stringify(bubble.body)).not.toContain('QUOTE CONFIRM');
   });
 });
 

@@ -1,5 +1,5 @@
 import type { CommandHandler } from './index';
-import { createBotTextFlexMessage, createFormPromptFlexMessage, createQuotationJourneyFlexMessage, createQuotationListFlexMessage, createQuotationMoreFlexMessage, createQuoteSendComposerFlexMessage } from '../templates';
+import { createBotTextFlexMessage, createFormPromptFlexMessage, createQuotationEditFlexMessage, createQuotationJourneyFlexMessage, createQuotationListFlexMessage, createQuotationMoreFlexMessage, createQuoteSendComposerFlexMessage } from '../templates';
 import { DEFAULT_CHANNEL_ID, getBrandTitle } from '../channels';
 import {
   getSaleOrderById,
@@ -374,6 +374,24 @@ const quoteMoreHandler: CommandHandler = {
   },
 };
 
+const quoteLinesHandler: CommandHandler = {
+  name: 'quote-lines',
+  match: (u) => u.startsWith('QUOTE LINES'),
+  handle: async (ctx) => {
+    const { userLanguage, text } = ctx;
+    const profile = await syncStaffProfile(ctx.userId, ctx.profile);
+    if (!isQuoteStaff(profile)) return [staffOnlyReply(userLanguage)];
+    const orderId = parseOrderId(text, 'QUOTE LINES');
+    if (!orderId) return [notFoundReply(userLanguage)];
+    const order = await getSaleOrderById(orderId);
+    if (!order) return [notFoundReply(userLanguage)];
+    if (order.state === 'cancel' || order.state === 'sale') {
+      return [botText(tr(userLanguage, 'แก้ไขใบเสนอราคานี้ไม่ได้แล้ว', 'This quote can no longer be edited.'), userLanguage)];
+    }
+    return [createQuotationEditFlexMessage(order, userLanguage)];
+  },
+};
+
 // QUOTE APPROVE <orderId> — the order's own customer only. Authorization
 // is checked here, server-side, regardless of which buttons the journey
 // card happened to render for this requester — never trust the client.
@@ -478,8 +496,7 @@ const quoteAddHandler: CommandHandler = {
     notifyCustomerOfOrderUpdate(order, channel?.channelId, userId)
       .catch(err => console.warn('quote-add: customer notify failed (non-fatal):', err));
 
-    const { portalLink, pdfLink } = await getOrderLinks(parsed.orderId);
-    return [createQuotationJourneyFlexMessage(order, staffCardOptions(profile, { portalLink, pdfLink }), userLanguage)];
+    return [createQuotationEditFlexMessage(order, userLanguage)];
   },
 };
 
@@ -518,8 +535,7 @@ const quoteEditHandler: CommandHandler = {
     notifyCustomerOfOrderUpdate(order, channel?.channelId, userId)
       .catch(err => console.warn('quote-edit: customer notify failed (non-fatal):', err));
 
-    const { portalLink, pdfLink } = await getOrderLinks(parsed.orderId);
-    return [createQuotationJourneyFlexMessage(order, staffCardOptions(profile, { portalLink, pdfLink }), userLanguage)];
+    return [createQuotationEditFlexMessage(order, userLanguage)];
   },
 };
 
@@ -559,8 +575,7 @@ const quoteRemoveHandler: CommandHandler = {
     notifyCustomerOfOrderUpdate(order, channel?.channelId, userId)
       .catch(err => console.warn('quote-remove: customer notify failed (non-fatal):', err));
 
-    const { portalLink, pdfLink } = await getOrderLinks(parsed.orderId);
-    return [createQuotationJourneyFlexMessage(order, staffCardOptions(profile, { portalLink, pdfLink }), userLanguage)];
+    return [createQuotationEditFlexMessage(order, userLanguage)];
   },
 };
 
@@ -705,7 +720,7 @@ const quoteInvoiceHandler: CommandHandler = {
 
     const existing = await getSaleOrderById(orderId);
     if (!existing) return [notFoundReply(userLanguage)];
-    if (existing.state !== 'sale' || existing.invoice_status !== 'to invoice') {
+    if (existing.state !== 'sale' || (existing.invoice_status !== 'to invoice' && existing.invoice_status !== 'upselling')) {
       return [botText(tr(userLanguage, 'ใบเสนอราคานี้ยังไม่พร้อมออกใบแจ้งหนี้ (ต้องยืนยันคำสั่งซื้อก่อน)', 'This quotation isn\'t ready to invoice yet (it needs to be confirmed first, or is already fully invoiced).'), userLanguage)];
     }
 
@@ -879,6 +894,7 @@ export const quotationHandlers: CommandHandler[] = [
   quoteSendOptionsHandler,
   quoteSendHandler,
   quoteMoreHandler,
+  quoteLinesHandler,
   quoteApproveHandler,
   quoteAddHandler,
   quoteEditHandler,
