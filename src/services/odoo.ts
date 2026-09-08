@@ -17,6 +17,7 @@ import {
   type OdooConfig,
 } from './odoo/client';
 import { pickLinkedOdooUserPartnerId, preferOdooLoginPartner } from './odoo/admin';
+import { phoneMatchVariants } from './phone-match';
 export * from './odoo/types';
 
 const getConfig = getOdooConfig;
@@ -318,21 +319,19 @@ export const getSaleOrderPdfLink = async (orderId: number): Promise<string | nul
   return `${portalLink}${portalLink.includes('?') ? '&' : '?'}report_type=pdf`;
 };
 
-/** Powers "my quotations" — most recent orders for a given customer, newest first. */
-export const getSaleOrdersForPartner = async (
-  partnerId: number,
-  limitOrOpts: number | {
-    limit?: number;
-    offset?: number;
-    dateFrom?: string;
-    dateTo?: string;
-    cursor?: { dateOrder: string; id: number };
-  } = 8,
-): Promise<OdooSaleOrder[]> => {
+type SaleOrderListOpts = {
+  limit?: number;
+  offset?: number;
+  dateFrom?: string;
+  dateTo?: string;
+  cursor?: { dateOrder: string; id: number };
+};
+
+const listSaleOrders = async (ownerDomain: unknown[], limitOrOpts: number | SaleOrderListOpts = 8): Promise<OdooSaleOrder[]> => {
   const opts = typeof limitOrOpts === 'number' ? { limit: limitOrOpts } : limitOrOpts;
   const limit = opts.limit ?? 8;
   const offset = opts.cursor ? 0 : (opts.offset ?? 0);
-  const domain: unknown[] = [['partner_id', '=', partnerId]];
+  const domain: unknown[] = [...ownerDomain];
   if (opts.dateFrom) domain.push(['date_order', '>=', opts.dateFrom]);
   if (opts.dateTo) domain.push(['date_order', '<=', `${opts.dateTo} 23:59:59`]);
   if (opts.cursor) {
@@ -357,6 +356,18 @@ export const getSaleOrdersForPartner = async (
   );
   return rows.map(parseOrder);
 };
+
+/** Powers a customer's "my quotations" — orders where they are partner_id. */
+export const getSaleOrdersForPartner = async (
+  partnerId: number,
+  limitOrOpts: number | SaleOrderListOpts = 8,
+): Promise<OdooSaleOrder[]> => listSaleOrders([['partner_id', '=', partnerId]], limitOrOpts);
+
+/** Powers a Sales User's "my quotations" — orders they own (user_id), with the buyer's name. */
+export const getSaleOrdersForSalesperson = async (
+  odooUserId: number,
+  limitOrOpts: number | SaleOrderListOpts = 8,
+): Promise<OdooSaleOrder[]> => listSaleOrders([['user_id', '=', odooUserId]], limitOrOpts);
 
 /** Mirrors findProductByQuery's ilike-first-match convention, applied to account.payment.term. */
 export const findPaymentTermByName = async (query: string): Promise<{ id: number; name: string } | null> => {
@@ -737,42 +748,6 @@ export const createQuotationFromLine = async (
   }
 };
 
-const normalizePhoneDigits = (value: string): string => value.replace(/[^0-9+]/g, '').trim();
-
-/**
- * Odoo contacts are entered with inconsistent formatting (local 0-prefix vs
- * +66/66 international) and the number often lives in `mobile` rather than
- * `phone`. An exact single-field match against exactly what the customer
- * typed was silently failing for legitimate accounts, so verification never
- * completed. Expand to every plausible formatting variant instead.
- */
-const buildPhoneMatchVariants = (phone: string): string[] => {
-  const cleaned = normalizePhoneDigits(phone);
-  if (!cleaned) return [];
-
-  const variants = new Set<string>([cleaned]);
-
-  if (cleaned.startsWith('0') && cleaned.length >= 9) {
-    variants.add(`+66${cleaned.slice(1)}`);
-    variants.add(`66${cleaned.slice(1)}`);
-  } else if (cleaned.startsWith('+66')) {
-    variants.add(`0${cleaned.slice(3)}`);
-    variants.add(cleaned.slice(1));
-  } else if (cleaned.startsWith('66') && cleaned.length >= 10) {
-    variants.add(`0${cleaned.slice(2)}`);
-    variants.add(`+${cleaned}`);
-  }
-
-  return Array.from(variants);
-};
-
-// `mobile` is a standard res.partner field on stock Odoo, but not every
-// instance has it (a stripped-down SaaS trial database can be missing it
-// entirely, which turns a domain that references it into a hard RPC error —
-// "Invalid field res.partner.mobile" — instead of just finding no match).
-// Discover which of the two fields actually exist once per process and only
-// query those, so verification degrades to phone-only matching instead of
-// breaking outright on instances without `mobile`.
 let cachedPartnerPhoneFields: string[] | null = null;
 
 const getPartnerPhoneFields = async (config: OdooConfig, uid: number): Promise<string[]> => {
@@ -827,7 +802,7 @@ export const getPartnerByPhone = async (phone: string): Promise<OdooPartner | nu
   const uid = await loginRead(config);
   if (!uid) return null;
 
-  const variants = buildPhoneMatchVariants(phone);
+  const variants = phoneMatchVariants(phone);
   if (!variants.length) return null;
 
   const phoneFields = await getPartnerPhoneFields(config, uid);

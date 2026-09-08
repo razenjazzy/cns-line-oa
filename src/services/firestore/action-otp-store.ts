@@ -6,6 +6,7 @@ type Dependencies = {
     database: () => Firestore | null;
     inMemoryCreate: (input: ActionOtpStartInput) => ActionOtpChallengeResult;
     inMemoryConsume: (input: { userId: string; otpCode: string }) => ActionOtpChallengeResult;
+    inMemoryConsumeByToken: (input: { token: string }) => ActionOtpChallengeResult;
     parse: (id: string, raw: Record<string, unknown>) => ActionOtpChallenge;
     ttlMinutes: number;
     maxAttempts: number;
@@ -26,6 +27,7 @@ export const createActionOtpStore = (dependencies: Dependencies) => ({
                 channelId: params.channelId,
                 otpCode: params.otpCode,
                 pendingCommandText: params.pendingCommandText,
+                linkToken: params.linkToken,
                 status: 'pending',
                 attemptCount: 0,
                 expiresAt,
@@ -82,6 +84,39 @@ export const createActionOtpStore = (dependencies: Dependencies) => ({
             return { ok: true, data: result };
         } catch (error) {
             return { ok: false, error: `Firestore consumeActionOtpChallenge failed: ${error instanceof Error ? error.message : String(error)}` };
+        }
+    },
+
+    consumeByToken: async (params: { token: string }): Promise<ActionOtpChallengeResult> => {
+        const token = params.token.trim();
+        if (!token) return { ok: false, error: 'action_otp_not_found' };
+        const database = dependencies.database();
+        if (!database) return dependencies.inMemoryConsumeByToken({ token });
+        try {
+            const result = await database.runTransaction(async transaction => {
+                const query = database.collection('actionOtpChallenges')
+                    .where('linkToken', '==', token)
+                    .limit(1);
+                const found = await transaction.get(query);
+                if (found.empty) throw new Error('action_otp_not_found');
+                const document = found.docs[0];
+                const challenge = dependencies.parse(document.id, (document.data() || {}) as Record<string, unknown>);
+                if (challenge.status !== 'pending') throw new Error('action_otp_not_found');
+                if (challenge.attemptCount >= dependencies.maxAttempts) {
+                    transaction.update(document.ref, { status: 'expired', updatedAt: new Date().toISOString(), updatedAtServer: FieldValue.serverTimestamp() });
+                    throw new Error('action_otp_locked');
+                }
+                if (new Date(challenge.expiresAt).getTime() <= Date.now()) {
+                    transaction.update(document.ref, { status: 'expired', updatedAt: new Date().toISOString(), updatedAtServer: FieldValue.serverTimestamp() });
+                    throw new Error('action_otp_expired');
+                }
+                const now = new Date().toISOString();
+                transaction.update(document.ref, { status: 'verified', updatedAt: now, updatedAtServer: FieldValue.serverTimestamp() });
+                return { ...challenge, status: 'verified' as const, updatedAt: now };
+            });
+            return { ok: true, data: result };
+        } catch (error) {
+            return { ok: false, error: `Firestore consumeActionOtpChallengeByToken failed: ${error instanceof Error ? error.message : String(error)}` };
         }
     },
 });

@@ -119,28 +119,31 @@ describe('quotation journey state actions', () => {
     expect(json).toContain('Download PDF');
   });
 
-  it('gives the customer View Quote, Download PDF, and Approve when sent', () => {
+  it('gives the customer Confirm, View Quote, and Download PDF on a sent quotation', () => {
     const json = JSON.stringify(createQuotationJourneyFlexMessage(
       { ...order, state: 'sent' },
       { role: 'customer', portalLink: 'https://example.com/q', pdfLink: 'https://example.com/p' },
       'en',
     ));
     expect(json).toContain('QUOTE APPROVE 17');
-    expect(json).toContain('Approve');
+    expect(json).toContain('Confirm');
     expect(json).toContain('View Quote');
     expect(json).toContain('Download PDF');
     expect(json).not.toContain('NAV HOME');
     expect(json).not.toContain('QUOTE CONFIRM');
-    expect(json).not.toContain('QUOTE INVOICE');
+    expect(json).not.toContain('QUOTE SEND');
+    expect(json).not.toContain('QUOTE MORE');
   });
 
-  it('gives the customer View Quote and Download PDF on a sales order, not invoice send', () => {
+  it('gives the customer Invoice, View Quote, and Download PDF on a sales order', () => {
     const json = JSON.stringify(createQuotationJourneyFlexMessage(
       { ...order, state: 'sale', invoice_status: 'invoiced' },
       { role: 'customer', portalLink: 'https://example.com/q', pdfLink: 'https://example.com/p' },
       'en',
     ));
     expect(json).toContain('Sales Order');
+    expect(json).toContain('Invoice');
+    expect(json).toContain('https://example.com/q');
     expect(json).toContain('Download PDF');
     expect(json).toContain('View Quote');
     expect(json).not.toContain('QUOTE APPROVE');
@@ -247,5 +250,19 @@ describe('quotation list subtitle', () => {
     ], false, 'en', undefined, undefined, undefined, 'Utest');
     expect(JSON.stringify(message)).toContain('Quotation: 2026-09-05 | Somchai');
     expect(JSON.stringify(message)).toContain('quote.list.from|Utest');
+  });
+
+  it('shows More when there is another page', () => {
+    const order = {
+      id: 1,
+      name: 'S0001',
+      state: 'draft' as const,
+      amount_total: 100,
+      partner_id: [9, 'Somchai'] as [number, string],
+      date_order: '2026-09-05 10:00:00',
+    };
+    const json = JSON.stringify(createQuotationListFlexMessage([order], true, 'en', 'cursor1', undefined, undefined, 'Utest'));
+    expect(json).toContain('More');
+    expect(json).toContain('QUOTE LIST CURSOR cursor1');
   });
 });

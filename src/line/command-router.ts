@@ -95,13 +95,14 @@ export const buildHomeMenuMessage = (
   agentName: string,
   channel: ChannelContext | undefined,
   isAdmin: boolean,
+  odooVerified = true,
 ): messagingApi.Message => {
   const availableServices = getAvailableServices(channel, isAdmin);
   const menuItems = [
     { key: 'VERIFY', label: tr(language, 'ยืนยันตัวตน', 'Verify account') },
     ...availableServices.map(svc => ({ key: svc.key, label: language === 'en' ? svc.labelEn : svc.labelTh })),
   ];
-  return createServiceHomeFlexMessage(menuItems, language, agentName);
+  return createServiceHomeFlexMessage(menuItems, language, agentName, !odooVerified);
 };
 
 // ---------------------------------------------------------------------------
@@ -219,7 +220,7 @@ const handleGuidedFormStep = async (ctx: CommandReplyContext): Promise<messaging
     await setUserPendingFlow(userId, null);
     return [
       text(tr(userLanguage, `${agentName} ยกเลิกแบบฟอร์มแล้ว`, `${agentName} form cancelled.`)),
-      buildHomeMenuMessage(userLanguage, agentName, ctx.channel, profile.role === 'admin'),
+      buildHomeMenuMessage(userLanguage, agentName, ctx.channel, profile.role === 'admin', profile.odooVerified),
     ];
   }
 
@@ -410,20 +411,34 @@ const handleFormCommand = async (ctx: CommandReplyContext): Promise<messagingApi
 // Main dispatch — resolveCommandReply
 // ---------------------------------------------------------------------------
 
+const isGuestAllowedCommand = (upperText: string, pendingFlow?: { flow: string }): boolean => {
+  if (pendingFlow?.flow === 'VERIFY') return true;
+  if (upperText === 'NAV HOME' || upperText === 'NAV' || upperText === 'BACK') return true;
+  if (upperText === 'NAV VERIFY' || upperText.startsWith('FORM VERIFY') || upperText.startsWith('VERIFY ')) return true;
+  if (upperText === 'LANG' || upperText.startsWith('LANG ') || upperText === 'ENGLISH' || upperText === 'THAI' || upperText === 'ภาษาไทย') return true;
+  if (upperText === 'GUIDE' || upperText.startsWith('GUIDE ')) return true;
+  if (upperText === 'MY DATA' || upperText === 'DELETE MY DATA') return true;
+  if (upperText === 'START' || upperText === 'HELP' || upperText === 'OPTIONS' || upperText === 'MENU' || upperText === 'เริ่มต้น') return true;
+  return false;
+};
+
 const dispatchCommandReply = async (ctx: CommandReplyContext): Promise<messagingApi.Message[]> => {
   const { profile, userId, userLanguage, agentName } = ctx;
   const trimmed = ctx.text.trim();
   const upperText = trimmed.toUpperCase();
-  const trayVariant = trayVariantForCommand(trimmed);
+  const trayVariant = profile.odooVerified ? trayVariantForCommand(trimmed) : 'verify';
   if (trayVariant && !ctx.isGroupContext) {
     await linkUserRichMenu(userId, userLanguage, ctx.channel?.channelId || DEFAULT_CHANNEL_ID, trayVariant);
   }
 
   // Step 1: Guided form intercept
   if (profile.pendingFlow) {
-    const result = await handleGuidedFormStep(ctx);
-    if (result.length > 0) return result;
-    // flowSpec was null — fall through to normal dispatch
+    if (!profile.odooVerified && profile.pendingFlow.flow !== 'VERIFY') {
+      await setUserPendingFlow(userId, null);
+    } else {
+      const result = await handleGuidedFormStep(ctx);
+      if (result.length > 0) return result;
+    }
   }
 
   // Step 2: First-contact → PDPA data-collection notice (once, informational —
@@ -439,8 +454,17 @@ const dispatchCommandReply = async (ctx: CommandReplyContext): Promise<messaging
         { label: tr(userLanguage, 'ข้อมูลของฉัน', 'My data'), text: 'MY DATA', style: 'primary' },
         { label: tr(userLanguage, 'ลบข้อมูล', 'Delete my data'), text: 'DELETE MY DATA', style: 'secondary' },
       ]),
-      buildHomeMenuMessage(userLanguage, agentName, ctx.channel, profile.role === 'admin'),
+      buildHomeMenuMessage(userLanguage, agentName, ctx.channel, profile.role === 'admin', false),
     ];
+  }
+
+  if (!profile.odooVerified && !isGuestAllowedCommand(upperText, profile.pendingFlow)) {
+    return [text(tr(userLanguage,
+      `${agentName} กรุณายืนยันด้วยเบอร์ในบัญชีผู้ใช้ Odoo ก่อนใช้บริการ ลูกค้าที่ไม่ได้ยืนยันจะเห็นเฉพาะข้อความที่ผู้ใช้ Odoo ส่งมา`,
+      `${agentName} verify with the phone on your Odoo user account before using services. Unverified customers only see messages a verified Odoo user sends.`,
+    ), userLanguage, undefined, [
+      { label: tr(userLanguage, 'ยืนยันตัวตน', 'Verify'), text: 'FORM VERIFY', style: 'primary' },
+    ])];
   }
 
   // Step 3: Service channel gate

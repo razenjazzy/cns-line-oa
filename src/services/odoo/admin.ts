@@ -65,6 +65,24 @@ export const pickLinkedOdooUserPartnerId = async (partnerIds: number[]): Promise
   }
 };
 
+export const findOdooUserIdByPartnerId = async (partnerId: number): Promise<number | undefined> => {
+  const config = getOdooConfig();
+  if (!config) return undefined;
+  try {
+    const uid = await loginRead(config);
+    if (!uid) return undefined;
+    const userIds = await executeKwRead<number[]>(
+      config, uid, 'res.users', 'search',
+      [[['partner_id', '=', partnerId]]],
+      { limit: 1 }
+    );
+    return userIds[0];
+  } catch (err) {
+    console.error('findOdooUserIdByPartnerId error:', err);
+    return undefined;
+  }
+};
+
 /**
  * Sales staff vs customer for a verified partner: login → Sales User (or
  * Sales Administrator); no `res.users` → customer (`undefined`). Never throws.

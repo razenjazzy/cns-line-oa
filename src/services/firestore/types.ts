@@ -104,6 +104,7 @@ export type ActionOtpChallenge = {
     channelId: string;
     otpCode: string;
     pendingCommandText: string;
+    linkToken?: string;
     status: 'pending' | 'verified' | 'expired';
     attemptCount: number;
     expiresAt: string;

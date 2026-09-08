@@ -7,7 +7,7 @@ import {
   setLastActionOtpAt,
   type UserLanguage,
 } from '../../services/firestore';
-import { generateOtp } from '../../services/user-verification';
+import { generateOtp, generateLinkToken } from '../../services/user-verification';
 import { isOtpGatedCommand } from '../../services/service-catalog';
 
 export const isGatedMutation = isOtpGatedCommand;
@@ -36,13 +36,15 @@ const actionOtpGateHandler: CommandHandler = {
     return !ctx.actionOtpReplay;
   },
   handle: async (ctx) => {
-    const { userLanguage, userId, channel, text: originalText } = ctx;
+    const { userLanguage, userId, channel, text: originalText, baseUrl } = ctx;
     const otpCode = generateOtp();
+    const linkToken = generateLinkToken();
     const created = await createActionOtpChallenge({
       userId,
       channelId: channel?.channelId || DEFAULT_CHANNEL_ID,
       otpCode,
       pendingCommandText: originalText,
+      linkToken,
     });
 
     if (!created.ok) {
@@ -58,15 +60,17 @@ const actionOtpGateHandler: CommandHandler = {
       )];
     }
 
+    const origin = (process.env.PUBLIC_BASE_URL?.trim() || baseUrl || '').replace(/\/$/, '');
+    const link = origin ? `${origin}/verify/action?token=${encodeURIComponent(linkToken)}` : '';
     return [createBotTextFlexMessage({
       title: tr(userLanguage, 'ยืนยันก่อนดำเนินการ', 'Confirm before continuing'),
       body: tr(userLanguage,
-        `เพื่อความปลอดภัย กรุณายืนยันด้วยรหัส: ${otpCode}`,
-        `For your security, confirm with this code: ${otpCode}`,
+        'เพื่อความปลอดภัย กรุณายืนยันตัวตนผ่านเว็บ ไม่ต้องพิมพ์รหัสในแชท',
+        'For your security, confirm in the browser. Do not type a code in chat.',
       ),
       language: userLanguage,
       tone: 'warning',
-      actions: [{ label: tr(userLanguage, 'ยืนยัน', 'Verify'), text: `ACTION VERIFY ${otpCode}` }],
+      ...(link ? { linkAction: { label: tr(userLanguage, 'ยืนยันตอนนี้', 'Verify now'), uri: link } } : {}),
     })];
   },
 };

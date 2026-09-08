@@ -91,7 +91,7 @@ export const handleChatFallback = async (
     }
     return [
       ...materializeMessages(chatResult.messages, userLanguage),
-      buildHomeMenuMessage(userLanguage, agentName, channel, profile.role === 'admin'),
+      buildHomeMenuMessage(userLanguage, agentName, channel, profile.role === 'admin', profile.odooVerified),
     ];
   }
 

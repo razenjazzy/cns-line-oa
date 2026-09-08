@@ -211,6 +211,16 @@ export const createUserProfileRepository = (dependencies: RepositoryDependencies
         return result;
     },
 
+    setContactPhone: async (userId: string, phone: string) => {
+        const previous = dependencies.getPrevious(userId);
+        dependencies.mergeCached(userId, { phone });
+        const result = await dependencies.write('setUserContactPhone', async database => {
+            await database.collection('users').doc(userId).set({ phone }, { merge: true });
+        });
+        if (!result.ok) dependencies.restorePrevious(userId, previous);
+        return result;
+    },
+
     setVerificationStatus: async (userId: string, verified: boolean, verifiedAt?: string) => {
         const previous = dependencies.getPrevious(userId);
         const patch = { odooVerified: verified, ...(verifiedAt ? { odooVerifiedAt: verifiedAt } : {}) };

@@ -112,7 +112,7 @@ export const createQuotationJourneyFlexMessage = (
         : createMessageActionButton(t('sendInvoice', language), `QUOTE INVOICE SEND ${order.id}`, 'secondary', BRAND.tealTint));
     }
   } else if (!isCancelled && isSent) {
-    bodyActions.push(createMessageActionButton(t('approve', language), `QUOTE APPROVE ${order.id}`, 'primary', BRAND.teal));
+    bodyActions.push(createMessageActionButton(t('confirm', language), `QUOTE APPROVE ${order.id}`, 'primary', BRAND.teal));
   }
 
   const footerContents: messagingApi.FlexComponent[] = [];
@@ -128,6 +128,8 @@ export const createQuotationJourneyFlexMessage = (
   if (options.role === 'admin') {
     footerContents.push(createMessageActionButton(t('moreActions', language), `QUOTE MORE ${order.id}`, 'secondary', BRAND.tealTint));
     footerContents.push(createMessageActionButton(t('home', language), 'NAV HOME', 'secondary', BRAND.goldTint));
+  } else if (!isCancelled && isSale && options.portalLink) {
+    footerContents.push(createUriActionButton(t('invoiceField', language), options.portalLink, 'secondary', BRAND.goldTint));
   }
 
   return {
@@ -427,7 +429,7 @@ export const createQuoteSendComposerFlexMessage = (
 };
 
 /**
- * "My quotations" — five rows, Next 5, optional date filter.
+ * "My quotations" — three rows, More, optional date filter.
  */
 export const createQuotationListFlexMessage = (
   orders: OdooSaleOrder[],
@@ -510,7 +512,7 @@ export const createQuotationListFlexMessage = (
             { ...createDatePickerButton(t('dateFrom', language), bindPostbackData('quote.list.from', userId)), flex: 1 },
             { ...createDatePickerButton(t('dateTo', language), bindPostbackData('quote.list.to', userId)), flex: 1 },
           ] },
-          ...(hasMore && nextCursor ? [createMessageActionButton(t('nextPage', language), `QUOTE LIST CURSOR ${nextCursor}${dateQuery}`, 'secondary', BRAND.tealTint)] : []),
+          ...(hasMore && nextCursor ? [createMessageActionButton(t('moreActions', language), `QUOTE LIST CURSOR ${nextCursor}${dateQuery}`, 'secondary', BRAND.tealTint)] : []),
           createMessageActionButton(t('home', language), 'NAV HOME', 'secondary', BRAND.goldTint),
         ],
       },

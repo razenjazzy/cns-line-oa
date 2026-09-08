@@ -8,6 +8,7 @@ describe('isGatedMutation', () => {
     expect(isGatedMutation('QUOTE REMOVE 5 App Premium Plan')).toBe(true);
     expect(isGatedMutation('QUOTE CANCEL 5')).toBe(true);
     expect(isGatedMutation('QUOTE INVOICE 5')).toBe(true);
+    expect(isGatedMutation('QUOTE APPROVE 5')).toBe(false);
     expect(isGatedMutation('MESSAGE CUSTOMER 0812345678 Hello')).toBe(true);
   });
 

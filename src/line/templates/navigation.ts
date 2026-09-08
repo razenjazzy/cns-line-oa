@@ -15,7 +15,8 @@ export const SERVICE_ICON: Record<string, string> = {
 export const createServiceHomeFlexMessage = (
   services: { key: string; label: string }[],
   language: ReportLanguage,
-  agentName: string
+  agentName: string,
+  highlightVerify = false,
 ): messagingApi.FlexMessage => {
   return {
     type: 'flex',
@@ -41,9 +42,16 @@ export const createServiceHomeFlexMessage = (
         layout: 'vertical',
         spacing: 'sm',
         paddingBottom: 'lg',
-        contents: services.slice(0, 10).map(service =>
-          createTapRow(`${SERVICE_ICON[service.key] || ''} ${service.label}`.trim(), `NAV ${service.key}`, BRAND.teal, '#FFFFFF', 'lg')
-        ),
+        contents: services.slice(0, 10).map(service => {
+          const active = highlightVerify && service.key === 'VERIFY';
+          return createTapRow(
+            `${SERVICE_ICON[service.key] || ''} ${service.label}`.trim(),
+            `NAV ${service.key}`,
+            active || !highlightVerify ? BRAND.teal : BRAND.tealTint,
+            active || !highlightVerify ? '#FFFFFF' : BRAND.tealStrong,
+            'lg',
+          );
+        }),
       },
       footer: {
         type: 'box',

@@ -15,6 +15,7 @@ export const parseActionOtpChallenge = (
         channelId: toOptionalString(raw.channelId) || 'default',
         otpCode: toOptionalString(raw.otpCode) || '',
         pendingCommandText: toOptionalString(raw.pendingCommandText) || '',
+        linkToken: toOptionalString(raw.linkToken),
         status,
         attemptCount: Math.max(0, Math.trunc(typeof raw.attemptCount === 'number' ? raw.attemptCount : 0)),
         expiresAt: toOptionalString(raw.expiresAt) || new Date(0).toISOString(),

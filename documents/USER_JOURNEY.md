@@ -45,8 +45,8 @@ Capture on a LINE user who has **VERIFY** as an Odoo Sales User or Sales Adminis
 | B4 | Customer phone | Odoo **phone chips** (matched partner first) plus type-in | `journey/b4-quote-phone.png` |
 | B5 | Optional summary | Equal rows: label left, **value right bold**. Payment term default Immediate Payment | `journey/b5-quote-optional.png` |
 | B6 | **Create now** (OTP if asked) | **Quotation** card. Body: **Confirm \| Send**. Footer: **View Quote \| Download PDF**, **More**, **Home** | `journey/b6-quote-draft.png` |
-| B7 | **Send** | Status bar **Quotation Sent**. Same Confirm\|Send + three footer rows. Customer (if they VERIFY’d that phone) gets Approve + View Quote + Download PDF | `journey/b8-quote-sent-admin.png` |
-| B8 | Same order, **customer** chat | **Approve** in the body. View Quote \| Download PDF. No Confirm, More, or Home | `journey/b9-quote-sent-customer.png` |
+| B7 | **Send** | Status bar **Quotation Sent**. Same Confirm\|Send + three footer rows. Unverified customer also gets a **Verify now** link (phone the salesperson set in Odoo) | `journey/b8-quote-sent-admin.png` |
+| B8 | Same order, **customer** OA card | Body **Confirm**. Footer **View Quote \| Download PDF**. No Send, More, or Home | `journey/b9-quote-sent-customer.png` |
 | B9 | Staff **More** | More card: **Edit Quote**, Send Email, Cancel (Sales Admin only), Message customer, Create More, Back | `journey/b10-quote-more.png` |
 | B10 | **Edit Quote** | **Edit Quote** card: each line Edit item / Remove; footer Add item + Back | `journey/b11-quote-edit.png` |
 
@@ -60,9 +60,9 @@ Email/LINE/both composer is **More → Send Email**, not the main Send button.
 
 | # | Tap / command | You should see | File |
 |---|---|---|---|
-| C1 | Customer **Approve** | Customer thank-you + Sales Order (View Quote \| Download PDF). Staff is pushed a Sales Order card | `journey/c1-customer-approve.png` |
+| C1 | Customer **Confirm** | Thank-you + Sales Order (View Quote \| Download PDF + **Invoice**). Staff is pushed a Sales Order card | `journey/c1-customer-approve.png` |
 | C2 | Staff **Confirm** on a *sent* quote (if C1 was skipped) | **Sales Order**. Body: **Create Invoice \| Send Invoice**. Footer: View Quote \| Download PDF, More, Home | `journey/c2-sales-order-admin.png` |
-| C3 | Customer chat after sale | **Sales Order**; View Quote \| Download PDF only | `journey/c3-sales-order-customer.png` |
+| C3 | Customer OA card after sale | **Sales Order**; View Quote \| Download PDF and **Invoice**. No More/Home | `journey/c3-sales-order-customer.png` |
 | C4 | Staff **Create Invoice** (when invoice chip is To invoice) | Same Sales Order card; invoice chip updates. **Send Invoice** opens the send composer (LINE / Email / Both) | `journey/c4-invoice-staff.png` |
 
 Odoo analog: Send marks the quote sent; Confirm/Approve converts to sales order; Create Invoice / Send Invoice match the SO header. Not on LINE: e-sign, payment, delivery.

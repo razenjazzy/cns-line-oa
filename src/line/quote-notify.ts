@@ -1,9 +1,11 @@
 import { createQuotationJourneyFlexMessage } from './templates';
-import { DEFAULT_CHANNEL_ID } from './channels';
+import { DEFAULT_CHANNEL_ID, getBrandTitle } from './channels';
 import { sendTargetedFlexMessage } from './messaging';
 import { getPartnerById, getSaleOrderPdfLink, getSaleOrderPortalLink } from '../services/odoo';
 import type { OdooSaleOrder } from '../services/odoo/types';
-import { findVerifiedUserIdByPartnerId, findVerifiedUserIdByPhone, getUserLanguage, listVerifiedSalesLineUserIds } from '../services/firestore';
+import { findVerifiedUserIdByPartnerId, findLineUserIdByPhone, getUserLanguage, getUserProfile, listVerifiedSalesLineUserIds } from '../services/firestore';
+import { startOdooUserVerification } from '../services/user-verification';
+import { createBotTextFlexMessage } from './templates';
 import { getErpAdapter } from '../erp/registry';
 
 export type QuoteSendChannel = 'line' | 'email' | 'both';
@@ -22,7 +24,7 @@ const salesNotifyUserIds = async (): Promise<string[]> => {
 export const resolveCustomerLineUserId = async (partner: { id: number; phone?: string } | null): Promise<string | null> => {
   if (!partner) return null;
   if (partner.phone) {
-    const byPhone = await findVerifiedUserIdByPhone(partner.phone);
+    const byPhone = await findLineUserIdByPhone(partner.phone);
     if (byPhone) return byPhone;
   }
   return findVerifiedUserIdByPartnerId(partner.id);
@@ -67,6 +69,29 @@ export const notifyQuoteParties = async (input: {
       createQuotationJourneyFlexMessage(input.order, { role: 'customer', ...links }, language),
       channelId,
     );
+    const customerProfile = await getUserProfile(customerLineId);
+    if (!customerProfile.odooVerified && partner?.phone) {
+      const challenge = await startOdooUserVerification({
+        userId: customerLineId,
+        rawPhone: partner.phone,
+        language,
+        agentName: getBrandTitle(language),
+        channelId,
+      });
+      if (challenge.link) {
+        await sendTargetedFlexMessage(
+          [customerLineId],
+          createBotTextFlexMessage({
+            title: language === 'en' ? 'Verify your number' : 'ยืนยันเบอร์ของคุณ',
+            body: challenge.message,
+            language,
+            tone: 'info',
+            linkAction: { label: challenge.linkLabel || (language === 'en' ? 'Verify now' : 'ยืนยันตอนนี้'), uri: challenge.link },
+          }),
+          channelId,
+        );
+      }
+    }
   }
 
   const salesIds = notifySales

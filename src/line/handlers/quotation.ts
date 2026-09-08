@@ -6,9 +6,11 @@ import {
   getSaleOrderPortalLink,
   getSaleOrderPdfLink,
   getSaleOrdersForPartner,
+  getSaleOrdersForSalesperson,
   markSaleOrderSent,
   findSaleOrderLineByProduct,
 } from '../../services/odoo/sales';
+import { findOdooUserIdByPartnerId } from '../../services/odoo/admin';
 import {
   findProductByQuery,
 } from '../../services/odoo/catalog';
@@ -27,6 +29,7 @@ import { getErpAdapter } from '../../erp/registry';
 import { decodeQuoteListCursor, encodeQuoteListCursor } from '../quote-list-cursor';
 import { FLOW_SPECS } from '../../services/guided-forms';
 import { canManageQuoteLines, isQuoteStaff, quoteJourneyRole, syncStaffProfile } from '../quote-access';
+import { appLogger } from '../../services/logger';
 
 const tr = (language: UserLanguage, th: string, en: string): string => (language === 'en' ? en : th);
 
@@ -56,12 +59,27 @@ const adminOnlyReply = (language: UserLanguage) =>
 const staffOnlyReply = (language: UserLanguage) =>
   botText(tr(language, 'คำสั่งนี้สำหรับพนักงานขาย', 'This action is for sales users.'), language);
 
-const staffCardOptions = (profile: UserProfile, links: { portalLink?: string; pdfLink?: string }) => ({
-  role: quoteJourneyRole(profile),
-  salesTier: profile.salesTier,
-  canManageLines: canManageQuoteLines(profile),
-  ...links,
-});
+const staffCardOptions = (profile: UserProfile, links: { portalLink?: string; pdfLink?: string }, order?: OdooSaleOrder) => {
+  const role = quoteJourneyRole(profile);
+  appLogger.info('quote_journey_card', {
+    gitCommit: process.env.RAILWAY_GIT_COMMIT_SHA || process.env.GIT_COMMIT || null,
+    role,
+    salesTier: profile.salesTier || 'customer',
+    lineRole: profile.role,
+    viewerPartnerId: profile.odooPartnerId || null,
+    orderId: order?.id,
+    orderName: order?.name,
+    customerName: order?.partner_id?.[1] || null,
+    customerPartnerId: order?.partner_id?.[0] || null,
+    footerHint: role === 'admin' ? 'confirm_send_body_more_home' : 'view_pdf_only',
+  });
+  return {
+    role,
+    salesTier: profile.salesTier,
+    canManageLines: canManageQuoteLines(profile),
+    ...links,
+  };
+};
 
 const notFoundReply = (language: UserLanguage) => botText(t('quoteNotFound', language), language);
 
@@ -201,7 +219,7 @@ const quoteStatusHandler: CommandHandler = {
 
     const profile = await syncStaffProfile(ctx.userId, ctx.profile);
     const { portalLink, pdfLink } = await getOrderLinks(orderId);
-    return [createQuotationJourneyFlexMessage(order, staffCardOptions(profile, { portalLink, pdfLink }), userLanguage)];
+    return [createQuotationJourneyFlexMessage(order, staffCardOptions(profile, { portalLink, pdfLink }, order), userLanguage)];
   },
 };
 
@@ -241,7 +259,7 @@ const quoteConfirmHandler: CommandHandler = {
       .catch(err => console.warn('quote-confirm: customer notify failed (non-fatal):', err));
 
     const { portalLink, pdfLink } = await getOrderLinks(orderId);
-    return [createQuotationJourneyFlexMessage(order, staffCardOptions(profile, { portalLink, pdfLink }), userLanguage)];
+    return [createQuotationJourneyFlexMessage(order, staffCardOptions(profile, { portalLink, pdfLink }, order), userLanguage)];
   },
 };
 
@@ -297,7 +315,7 @@ const quoteSendHandler: CommandHandler = {
     });
     return [
       botText(sendChannelSummary(userLanguage, result, 'line'), userLanguage),
-      createQuotationJourneyFlexMessage(sentOrder, staffCardOptions(profile, { portalLink, pdfLink }), userLanguage),
+      createQuotationJourneyFlexMessage(sentOrder, staffCardOptions(profile, { portalLink, pdfLink }, sentOrder), userLanguage),
     ];
   },
 };
@@ -354,7 +372,7 @@ const quoteSendConfirmHandler: CommandHandler = {
 
     return [
       botText(sendChannelSummary(userLanguage, result, sendChannel), userLanguage),
-      createQuotationJourneyFlexMessage(sentOrder, staffCardOptions(profile, { portalLink, pdfLink }), userLanguage),
+      createQuotationJourneyFlexMessage(sentOrder, staffCardOptions(profile, { portalLink, pdfLink }, sentOrder), userLanguage),
     ];
   },
 };
@@ -621,7 +639,7 @@ const quoteCancelHandler: CommandHandler = {
       .catch(err => console.warn('quote-cancel: customer notify failed (non-fatal):', err));
 
     const { portalLink, pdfLink } = await getOrderLinks(orderId);
-    return [createQuotationJourneyFlexMessage(order, staffCardOptions(profile, { portalLink, pdfLink }), userLanguage)];
+    return [createQuotationJourneyFlexMessage(order, staffCardOptions(profile, { portalLink, pdfLink }, order), userLanguage)];
   },
 };
 
@@ -699,7 +717,7 @@ const quoteInvoiceSendConfirmHandler: CommandHandler = {
 
     return [
       botText(sendChannelSummary(userLanguage, result, sendChannel), userLanguage),
-      createQuotationJourneyFlexMessage(invoicedOrder, staffCardOptions(profile, { portalLink, pdfLink }), userLanguage),
+      createQuotationJourneyFlexMessage(invoicedOrder, staffCardOptions(profile, { portalLink, pdfLink }, invoicedOrder), userLanguage),
     ];
   },
 };
@@ -743,7 +761,7 @@ const quoteInvoiceHandler: CommandHandler = {
       .catch(err => console.warn('quote-invoice: notify failed (non-fatal):', err));
 
     const { portalLink, pdfLink } = await getOrderLinks(orderId);
-    return [createQuotationJourneyFlexMessage(order, staffCardOptions(profile, { portalLink, pdfLink }), userLanguage)];
+    return [createQuotationJourneyFlexMessage(order, staffCardOptions(profile, { portalLink, pdfLink }, order), userLanguage)];
   },
 };
 
@@ -785,10 +803,12 @@ const quoteListHandler: CommandHandler = {
     }
 
     let partnerId: number | undefined;
+    let listMode: 'salesperson' | 'partner' | 'lookup' = 'partner';
     if (phoneArg && !phoneArg.startsWith('OFFSET') && !phoneArg.startsWith('FROM')) {
       if (!isQuoteStaff(profile)) return [staffOnlyReply(userLanguage)];
       const partner = await getPartnerByPhone(phoneArg);
       partnerId = partner?.id;
+      listMode = 'lookup';
     } else {
       partnerId = profile.odooPartnerId;
     }
@@ -797,16 +817,35 @@ const quoteListHandler: CommandHandler = {
       return [botText(t('quoteNotLinked', userLanguage), userLanguage)];
     }
 
-    const DISPLAY_LIMIT = 5;
-    const fetched = await getSaleOrdersForPartner(partnerId, {
+    const DISPLAY_LIMIT = 3;
+    const listOpts = {
       limit: DISPLAY_LIMIT + 1,
       offset: cursor ? 0 : offset,
       cursor,
       dateFrom,
       dateTo,
-    });
+    };
+    let fetched;
+    if (listMode !== 'lookup' && isQuoteStaff(profile)) {
+      const odooUserId = await findOdooUserIdByPartnerId(partnerId);
+      fetched = odooUserId
+        ? await getSaleOrdersForSalesperson(odooUserId, listOpts)
+        : await getSaleOrdersForPartner(partnerId, listOpts);
+      listMode = odooUserId ? 'salesperson' : 'partner';
+    } else {
+      fetched = await getSaleOrdersForPartner(partnerId, listOpts);
+    }
     const hasMore = fetched.length > DISPLAY_LIMIT;
     const page = fetched.slice(0, DISPLAY_LIMIT);
+    appLogger.info('quote_list', {
+      gitCommit: process.env.RAILWAY_GIT_COMMIT_SHA || process.env.GIT_COMMIT || null,
+      listMode,
+      salesTier: profile.salesTier || 'customer',
+      partnerId,
+      count: page.length,
+      hasMore,
+      customers: page.map(order => order.partner_id?.[1] || null),
+    });
     const nextCursor = hasMore && page.length ? encodeQuoteListCursor(page[page.length - 1]) : undefined;
     return [createQuotationListFlexMessage(page, hasMore, userLanguage, nextCursor, dateFrom, dateTo, userId)];
   },

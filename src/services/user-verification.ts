@@ -6,6 +6,7 @@ import {
   getUserLanguage,
   recordAuditEvent,
   setUserOdooPartner,
+  setUserContactPhone,
   setUserOdooVerificationStatus,
   setUserSalesTier,
   UserLanguage,
@@ -16,13 +17,24 @@ import { DEFAULT_CHANNEL_ID } from '../line/channels';
 import { sendTargetedMessage, sendTargetedFlexMessage } from '../line/messaging';
 import { createBotTextFlexMessage } from '../line/templates';
 import { appLogger } from './logger';
+import { linkUserRichMenu } from '../line/rich-menu';
 
 const tr = (language: UserLanguage, th: string, en: string): string => (language === 'en' ? en : th);
 
 const bindSalesTierIfOdooSalesUser = async (userId: string, partnerId: number): Promise<'salesperson' | 'sales_manager' | undefined> => {
   const salesTier = await findOdooSalesTierByPartnerId(partnerId);
   await setUserSalesTier(userId, salesTier);
+  appLogger.info('verification_bound', {
+    gitCommit: process.env.RAILWAY_GIT_COMMIT_SHA || process.env.GIT_COMMIT || null,
+    partnerId,
+    salesTier: salesTier || 'customer',
+  });
   return salesTier;
+};
+
+const linkHomeMenuAfterVerify = async (userId: string, channelId?: string, language?: UserLanguage) => {
+  const lang = language || await getUserLanguage(userId);
+  await linkUserRichMenu(userId, lang, channelId || DEFAULT_CHANNEL_ID, 'home');
 };
 
 const verificationKindLabel = (language: UserLanguage, salesTier?: 'salesperson' | 'sales_manager') => {
@@ -51,7 +63,7 @@ export const generateOtp = (): string => {
   return String(value).padStart(6, '0');
 };
 
-const generateLinkToken = (): string => crypto.randomBytes(24).toString('hex');
+export const generateLinkToken = (): string => crypto.randomBytes(24).toString('hex');
 
 // Fired on every successful verification completion (OTP-typed or
 // magic-link), regardless of which path got there — the sales/admin side
@@ -116,11 +128,12 @@ export const startOdooUserVerification = async (input: StartVerificationInput): 
 
   const partner = await getPartnerByPhone(phone);
   if (!partner) {
+    await setUserContactPhone(input.userId, phone);
     return {
       message: tr(
         input.language,
-        `${input.agentName} ไม่พบบัญชี Odoo ที่ตรงกับเบอร์ ${phone}`,
-        `${input.agentName} no Odoo user matched phone ${phone}`
+        `${input.agentName} ไม่พบเบอร์ ${phone} ในผู้ติดต่อ Odoo ที่พนักงานขายบันทึกไว้`,
+        `${input.agentName} no Odoo contact matches phone ${phone}. Use the customer number the salesperson set in Odoo.`,
       ),
     };
   }
@@ -175,8 +188,8 @@ export const startOdooUserVerification = async (input: StartVerificationInput): 
   return {
     message: tr(
       input.language,
-      `${input.agentName} เริ่มการยืนยันบัญชี Odoo แล้ว\n- ผู้ใช้: ${partner.name}\n- เบอร์: ${phone}\n\nแตะปุ่มด้านล่างเพื่อยืนยันทันที หรือกรอก OTP ที่ได้รับด้วยคำสั่ง: VERIFY OTP <รหัส>`,
-      `${input.agentName} started Odoo account verification\n- User: ${partner.name}\n- Phone: ${phone}\n\nTap the button below to verify instantly, or submit the received OTP via: VERIFY OTP <code>`
+        `${input.agentName} เริ่มการยืนยันแล้ว\n- ชื่อใน Odoo: ${partner.name}\n- เบอร์ที่พนักงานขายบันทึก: ${phone}\n\nแตะปุ่มด้านล่างเพื่อยืนยันทันที`,
+        `${input.agentName} started verification\n- Odoo contact: ${partner.name}\n- Phone the salesperson set: ${phone}\n\nTap the button below to verify now.`,
     ),
     link,
     linkLabel,
@@ -223,6 +236,7 @@ export const verifyOdooUserByOtp = async (input: VerifyOtpInput): Promise<string
   }
 
   const salesTier = await bindSalesTierIfOdooSalesUser(input.userId, consumed.data.partnerId);
+  await linkHomeMenuAfterVerify(input.userId, consumed.data.channelId, input.language);
 
   notifyAdminOfVerification({
     userId: input.userId,
@@ -266,6 +280,7 @@ export const verifyOdooUserByToken = async (token: string): Promise<{ ok: boolea
   // The magic-link flow completes over plain HTTP, so without this push the
   // LINE chat never learns the verification actually succeeded.
   const language = await getUserLanguage(consumed.data.userId);
+  await linkHomeMenuAfterVerify(consumed.data.userId, consumed.data.channelId, language);
   const successCard = createBotTextFlexMessage({
     title: tr(language, 'ผู้ช่วย Cloudnex', 'Cloudnex assistant'),
     body: tr(

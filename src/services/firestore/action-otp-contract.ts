@@ -5,6 +5,7 @@ export type ActionOtpStartInput = {
     channelId: string;
     otpCode: string;
     pendingCommandText: string;
+    linkToken?: string;
 };
 
 export type ActionOtpRepository = {

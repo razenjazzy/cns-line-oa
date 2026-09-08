@@ -10,7 +10,7 @@ const tr = (language: string, th: string, en: string): string => (language === '
 const navHomeHandler: CommandHandler = {
   name: 'nav-home',
   match: (u) => u === 'NAV HOME' || u === 'NAV' || u === 'BACK',
-  handle: async (ctx) => [buildHomeMenuMessage(ctx.userLanguage, ctx.agentName, ctx.channel, ctx.profile.role === 'admin')],
+  handle: async (ctx) => [buildHomeMenuMessage(ctx.userLanguage, ctx.agentName, ctx.channel, ctx.profile.role === 'admin', ctx.profile.odooVerified)],
 };
 
 // NAV <serviceKey> — show service-specific action panel

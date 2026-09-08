@@ -14,6 +14,7 @@ export {
   getSaleOrderPdfLink,
   getSaleOrderPortalLink,
   getSaleOrdersForPartner,
+  getSaleOrdersForSalesperson,
   markSaleOrderSent,
   sendQuotationEmail,
   removeSaleOrderLine,
