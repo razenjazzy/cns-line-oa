@@ -19,10 +19,24 @@ import { appLogger } from './logger';
 
 const tr = (language: UserLanguage, th: string, en: string): string => (language === 'en' ? en : th);
 
-const bindSalesTierIfOdooSalesUser = async (userId: string, partnerId: number): Promise<void> => {
+const bindSalesTierIfOdooSalesUser = async (userId: string, partnerId: number): Promise<'salesperson' | 'sales_manager' | undefined> => {
   const salesTier = await findOdooSalesTierByPartnerId(partnerId);
-  if (salesTier) await setUserSalesTier(userId, salesTier);
+  await setUserSalesTier(userId, salesTier);
+  return salesTier;
 };
+
+const verificationKindLabel = (language: UserLanguage, salesTier?: 'salesperson' | 'sales_manager') => {
+  if (salesTier === 'sales_manager') return tr(language, 'ผู้ดูแลฝ่ายขาย', 'Sales Administrator');
+  if (salesTier === 'salesperson') return tr(language, 'ผู้ใช้ฝ่ายขาย', 'Sales User');
+  return tr(language, 'ลูกค้า', 'customer');
+};
+
+const verificationSuccessMessage = (language: UserLanguage, agentName: string, salesTier?: 'salesperson' | 'sales_manager') =>
+  tr(
+    language,
+    `${agentName} ยืนยันตัวตน Odoo สำเร็จแล้ว — ${verificationKindLabel(language, salesTier)}`,
+    `${agentName} Odoo verification completed — ${verificationKindLabel(language, salesTier)}.`,
+  );
 
 const normalizePhone = (value: string): string => value.replace(/[^0-9+]/g, '').trim();
 
@@ -45,23 +59,32 @@ const generateLinkToken = (): string => crypto.randomBytes(24).toString('hex');
 // on success" pattern already used by quote-approve. Best-effort: a push
 // or audit-write failure here must never turn a completed verification
 // into a reported failure for the customer.
-const notifyAdminOfVerification = async (params: { userId: string; phone: string; partnerId: number; channelId?: string }): Promise<void> => {
+const notifyAdminOfVerification = async (params: {
+  userId: string;
+  phone: string;
+  partnerId: number;
+  channelId?: string;
+  salesTier?: 'salesperson' | 'sales_manager';
+}): Promise<void> => {
   recordAuditEvent({
     action: 'verification_success',
     outcome: 'success',
     actorUserId: params.userId,
     channelId: params.channelId,
     targetId: String(params.partnerId),
-    detail: `phone=${params.phone}`,
+    detail: `phone=${params.phone};tier=${params.salesTier || 'customer'}`,
   });
 
   const adminUserId = process.env.ADMIN_USER_ID?.trim();
   if (!adminUserId) return;
   try {
     const adminLanguage = await getUserLanguage(adminUserId);
+    const staff = Boolean(params.salesTier);
     await sendTargetedMessage(
       [adminUserId],
-      tr(adminLanguage, `ลูกค้ายืนยันบัญชี Odoo แล้ว (เบอร์ ${params.phone})`, `A customer just verified their Odoo account (phone ${params.phone}).`),
+      staff
+        ? tr(adminLanguage, `ผู้ใช้ฝ่ายขายยืนยันบัญชี Odoo แล้ว (เบอร์ ${params.phone})`, `An Odoo Sales user just verified (phone ${params.phone}).`)
+        : tr(adminLanguage, `ลูกค้ายืนยันบัญชี Odoo แล้ว (เบอร์ ${params.phone})`, `A customer just verified their Odoo account (phone ${params.phone}).`),
       params.channelId,
     );
   } catch (err) {
@@ -199,16 +222,18 @@ export const verifyOdooUserByOtp = async (input: VerifyOtpInput): Promise<string
     return tr(input.language, `${input.agentName} ยืนยันสำเร็จ แต่บันทึกสถานะยืนยันไม่สำเร็จ`, `${input.agentName} verification succeeded but failed to persist verification status.`);
   }
 
-  await bindSalesTierIfOdooSalesUser(input.userId, consumed.data.partnerId);
+  const salesTier = await bindSalesTierIfOdooSalesUser(input.userId, consumed.data.partnerId);
 
-  notifyAdminOfVerification({ userId: input.userId, phone: consumed.data.phone, partnerId: consumed.data.partnerId, channelId: consumed.data.channelId })
+  notifyAdminOfVerification({
+    userId: input.userId,
+    phone: consumed.data.phone,
+    partnerId: consumed.data.partnerId,
+    channelId: consumed.data.channelId,
+    salesTier,
+  })
     .catch(err => console.warn('verifyOdooUserByOtp: post-verify notify failed (non-fatal):', err));
 
-  return tr(
-    input.language,
-    `${input.agentName} ยืนยันตัวตน Odoo สำเร็จแล้ว`,
-    `${input.agentName} Odoo user verification completed successfully.`
-  );
+  return verificationSuccessMessage(input.language, input.agentName, salesTier);
 };
 
 export const verifyOdooUserByToken = async (token: string): Promise<{ ok: boolean; message: string; channelId?: string }> => {
@@ -236,23 +261,30 @@ export const verifyOdooUserByToken = async (token: string): Promise<{ ok: boolea
     return { ok: false, message: 'Verification succeeded, but failed to persist verification status.' };
   }
 
-  await bindSalesTierIfOdooSalesUser(consumed.data.userId, consumed.data.partnerId);
+  const salesTier = await bindSalesTierIfOdooSalesUser(consumed.data.userId, consumed.data.partnerId);
 
   // The magic-link flow completes over plain HTTP, so without this push the
-  // customer's LINE chat never learns the verification actually succeeded.
-  // A Flex card (not plain text) so there's an actual tappable next step —
-  // createBotTextFlexMessage already renders a "Home" button by default,
-  // same as every other bot reply in this codebase.
+  // LINE chat never learns the verification actually succeeded.
   const language = await getUserLanguage(consumed.data.userId);
   const successCard = createBotTextFlexMessage({
     title: tr(language, 'ผู้ช่วย Cloudnex', 'Cloudnex assistant'),
-    body: tr(language, '✅ ยืนยันบัญชี Odoo สำเร็จแล้ว', '✅ Your Odoo account is now verified.'),
+    body: tr(
+      language,
+      `✅ ยืนยันบัญชี Odoo สำเร็จแล้ว — ${verificationKindLabel(language, salesTier)}`,
+      `✅ Odoo verification completed — ${verificationKindLabel(language, salesTier)}.`,
+    ),
     language,
     tone: 'success',
   });
   await sendTargetedFlexMessage([consumed.data.userId], successCard, consumed.data.channelId);
 
-  notifyAdminOfVerification({ userId: consumed.data.userId, phone: consumed.data.phone, partnerId: consumed.data.partnerId, channelId: consumed.data.channelId })
+  notifyAdminOfVerification({
+    userId: consumed.data.userId,
+    phone: consumed.data.phone,
+    partnerId: consumed.data.partnerId,
+    channelId: consumed.data.channelId,
+    salesTier,
+  })
     .catch(err => console.warn('verifyOdooUserByToken: post-verify notify failed (non-fatal):', err));
 
   return { ok: true, message: 'Odoo user verification completed successfully. You can return to LINE now.', channelId: consumed.data.channelId };

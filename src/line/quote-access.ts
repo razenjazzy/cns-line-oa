@@ -19,9 +19,8 @@ export const quoteJourneyRole = (profile: QuoteActor): 'admin' | 'customer' =>
   isQuoteStaff(profile) ? 'admin' : 'customer';
 
 /**
- * Refresh Odoo Sales group onto the Firestore profile. Without this, a
- * verified salesperson who never ran ADMIN ENABLE is treated as a customer
- * and the draft card hides Confirm|Send.
+ * Refresh Odoo login vs customer onto the Firestore profile. A linked
+ * res.users is Sales staff; a contact with no login stays a customer.
  */
 export const syncStaffProfile = async (userId: string, profile: UserProfile): Promise<UserProfile> => {
   if (!profile.odooPartnerId) return profile;

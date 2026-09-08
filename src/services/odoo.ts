@@ -16,6 +16,7 @@ import {
   withIdempotentWriteRetry,
   type OdooConfig,
 } from './odoo/client';
+import { pickLinkedOdooUserPartnerId, preferOdooLoginPartner } from './odoo/admin';
 export * from './odoo/types';
 
 const getConfig = getOdooConfig;
@@ -839,11 +840,13 @@ export const getPartnerByPhone = async (phone: string): Promise<OdooPartner | nu
     'res.partner',
     'search_read',
     [domain],
-    { fields: await partnerReadFields(config, uid), limit: 1 }
+    { fields: await partnerReadFields(config, uid), limit: 20 }
   );
 
   if (!rows.length) return null;
-  return parsePartner(rows[0]);
+  const partners = rows.map(parsePartner);
+  const loginPartnerId = await pickLinkedOdooUserPartnerId(partners.map(partner => partner.id));
+  return preferOdooLoginPartner(partners, loginPartnerId ? [loginPartnerId] : []);
 };
 
 export const getPartnerByName = async (name: string): Promise<OdooPartner | null> => {

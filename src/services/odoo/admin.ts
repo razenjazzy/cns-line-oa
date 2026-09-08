@@ -11,24 +11,65 @@ export const pingOdoo = async (): Promise<string> => {
   return `Odoo connected successfully (uid=${uid}).`;
 };
 
+export type OdooSalesTier = 'salesperson' | 'sales_manager';
+
 /**
- * Best-effort Odoo-native sales tier for a verified partner, resolved from
- * their linked res.users login's security-group membership. Returns
- * undefined (never throws) whenever any step can't be completed — no
- * res.users record for this partner (the common case: most verified LINE
- * users are customer contacts, not Odoo employees), the Sales Team groups
- * can't be resolved on this instance, or any RPC step fails. Callers must
- * treat undefined as "fall back to today's plain admin behavior", never as
- * an error to surface to the user — this is a refinement layered on top of
- * the existing role check, not a precondition for it.
- *
- * Field names for a user's security groups differ across Odoo versions
- * (this project has seen an instance using group_ids/all_group_ids rather
- * than the classic groups_id) — each candidate is tried in turn rather than
- * hardcoded, mirroring how getPartnerPhoneFields handles res.partner phone
- * field variability elsewhere in this file's sibling modules.
+ * Phone VERIFY is one flow. A linked `res.users` login is Sales staff
+ * (Sales User, or Sales Administrator when that group is present). A
+ * `res.partner` with no login is a customer. Group lookup is best-effort:
+ * a login without readable Sales groups is still staff, not a customer.
  */
-export const findOdooSalesTierByPartnerId = async (partnerId: number): Promise<'salesperson' | 'sales_manager' | undefined> => {
+export const salesTierForLinkedOdooUser = (input: {
+  hasLogin: boolean;
+  groupIds?: number[];
+  managerGroupId?: number;
+  salesmanGroupId?: number;
+}): OdooSalesTier | undefined => {
+  if (!input.hasLogin) return undefined;
+  const groups = input.groupIds || [];
+  if (input.managerGroupId && groups.includes(input.managerGroupId)) return 'sales_manager';
+  if (input.salesmanGroupId && groups.includes(input.salesmanGroupId)) return 'salesperson';
+  return 'salesperson';
+};
+
+/** When several contacts share a phone, bind the one that has an Odoo login. */
+export const preferOdooLoginPartner = <T extends { id: number }>(partners: T[], loginPartnerIds: number[]): T => {
+  const preferred = partners.find(partner => loginPartnerIds.includes(partner.id));
+  return preferred || partners[0];
+};
+
+export const pickLinkedOdooUserPartnerId = async (partnerIds: number[]): Promise<number | undefined> => {
+  if (!partnerIds.length) return undefined;
+  const config = getOdooConfig();
+  if (!config) return undefined;
+  try {
+    const uid = await loginRead(config);
+    if (!uid) return undefined;
+    const searchUsers = (domain: unknown[]) => executeKwRead<Array<{ partner_id?: unknown }>>(
+      config, uid, 'res.users', 'search_read',
+      [domain],
+      { fields: ['partner_id'], limit: 20 }
+    );
+    const rows = await searchUsers([['partner_id', 'in', partnerIds], ['active', '=', true]])
+      .catch(() => searchUsers([['partner_id', 'in', partnerIds]]));
+    const loginIds = rows.map(row => {
+      const partner = row.partner_id;
+      if (typeof partner === 'number') return partner;
+      if (Array.isArray(partner) && typeof partner[0] === 'number') return partner[0];
+      return undefined;
+    }).filter((id): id is number => typeof id === 'number');
+    return partnerIds.find(id => loginIds.includes(id));
+  } catch (err) {
+    console.error('pickLinkedOdooUserPartnerId error:', err);
+    return undefined;
+  }
+};
+
+/**
+ * Sales staff vs customer for a verified partner: login → Sales User (or
+ * Sales Administrator); no `res.users` → customer (`undefined`). Never throws.
+ */
+export const findOdooSalesTierByPartnerId = async (partnerId: number): Promise<OdooSalesTier | undefined> => {
   const config = getOdooConfig();
   if (!config) return undefined;
 
@@ -44,17 +85,13 @@ export const findOdooSalesTierByPartnerId = async (partnerId: number): Promise<'
     if (!userIds.length) return undefined;
     const odooUserId = userIds[0];
 
-    // Resolve the two Sales Team security groups by their stable external
-    // ID (module='sales_team') rather than a numeric id, which varies per
-    // instance/install.
     const groupRefs = await executeKwRead<Array<{ name: string; res_id: number }>>(
       config, uid, 'ir.model.data', 'search_read',
       [[['module', '=', 'sales_team'], ['name', 'in', ['group_sale_salesman', 'group_sale_manager']]]],
       { fields: ['name', 'res_id'] }
-    );
+    ).catch(() => [] as Array<{ name: string; res_id: number }>);
     const managerGroupId = groupRefs.find(g => g.name === 'group_sale_manager')?.res_id;
     const salesmanGroupId = groupRefs.find(g => g.name === 'group_sale_salesman')?.res_id;
-    if (!managerGroupId && !salesmanGroupId) return undefined;
 
     let userGroupIds: number[] = [];
     for (const field of ['all_group_ids', 'group_ids', 'groups_id']) {
@@ -71,11 +108,13 @@ export const findOdooSalesTierByPartnerId = async (partnerId: number): Promise<'
         // This field doesn't exist on this instance/version — try the next candidate.
       }
     }
-    if (!userGroupIds.length) return undefined;
 
-    if (managerGroupId && userGroupIds.includes(managerGroupId)) return 'sales_manager';
-    if (salesmanGroupId && userGroupIds.includes(salesmanGroupId)) return 'salesperson';
-    return undefined;
+    return salesTierForLinkedOdooUser({
+      hasLogin: true,
+      groupIds: userGroupIds,
+      managerGroupId,
+      salesmanGroupId,
+    });
   } catch (err) {
     console.error('findOdooSalesTierByPartnerId error:', err);
     return undefined;
