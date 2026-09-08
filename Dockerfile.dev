@@ -1,5 +1,5 @@
 # dev tier: backend container with hot-reload (nodemon/ts-node)
-FROM node:22-alpine
+FROM node:26-alpine
 
 WORKDIR /usr/src/app
 
