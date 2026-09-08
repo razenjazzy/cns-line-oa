@@ -8,8 +8,6 @@ deploy.env.production.yaml
 deploy.env.staging.yaml
 .mcp.json
 npm-debug.log
-Dockerfile
-.dockerignore
 .git
 .gitignore
 .github

@@ -1,4 +1,5 @@
 # Stage 1: Build the TypeScript code
+# Railway rebuild: i18n keys for Edit Quote must ship with quotation.ts.
 FROM node:22-alpine AS builder
 
 WORKDIR /usr/src/app
