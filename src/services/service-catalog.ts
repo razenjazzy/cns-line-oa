@@ -118,6 +118,7 @@ const COMMAND_PREFIX_SERVICE_MAP: CommandPrefixMapping[] = [
   { prefix: 'QUOTE SEND', service: 'commerce', requiresOtp: true },
   { prefix: 'QUOTE APPROVE', service: 'commerce', requiresOtp: true },
   { prefix: 'QUOTE ADD', service: 'commerce', requiresOtp: true },
+  { prefix: 'QUOTE LINES', service: 'commerce' },
   { prefix: 'QUOTE EDIT', service: 'commerce', requiresOtp: true },
   { prefix: 'QUOTE REMOVE', service: 'commerce', requiresOtp: true },
   { prefix: 'QUOTE CANCEL', service: 'commerce', requiresOtp: true },

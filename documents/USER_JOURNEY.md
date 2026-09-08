@@ -33,33 +33,39 @@ Persona names: **Sora** (EN), **โซระ** (TH). Guide/home titles: **CloudN
 
 ---
 
-## B — Sales: create and send a quote
+## B — Sales: create, send, and confirm (tap order)
 
-Admin chain must already be complete (`odooVerified` + `ADMIN_USER_ID` + Odoo admin capability).
+Capture on a LINE user who has **VERIFY** as an Odoo Sales User or Sales Administrator. `ADMIN ENABLE` is not required. Do not screenshot OTP codes. After each tap, wait for the **new** bubble (LINE never updates an old card).
 
-| # | Command | You should see | File |
+| # | Tap / command | You should see | File |
 |---|---|---|---|
-| B1 | `FORM QUOTE CREATE` | Product name prompt. Product names in **quick-reply chips only**, not listed in the bubble body | `journey/b1-quote-product-chips.png` |
-| B2 | Pick a product chip, then quantity | Quantity prompt | `journey/b2-quote-qty.png` |
+| B1 | Tray **Products & Quotes** → **Create a quote**, or `FORM QUOTE CREATE` | Product name prompt. Product names in **chips under the composer**, not in the bubble body | `journey/b1-quote-product-chips.png` |
+| B2 | Tap a product chip, then quantity | Quantity prompt | `journey/b2-quote-qty.png` |
 | B3 | Customer name | Odoo partner **name chips** plus type-in | `journey/b3-quote-customer-name.png` |
 | B4 | Customer phone | Odoo **phone chips** (matched partner first) plus type-in | `journey/b4-quote-phone.png` |
-| B5 | Optional summary | Equal rows: label left, **value right bold**. Payment term default Immediate Payment (or Odoo `default_get`) | `journey/b5-quote-optional.png` |
-| B6 | Create now (after step-up OTP if asked) | Journey card **Quotation**; footer (3 rows only): **Confirm \| Send**, View Quote \| Download PDF, Home. Create More and More are chips under the card. | `journey/b6-quote-draft.png` |
-| B7 | Footer **Send** | Marks the quote **Quotation Sent** and pushes the customer Flex (Approve, View Quote, Download PDF). Email/LINE/both composer is **More → Send Email**. | `journey/b7-quote-send-composer.png` |
-| B8 | `QUOTE SEND CONFIRM <id>` or chip with email | Admin card **Quotation Sent**; Confirm remains. Customer (if verified) gets Approve / View Quote / Download PDF | `journey/b8-quote-sent-admin.png` |
-| B9 | Same order, customer chat | Customer card: Approve, View Quote, Download PDF. No Confirm/Home | `journey/b9-quote-sent-customer.png` |
+| B5 | Optional summary | Equal rows: label left, **value right bold**. Payment term default Immediate Payment | `journey/b5-quote-optional.png` |
+| B6 | **Create now** (OTP if asked) | **Quotation** card. Body: **Confirm \| Send**. Footer: **View Quote \| Download PDF**, **More**, **Home** | `journey/b6-quote-draft.png` |
+| B7 | **Send** | Status bar **Quotation Sent**. Same Confirm\|Send + three footer rows. Customer (if they VERIFY’d that phone) gets Approve + View Quote + Download PDF | `journey/b8-quote-sent-admin.png` |
+| B8 | Same order, **customer** chat | **Approve** in the body. View Quote \| Download PDF. No Confirm, More, or Home | `journey/b9-quote-sent-customer.png` |
+| B9 | Staff **More** | More card: **Edit Quote**, Send Email, Cancel (Sales Admin only), Message customer, Create More, Back | `journey/b10-quote-more.png` |
+| B10 | **Edit Quote** | **Edit Quote** card: each line Edit item / Remove; footer Add item + Back | `journey/b11-quote-edit.png` |
+
+**Do not tap Confirm yet** if you still need B7–B8. Confirm on a draft jumps **Quotation → Sales Order** and skips Quotation Sent.
+
+Email/LINE/both composer is **More → Send Email**, not the main Send button.
 
 ---
 
-## C — Approve and sales order
+## C — Approve, Sales Order, invoice
 
-| # | Command | You should see | File |
+| # | Tap / command | You should see | File |
 |---|---|---|---|
-| C1 | Customer `QUOTE APPROVE <id>` | Customer thank-you; sales admin is pushed a confirmation-style journey card | `journey/c1-customer-approve.png` |
-| C2 | Sales `QUOTE CONFIRM <id>` on a sent quote (if not already sale) | Label **Sales Order** | `journey/c2-sales-order-admin.png` |
-| C3 | Customer chat after sale | **Sales Order**; only **Download PDF** | `journey/c3-sales-order-customer.png` |
+| C1 | Customer **Approve** | Customer thank-you + Sales Order (View Quote \| Download PDF). Staff is pushed a Sales Order card | `journey/c1-customer-approve.png` |
+| C2 | Staff **Confirm** on a *sent* quote (if C1 was skipped) | **Sales Order**. Body: **Create Invoice \| Send Invoice**. Footer: View Quote \| Download PDF, More, Home | `journey/c2-sales-order-admin.png` |
+| C3 | Customer chat after sale | **Sales Order**; View Quote \| Download PDF only | `journey/c3-sales-order-customer.png` |
+| C4 | Staff **Create Invoice** (when invoice chip is To invoice) | Same Sales Order card; invoice chip updates. **Send Invoice** opens the send composer (LINE / Email / Both) | `journey/c4-invoice-staff.png` |
 
-Odoo web analog: email send uses partner email; confirm converts quotation → sales order; PDF is the order report. Sales Order staff card: **Create Invoice | Send Invoice**, then the same footer as quotation (View Quote | Download PDF, More, Home). Not in this card: e-sign, payment capture, delivery.
+Odoo analog: Send marks the quote sent; Confirm/Approve converts to sales order; Create Invoice / Send Invoice match the SO header. Not on LINE: e-sign, payment, delivery.
 
 ---
 
@@ -107,12 +113,14 @@ Drop files next to this doc:
 ![B4 Phone](journey/b4-quote-phone.png)
 ![B5 Optional](journey/b5-quote-optional.png)
 ![B6 Draft](journey/b6-quote-draft.png)
-![B7 Send composer](journey/b7-quote-send-composer.png)
 ![B8 Sent admin](journey/b8-quote-sent-admin.png)
 ![B9 Sent customer](journey/b9-quote-sent-customer.png)
+![B10 More](journey/b10-quote-more.png)
+![B11 Edit Quote](journey/b11-quote-edit.png)
 ![C1 Approve](journey/c1-customer-approve.png)
 ![C2 SO admin](journey/c2-sales-order-admin.png)
 ![C3 SO customer](journey/c3-sales-order-customer.png)
+![C4 Invoice](journey/c4-invoice-staff.png)
 ![D1 Lang](journey/d1-lang-toggle.png)
 ![D2 Home TH](journey/d2-home-th.png)
 ![D3 Tray TH](journey/d3-tray-th.png)
