@@ -23,7 +23,7 @@ Persona names: **Sora** (EN), **โซระ** (TH). Guide/home titles: **CloudN
 |---|---|---|---|
 | A1 | First message (any text) from a new user, or `NAV HOME` | PDPA notice (first contact only) + Flex home titled CloudNex Connect: Sora | `journey/a1-home-en.png` |
 | A2 | Open chat-bar **Menu** | Compact 2×3: Home/Products/Orders/Help regular; **Verify regular** (off); **Language gold** (English on) | `journey/a2-tray-en.png` |
-| A3 | `FORM VERIFY` (tray Verify) | Guided verify form in English. After success, Verify tile is **gold**. Tap Verify again to unverify (regular). | `journey/a3-verify.png` |
+| A3 | `FORM VERIFY` (tray Verify) | Tray Verify turns **gold** on tap. Guided verify form in English. After success the gold stays (session on). Tap Verify again to unverify (regular). | `journey/a3-verify.png` |
 | A4 | `NAV commerce` (tray Products & Quotes) | Service action list: find product, create quote, order status, my quotations | `journey/a4-products-quotes.png` |
 | A5 | `FORM ORDER STATUS` (tray Order Status) | Order-status form prompt | `journey/a5-order-status.png` |
 | A6 | `GUIDE` (tray Help) | Guide categories; header CloudNex Connect: Sora | `journey/a6-help-guide.png` |

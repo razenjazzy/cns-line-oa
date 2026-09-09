@@ -22,11 +22,16 @@ export const richMenuIdForLanguage = (
   salesSessionActive = false,
 ): string | undefined => {
   const map = parseMenuMap(env)[language] || {};
-  const sessionKey = salesSessionActive ? `${variant}-verified` : variant;
-  const mapped = map[sessionKey]?.trim() || map[variant]?.trim();
+  if (salesSessionActive) {
+    const verified = map[`${variant}-verified`]?.trim()
+      || map['default-verified']?.trim()
+      || map['verify-verified']?.trim();
+    if (verified) return verified;
+  }
+  const mapped = map[variant]?.trim();
   if (mapped) return mapped;
   if (variant !== 'default') {
-    const fallback = (salesSessionActive ? map['default-verified'] : undefined) || map.default?.trim();
+    const fallback = map.default?.trim();
     if (fallback) return fallback;
   }
   const key = language === 'th' ? 'LINE_RICH_MENU_TH' : 'LINE_RICH_MENU_EN';

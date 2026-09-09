@@ -14,7 +14,8 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.cancelGroupBuy = exports.confirmGroupBuy = exports.joinGroupBuy = exports.attachGroupBuyOdooOrder = exports.listGroupBuysByCreator = exports.getGroupBuyById = exports.createGroupBuy = exports.consumeActionOtpChallenge = exports.createActionOtpChallenge = exports.consumeOdooVerificationByToken = exports.consumeOdooVerificationByOtp = exports.createOdooVerificationChallenge = exports.deleteAuditEventsByIds = exports.listAuditEventsOlderThan = exports.listRecentAuditEvents = exports.listRecentAuditEventsPage = exports.recordAuditEvent = exports.transitionStoredApproval = exports.getApprovalRecord = exports.saveApprovalRecord = exports.setPlatformConfig = exports.getPlatformConfig = exports.listVerifiedSalesLineUserIds = exports.findVerifiedUserIdByPartnerId = exports.findVerifiedUserIdByPhone = exports.setUserOdooVerificationStatus = exports.setUserOdooPartner = exports.setUserSalesTier = exports.setUserRole = exports.setLastQuoteListFrom = exports.setLastProductContext = exports.setUserPendingFlow = exports.recordChatFeedback = exports.filterMarketingOptedInUserIds = exports.deleteUserProfile = exports.setMarketingOptIn = exports.setLastActionOtpAt = exports.markConsentNoticeShown = exports.getUserProfile = exports.setUserLanguage = exports.getUserLanguage = exports.saveReportLog = exports.markUserFirstContact = exports.setEscalationState = exports.getEscalationState = exports.saveConversationMessage = exports.getConversationHistory = exports.updateUserScore = exports.checkFirestoreReady = void 0;
+exports.attachGroupBuyOdooOrder = exports.listGroupBuysByCreator = exports.getGroupBuyById = exports.createGroupBuy = exports.consumeActionOtpChallengeByToken = exports.consumeActionOtpChallenge = exports.createActionOtpChallenge = exports.consumeOdooVerificationByToken = exports.consumeOdooVerificationByOtp = exports.createOdooVerificationChallenge = exports.deleteAuditEventsByIds = exports.listAuditEventsOlderThan = exports.listRecentAuditEvents = exports.listRecentAuditEventsPage = exports.recordAuditEvent = exports.transitionStoredApproval = exports.getApprovalRecord = exports.saveApprovalRecord = exports.setPlatformConfig = exports.getPlatformConfig = exports.listVerifiedSalesLineUserIds = exports.findVerifiedUserIdByPartnerId = exports.findLineUserIdByPhone = exports.findVerifiedUserIdByPhone = exports.setSalesSessionExpiresAt = exports.setUserOdooVerificationStatus = exports.setUserContactPhone = exports.setUserOdooPartner = exports.setUserSalesTier = exports.setUserRole = exports.setLastQuoteListFrom = exports.setLastProductContext = exports.setUserPendingFlow = exports.recordChatFeedback = exports.filterMarketingOptedInUserIds = exports.deleteUserProfile = exports.setMarketingOptIn = exports.setLastActionOtpAt = exports.markConsentNoticeShown = exports.getUserProfile = exports.setUserLanguage = exports.getUserLanguage = exports.saveReportLog = exports.markUserFirstContact = exports.setEscalationState = exports.getEscalationState = exports.saveConversationMessage = exports.getConversationHistory = exports.updateUserScore = exports.checkFirestoreReady = void 0;
+exports.cancelGroupBuy = exports.confirmGroupBuy = exports.joinGroupBuy = void 0;
 const firestore_1 = require("@google-cloud/firestore");
 const app_config_1 = require("./app-config");
 const logger_1 = require("./logger");
@@ -32,6 +33,7 @@ const verification_store_1 = require("./firestore/verification-store");
 const verification_consume_1 = require("./firestore/verification-consume");
 const verification_token_1 = require("./firestore/verification-token");
 const report_store_1 = require("./firestore/report-store");
+const phone_match_1 = require("./phone-match");
 __exportStar(require("./firestore/types"), exports);
 let db = null;
 const auditLogger = (0, logger_1.createLogger)('audit');
@@ -364,73 +366,48 @@ exports.setLastQuoteListFrom = userProfileRepository.setLastQuoteListFrom;
 exports.setUserRole = userProfileRepository.setRole;
 exports.setUserSalesTier = userProfileRepository.setSalesTier;
 exports.setUserOdooPartner = userProfileRepository.setOdooPartner;
+exports.setUserContactPhone = userProfileRepository.setContactPhone;
 exports.setUserOdooVerificationStatus = userProfileRepository.setVerificationStatus;
-const normalizePhoneForMatch = (value) => value.replace(/[^0-9+]/g, '').trim();
-/** Mirrors buildPhoneMatchVariants in odoo.ts (kept as a small local copy rather than a cross-file import, same as normalizePhone in user-verification.ts). */
-const buildPhoneVariants = (phone) => {
-    const cleaned = normalizePhoneForMatch(phone);
-    if (!cleaned)
-        return [];
-    const variants = new Set([cleaned]);
-    if (cleaned.startsWith('0') && cleaned.length >= 9) {
-        variants.add(`+66${cleaned.slice(1)}`);
-        variants.add(`66${cleaned.slice(1)}`);
-    }
-    else if (cleaned.startsWith('+66')) {
-        variants.add(`0${cleaned.slice(3)}`);
-        variants.add(cleaned.slice(1));
-    }
-    else if (cleaned.startsWith('66') && cleaned.length >= 10) {
-        variants.add(`0${cleaned.slice(2)}`);
-        variants.add(`+${cleaned}`);
-    }
-    return Array.from(variants);
+exports.setSalesSessionExpiresAt = userProfileRepository.setSalesSessionExpiresAt;
+const phoneVariantsOverlap = (left, right) => {
+    const a = (0, phone_match_1.phoneMatchVariants)(left);
+    const b = new Set((0, phone_match_1.phoneMatchVariants)(right));
+    return a.some(value => b.has(value));
 };
-/**
- * The missing link for "admin creates a quote, LINE sends it to the
- * customer's phone": LINE can only push to a userId that has already
- * messaged the OA, so this only ever finds someone who has completed
- * VERIFY themselves at least once (odooVerified === true). Returns null
- * — not an error — when nobody has verified with that phone yet; callers
- * must treat that as "customer not linked", not retry.
- */
-const findVerifiedUserIdByPhone = async (phone) => {
-    const variants = buildPhoneVariants(phone);
+const findUserIdByPhone = async (phone, verifiedOnly) => {
+    const variants = (0, phone_match_1.phoneMatchVariants)(phone);
     if (!variants.length)
         return null;
     const database = getDb();
     if (database) {
         try {
-            // Firestore 'in' supports up to 10 values; buildPhoneVariants never
-            // produces more than 3, so a single composite query suffices.
-            // Needs a composite index on (phone, odooVerified) — Firestore
-            // surfaces the exact index-creation link in the error if missing.
-            const snap = await database.collection('users')
-                .where('phone', 'in', variants)
-                .where('odooVerified', '==', true)
-                .limit(1)
-                .get();
+            let query = database.collection('users').where('phone', 'in', variants);
+            if (verifiedOnly)
+                query = query.where('odooVerified', '==', true);
+            const snap = await query.limit(1).get();
             if (!snap.empty)
                 return snap.docs[0].id;
         }
         catch (error) {
-            logFirestoreError('findVerifiedUserIdByPhone', error);
-            // Fall through to the cache below rather than failing outright —
-            // e.g. this same process just verified the user and the write
-            // hasn't propagated to a query-consistent read yet.
+            logFirestoreError(verifiedOnly ? 'findVerifiedUserIdByPhone' : 'findLineUserIdByPhone', error);
         }
     }
-    // In-memory-cache fallback — also the only path when Firestore isn't
-    // configured at all (Railway test deploys, see FirestoreWriteResult).
     for (const [userId, entry] of userStateCache.entries()) {
-        if (!entry.state.odooVerified || !entry.state.phone)
+        if (!entry.state.phone)
             continue;
-        if (variants.includes(normalizePhoneForMatch(entry.state.phone)))
+        if (verifiedOnly && !entry.state.odooVerified)
+            continue;
+        if (phoneVariantsOverlap(phone, entry.state.phone))
             return userId;
     }
     return null;
 };
+/** Odoo-verified LINE user (staff). */
+const findVerifiedUserIdByPhone = async (phone) => findUserIdByPhone(phone, true);
 exports.findVerifiedUserIdByPhone = findVerifiedUserIdByPhone;
+/** Any LINE user who shared this phone — including receive-only customers. */
+const findLineUserIdByPhone = async (phone) => findUserIdByPhone(phone, false);
+exports.findLineUserIdByPhone = findLineUserIdByPhone;
 const findVerifiedUserIdByPartnerId = async (partnerId) => {
     if (!Number.isFinite(partnerId) || partnerId <= 0)
         return null;
@@ -537,6 +514,7 @@ const createActionOtpChallengeInMemory = (params) => {
         channelId: params.channelId,
         otpCode: params.otpCode,
         pendingCommandText: params.pendingCommandText,
+        linkToken: params.linkToken,
         status: 'pending',
         attemptCount: 0,
         expiresAt,
@@ -579,17 +557,41 @@ const consumeActionOtpChallengeInMemory = (params) => {
     newest.updatedAt = now;
     return { ok: true, data: { ...newest } };
 };
+const consumeActionOtpChallengeByTokenInMemory = (params) => {
+    const token = params.token.trim();
+    const match = Array.from(inMemoryActionOtpChallenges.values()).find(c => c.linkToken === token);
+    if (!match)
+        return { ok: false, error: 'action_otp_not_found' };
+    if (match.status !== 'pending')
+        return { ok: false, error: 'action_otp_not_found' };
+    if (match.attemptCount >= ODOO_VERIFY_OTP_MAX_ATTEMPTS) {
+        match.status = 'expired';
+        match.updatedAt = new Date().toISOString();
+        return { ok: false, error: 'action_otp_locked' };
+    }
+    if (new Date(match.expiresAt).getTime() <= Date.now()) {
+        match.status = 'expired';
+        match.updatedAt = new Date().toISOString();
+        return { ok: false, error: 'action_otp_expired' };
+    }
+    const now = new Date().toISOString();
+    match.status = 'verified';
+    match.updatedAt = now;
+    return { ok: true, data: { ...match } };
+};
 const toActionOtpChallenge = (id, raw) => (0, action_otp_1.parseActionOtpChallenge)(id, raw, core_1.toOptionalString);
 const actionOtpStore = (0, action_otp_store_1.createActionOtpStore)({
     database: getDb,
     inMemoryCreate: createActionOtpChallengeInMemory,
     inMemoryConsume: consumeActionOtpChallengeInMemory,
+    inMemoryConsumeByToken: consumeActionOtpChallengeByTokenInMemory,
     parse: toActionOtpChallenge,
     ttlMinutes: Math.max(1, Math.trunc(ACTION_OTP_TTL_MINUTES)),
     maxAttempts: ODOO_VERIFY_OTP_MAX_ATTEMPTS,
 });
 exports.createActionOtpChallenge = actionOtpStore.create;
 exports.consumeActionOtpChallenge = actionOtpStore.consume;
+exports.consumeActionOtpChallengeByToken = actionOtpStore.consumeByToken;
 exports.createGroupBuy = groupBuyStore.create;
 exports.getGroupBuyById = groupBuyStore.getById;
 exports.listGroupBuysByCreator = groupBuyStore.listByCreator;

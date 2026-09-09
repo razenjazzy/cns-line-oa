@@ -3,6 +3,7 @@ import { startOdooUserVerification, verifyOdooUserByOtp } from '../../services/u
 import { createBotTextFlexMessage } from '../templates';
 import type { UserLanguage } from '../../services/firestore';
 import { syncStaffProfile } from '../quote-access';
+import { buildHomeMenuMessage } from '../command-router';
 
 const tr = (language: UserLanguage, th: string, en: string): string => (language === 'en' ? en : th);
 
@@ -57,7 +58,12 @@ const verifyOtpHandler: CommandHandler = {
     const { userLanguage, userId, agentName, text } = ctx;
     const otpCode = text.trim().replace(/^VERIFY OTP\s*/i, '').trim();
     const message = await verifyOdooUserByOtp({ userId, otpCode, language: userLanguage, agentName });
-    return [botText(message, userLanguage)];
+    const card = botText(message, userLanguage);
+    if (!/✅/.test(message)) return [card];
+    return [
+      card,
+      buildHomeMenuMessage(userLanguage, agentName, ctx.channel, ctx.profile.role === 'admin', true),
+    ];
   },
 };
 

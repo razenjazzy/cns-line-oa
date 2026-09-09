@@ -23,7 +23,6 @@ export const hasActiveSalesSession = (
   now = Date.now(),
 ): boolean => {
   if (!profile.odooVerified || !profile.salesSessionExpiresAt) return false;
-  if (profile.salesTier !== 'salesperson' && profile.salesTier !== 'sales_manager') return false;
   return new Date(profile.salesSessionExpiresAt).getTime() > now;
 };
 
@@ -32,6 +31,5 @@ export const salesSessionExpired = (
   now = Date.now(),
 ): boolean => {
   if (!profile.odooVerified || !profile.salesSessionExpiresAt) return false;
-  if (profile.salesTier !== 'salesperson' && profile.salesTier !== 'sales_manager') return false;
   return new Date(profile.salesSessionExpiresAt).getTime() <= now;
 };

@@ -36,7 +36,13 @@ exports.handleWebhook = [
                 const requestId = String(res.getHeader('x-request-id') || '') || undefined;
                 const channel = await (0, channels_1.resolveEffectiveChannelContext)(channelConfig);
                 const jobs = (0, process_message_1.extractLineMessageJobs)(events);
+                const lifecycle = (0, process_message_1.extractLineLifecycleEvents)(events);
                 const receivedAt = Date.now();
+                await Promise.all(lifecycle.map(event => (0, process_message_1.processLineLifecycleEvent)({
+                    type: event.type,
+                    userId: event.userId,
+                    channelId: channelConfig.channelId,
+                }).catch(error => logger_1.appLogger.warn('line_lifecycle_failed', { type: event.type, error: String(error) }))));
                 const useAsync = env_1.isLineWebhookAsync && (0, queue_1.isQueueBackendReady)();
                 if (env_1.isLineWebhookAsync && !(0, queue_1.isQueueBackendReady)()) {
                     logger_1.appLogger.error('line_webhook_async_without_redis', { requestId });

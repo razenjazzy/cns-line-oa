@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createFormPromptFlexMessage, createOptionalSummaryFlexMessage, createProductCardFlexMessage, createQuotationEditFlexMessage, createQuotationJourneyFlexMessage, createQuotationListFlexMessage, createQuotationMoreFlexMessage, createQuoteSendComposerFlexMessage } from '../src/line/templates';
+import { createBotTextFlexMessage, createFormPromptFlexMessage, createOptionalSummaryFlexMessage, createProductCardFlexMessage, createQuotationEditFlexMessage, createQuotationJourneyFlexMessage, createQuotationListFlexMessage, createQuotationMoreFlexMessage, createQuoteSendComposerFlexMessage } from '../src/line/templates';
 
 describe('form prompt options', () => {
   it('keeps product chips in quickReply and out of the bubble body', () => {
@@ -61,9 +61,24 @@ describe('optional summary', () => {
     expect(json).toContain('2026-10-06');
     expect(json).toContain('"align":"end"');
     expect(json).toContain('"weight":"bold"');
-    expect(json).toContain('✓');
-    expect(json).toContain('#12B76A');
+    expect(json).toContain('✅');
     expect(json).toContain('"spacing":"md"');
+    expect(json).not.toContain('#12B76A');
+    expect(json).not.toContain('"text":"✓"');
+  });
+});
+
+describe('verification result icon', () => {
+  it('keeps the original ✅ copy and does not add a second square tick', () => {
+    const message = createBotTextFlexMessage({
+      title: 'Cloudnex assistant',
+      body: '✅ Odoo verification completed — Sales Administrator.',
+      language: 'en',
+      tone: 'success',
+    });
+    const json = JSON.stringify(message);
+    expect(json).toContain('✅ Odoo verification completed — Sales Administrator.');
+    expect(json).not.toContain('#12B76A');
   });
 });
 

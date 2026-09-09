@@ -22,13 +22,15 @@ const RESULT_ICON = {
   error: { background: '#B42318', mark: '✕' },
 } as const;
 
-/** 22px rounded square — success tick or fail cross, used on optional chips and Action Verify result cards. */
+/** 24px rounded square (6px radius — not a circle). Success tick or fail cross. */
+export const RESULT_ICON_RADIUS = '6px';
+
 export const createResultIconBox = (kind: 'success' | 'error'): messagingApi.FlexBox => ({
   type: 'box',
   layout: 'vertical',
-  width: '22px',
-  height: '22px',
-  cornerRadius: BRAND.radius,
+  width: '24px',
+  height: '24px',
+  cornerRadius: RESULT_ICON_RADIUS,
   backgroundColor: RESULT_ICON[kind].background,
   justifyContent: 'center',
   flex: 0,

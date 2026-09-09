@@ -9,11 +9,11 @@ describe('sales session', () => {
     expect(new Date(expires).getTime()).toBe(60 * 60 * 1000);
   });
 
-  it('is gold-on only for a sales tier with a future expiry', () => {
+  it('is gold-on after identity VERIFY while the expiry is in the future', () => {
     const later = new Date(Date.now() + 60_000).toISOString();
     expect(hasActiveSalesSession({ odooVerified: true, salesTier: 'salesperson', salesSessionExpiresAt: later })).toBe(true);
     expect(hasActiveSalesSession({ odooVerified: true, salesTier: 'sales_manager', salesSessionExpiresAt: later })).toBe(true);
-    expect(hasActiveSalesSession({ odooVerified: true, salesSessionExpiresAt: later })).toBe(false);
+    expect(hasActiveSalesSession({ odooVerified: true, salesSessionExpiresAt: later })).toBe(true);
     expect(hasActiveSalesSession({ odooVerified: false, salesTier: 'salesperson', salesSessionExpiresAt: later })).toBe(false);
     expect(hasActiveSalesSession({ odooVerified: true, salesTier: 'salesperson' })).toBe(false);
   });

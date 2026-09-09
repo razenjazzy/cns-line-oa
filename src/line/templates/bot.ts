@@ -77,7 +77,7 @@ export const createBotTextFlexMessage = (params: {
             backgroundColor: tone === 'warning' ? BRAND.goldTint : tone === 'error' ? '#F8D7DA' : BRAND.tealTint,
             cornerRadius: BRAND.radius,
             paddingAll: 'md',
-            contents: (tone === 'success' || tone === 'error')
+            contents: (tone === 'success' || tone === 'error') && !params.body.includes('✅')
               ? [{
                   type: 'box' as const,
                   layout: 'horizontal' as const,

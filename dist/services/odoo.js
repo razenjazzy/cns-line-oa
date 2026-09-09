@@ -14,8 +14,10 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
     for (var p in m) if (p !== "default" && !Object.prototype.hasOwnProperty.call(exports, p)) __createBinding(exports, m, p);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.seedOdooSampleSalesData = exports.getDailySalesSnapshot = exports.deleteServiceCatalogItem = exports.updateServiceCatalogItem = exports.createServiceCatalogItem = exports.getServiceByIdentifier = exports.listServiceCatalogItems = exports.deletePartnerFromLine = exports.updatePartnerFromLine = exports.createPartnerFromLine = exports.getPartnerById = exports.getPartnerByName = exports.getPartnerByPhone = exports.listPartners = exports.createQuotationFromLine = exports.createInvoiceForSaleOrder = exports.removeSaleOrderLine = exports.updateSaleOrderLineQty = exports.findSaleOrderLineByProduct = exports.addSaleOrderLine = exports.cancelSaleOrder = exports.sendQuotationEmail = exports.markSaleOrderSent = exports.confirmSaleOrder = exports.listPaymentTerms = exports.getDefaultPaymentTermName = exports.pickDefaultPaymentTermName = exports.findPaymentTermByName = exports.getSaleOrdersForPartner = exports.getSaleOrderPdfLink = exports.getSaleOrderPortalLink = exports.getSaleOrderById = exports.findOrderByReference = exports.listProducts = exports.findProductsByQuery = exports.getProductById = exports.findProductByQuery = exports.verifyOdooAdminAccess = exports.pingOdoo = exports.isOdooConfigured = void 0;
+exports.seedOdooSampleSalesData = exports.getDailySalesSnapshot = exports.deleteServiceCatalogItem = exports.updateServiceCatalogItem = exports.createServiceCatalogItem = exports.getServiceByIdentifier = exports.listServiceCatalogItems = exports.deletePartnerFromLine = exports.updatePartnerFromLine = exports.createPartnerFromLine = exports.getPartnerById = exports.getPartnerByName = exports.getPartnerByPhone = exports.listPartners = exports.createQuotationFromLine = exports.createInvoiceForSaleOrder = exports.removeSaleOrderLine = exports.updateSaleOrderLineQty = exports.findSaleOrderLineByProduct = exports.addSaleOrderLine = exports.cancelSaleOrder = exports.sendQuotationEmail = exports.markSaleOrderSent = exports.confirmSaleOrder = exports.listPaymentTerms = exports.getDefaultPaymentTermName = exports.pickDefaultPaymentTermName = exports.findPaymentTermByName = exports.getSaleOrdersForSalesperson = exports.getSaleOrdersForPartner = exports.getSaleOrderPdfLink = exports.getSaleOrderPortalLink = exports.getSaleOrderById = exports.findOrderByReference = exports.listProducts = exports.findProductsByQuery = exports.getProductById = exports.findProductByQuery = exports.verifyOdooAdminAccess = exports.pingOdoo = exports.isOdooConfigured = void 0;
 const client_1 = require("./odoo/client");
+const admin_1 = require("./odoo/admin");
+const phone_match_1 = require("./phone-match");
 __exportStar(require("./odoo/types"), exports);
 const getConfig = client_1.getOdooConfig;
 const num = (value) => {
@@ -96,10 +98,10 @@ const toOdooDateTime = (date) => {
     const ss = pad(date.getUTCSeconds());
     return `${y}-${m}-${d} ${hh}:${mm}:${ss}`;
 };
-var admin_1 = require("./odoo/admin");
-Object.defineProperty(exports, "isOdooConfigured", { enumerable: true, get: function () { return admin_1.isOdooConfigured; } });
-Object.defineProperty(exports, "pingOdoo", { enumerable: true, get: function () { return admin_1.pingOdoo; } });
-Object.defineProperty(exports, "verifyOdooAdminAccess", { enumerable: true, get: function () { return admin_1.verifyOdooAdminAccess; } });
+var admin_2 = require("./odoo/admin");
+Object.defineProperty(exports, "isOdooConfigured", { enumerable: true, get: function () { return admin_2.isOdooConfigured; } });
+Object.defineProperty(exports, "pingOdoo", { enumerable: true, get: function () { return admin_2.pingOdoo; } });
+Object.defineProperty(exports, "verifyOdooAdminAccess", { enumerable: true, get: function () { return admin_2.verifyOdooAdminAccess; } });
 const findProductByQuery = async (query) => {
     const normalizedQuery = normalizeLookupText(query);
     if (!normalizedQuery)
@@ -264,12 +266,11 @@ const getSaleOrderPdfLink = async (orderId) => {
     return `${portalLink}${portalLink.includes('?') ? '&' : '?'}report_type=pdf`;
 };
 exports.getSaleOrderPdfLink = getSaleOrderPdfLink;
-/** Powers "my quotations" — most recent orders for a given customer, newest first. */
-const getSaleOrdersForPartner = async (partnerId, limitOrOpts = 8) => {
+const listSaleOrders = async (ownerDomain, limitOrOpts = 8) => {
     const opts = typeof limitOrOpts === 'number' ? { limit: limitOrOpts } : limitOrOpts;
     const limit = opts.limit ?? 8;
     const offset = opts.cursor ? 0 : (opts.offset ?? 0);
-    const domain = [['partner_id', '=', partnerId]];
+    const domain = [...ownerDomain];
     if (opts.dateFrom)
         domain.push(['date_order', '>=', opts.dateFrom]);
     if (opts.dateTo)
@@ -290,7 +291,12 @@ const getSaleOrdersForPartner = async (partnerId, limitOrOpts = 8) => {
     const rows = await (0, client_1.executeKwRead)(config, uid, 'sale.order', 'search_read', [domain], { fields: ['id', 'name', 'state', 'amount_total', 'partner_id', 'date_order'], order: 'date_order desc, id desc', limit, offset });
     return rows.map(parseOrder);
 };
+/** Powers a customer's "my quotations" — orders where they are partner_id. */
+const getSaleOrdersForPartner = async (partnerId, limitOrOpts = 8) => listSaleOrders([['partner_id', '=', partnerId]], limitOrOpts);
 exports.getSaleOrdersForPartner = getSaleOrdersForPartner;
+/** Powers a Sales User's "my quotations" — orders they own (user_id), with the buyer's name. */
+const getSaleOrdersForSalesperson = async (odooUserId, limitOrOpts = 8) => listSaleOrders([['user_id', '=', odooUserId]], limitOrOpts);
+exports.getSaleOrdersForSalesperson = getSaleOrdersForSalesperson;
 /** Mirrors findProductByQuery's ilike-first-match convention, applied to account.payment.term. */
 const findPaymentTermByName = async (query) => {
     const normalizedQuery = normalizeLookupText(query);
@@ -640,40 +646,6 @@ extra) => {
     }
 };
 exports.createQuotationFromLine = createQuotationFromLine;
-const normalizePhoneDigits = (value) => value.replace(/[^0-9+]/g, '').trim();
-/**
- * Odoo contacts are entered with inconsistent formatting (local 0-prefix vs
- * +66/66 international) and the number often lives in `mobile` rather than
- * `phone`. An exact single-field match against exactly what the customer
- * typed was silently failing for legitimate accounts, so verification never
- * completed. Expand to every plausible formatting variant instead.
- */
-const buildPhoneMatchVariants = (phone) => {
-    const cleaned = normalizePhoneDigits(phone);
-    if (!cleaned)
-        return [];
-    const variants = new Set([cleaned]);
-    if (cleaned.startsWith('0') && cleaned.length >= 9) {
-        variants.add(`+66${cleaned.slice(1)}`);
-        variants.add(`66${cleaned.slice(1)}`);
-    }
-    else if (cleaned.startsWith('+66')) {
-        variants.add(`0${cleaned.slice(3)}`);
-        variants.add(cleaned.slice(1));
-    }
-    else if (cleaned.startsWith('66') && cleaned.length >= 10) {
-        variants.add(`0${cleaned.slice(2)}`);
-        variants.add(`+${cleaned}`);
-    }
-    return Array.from(variants);
-};
-// `mobile` is a standard res.partner field on stock Odoo, but not every
-// instance has it (a stripped-down SaaS trial database can be missing it
-// entirely, which turns a domain that references it into a hard RPC error —
-// "Invalid field res.partner.mobile" — instead of just finding no match).
-// Discover which of the two fields actually exist once per process and only
-// query those, so verification degrades to phone-only matching instead of
-// breaking outright on instances without `mobile`.
 let cachedPartnerPhoneFields = null;
 const getPartnerPhoneFields = async (config, uid) => {
     if (cachedPartnerPhoneFields)
@@ -725,16 +697,18 @@ const getPartnerByPhone = async (phone) => {
     const uid = await (0, client_1.loginRead)(config);
     if (!uid)
         return null;
-    const variants = buildPhoneMatchVariants(phone);
+    const variants = (0, phone_match_1.phoneMatchVariants)(phone);
     if (!variants.length)
         return null;
     const phoneFields = await getPartnerPhoneFields(config, uid);
     const fieldMatches = variants.flatMap(v => phoneFields.map(f => [f, '=', v]));
     const domain = [...Array(fieldMatches.length - 1).fill('|'), ...fieldMatches];
-    const rows = await (0, client_1.executeKwRead)(config, uid, 'res.partner', 'search_read', [domain], { fields: await partnerReadFields(config, uid), limit: 1 });
+    const rows = await (0, client_1.executeKwRead)(config, uid, 'res.partner', 'search_read', [domain], { fields: await partnerReadFields(config, uid), limit: 20 });
     if (!rows.length)
         return null;
-    return parsePartner(rows[0]);
+    const partners = rows.map(parsePartner);
+    const loginPartnerId = await (0, admin_1.pickLinkedOdooUserPartnerId)(partners.map(partner => partner.id));
+    return (0, admin_1.preferOdooLoginPartner)(partners, loginPartnerId ? [loginPartnerId] : []);
 };
 exports.getPartnerByPhone = getPartnerByPhone;
 const getPartnerByName = async (name) => {

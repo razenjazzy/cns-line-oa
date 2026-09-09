@@ -4,6 +4,7 @@ import {
   consumeOdooVerificationByToken,
   createOdooVerificationChallenge,
   getUserLanguage,
+  getUserProfile,
   recordAuditEvent,
   setUserOdooPartner,
   setUserContactPhone,
@@ -13,7 +14,7 @@ import {
 } from './firestore';
 import { getPartnerByPhone } from './odoo/partners';
 import { findOdooSalesTierByPartnerId } from './odoo/admin';
-import { DEFAULT_CHANNEL_ID } from '../line/channels';
+import { DEFAULT_CHANNEL_ID, getAgentName, resolveChannelConfig } from '../line/channels';
 import { sendTargetedMessage, sendTargetedFlexMessage } from '../line/messaging';
 import { createBotTextFlexMessage } from '../line/templates';
 import { appLogger } from './logger';
@@ -35,7 +36,7 @@ const bindSalesTierIfOdooSalesUser = async (userId: string, partnerId: number): 
 
 const linkHomeMenuAfterVerify = async (userId: string, channelId?: string, language?: UserLanguage, salesSessionActive = false) => {
   const lang = language || await getUserLanguage(userId);
-  await linkUserRichMenu(userId, lang, channelId || DEFAULT_CHANNEL_ID, 'home', salesSessionActive);
+  await linkUserRichMenu(userId, lang, channelId || DEFAULT_CHANNEL_ID, 'verify', salesSessionActive);
 };
 
 const verificationKindLabel = (language: UserLanguage, salesTier?: 'salesperson' | 'sales_manager') => {
@@ -44,11 +45,11 @@ const verificationKindLabel = (language: UserLanguage, salesTier?: 'salesperson'
   return tr(language, 'ลูกค้า', 'customer');
 };
 
-const verificationSuccessMessage = (language: UserLanguage, agentName: string, salesTier?: 'salesperson' | 'sales_manager') =>
+const verificationSuccessMessage = (language: UserLanguage, _agentName: string, salesTier?: 'salesperson' | 'sales_manager') =>
   tr(
     language,
-    `${agentName} ยืนยันตัวตน Odoo สำเร็จแล้ว — ${verificationKindLabel(language, salesTier)}`,
-    `${agentName} Odoo verification completed — ${verificationKindLabel(language, salesTier)}.`,
+    `✅ ยืนยันตัวตน Odoo สำเร็จแล้ว — ${verificationKindLabel(language, salesTier)}`,
+    `✅ Odoo verification completed — ${verificationKindLabel(language, salesTier)}.`,
   );
 
 const normalizePhone = (value: string): string => value.replace(/[^0-9+]/g, '').trim();
@@ -237,8 +238,8 @@ export const verifyOdooUserByOtp = async (input: VerifyOtpInput): Promise<string
   }
 
   const salesTier = await bindSalesTierIfOdooSalesUser(input.userId, consumed.data.partnerId);
-  if (salesTier) await startSalesSession(input.userId);
-  await linkHomeMenuAfterVerify(input.userId, consumed.data.channelId, input.language, Boolean(salesTier));
+  await startSalesSession(input.userId);
+  await linkHomeMenuAfterVerify(input.userId, consumed.data.channelId, input.language, true);
   const { deliverPendingQuoteInvites } = await import('../line/quote-notify');
   await deliverPendingQuoteInvites(input.userId, consumed.data.channelId || DEFAULT_CHANNEL_ID);
 
@@ -280,25 +281,34 @@ export const verifyOdooUserByToken = async (token: string): Promise<{ ok: boolea
   }
 
   const salesTier = await bindSalesTierIfOdooSalesUser(consumed.data.userId, consumed.data.partnerId);
-  if (salesTier) await startSalesSession(consumed.data.userId);
+  await startSalesSession(consumed.data.userId);
   const { deliverPendingQuoteInvites } = await import('../line/quote-notify');
   await deliverPendingQuoteInvites(consumed.data.userId, consumed.data.channelId || DEFAULT_CHANNEL_ID);
 
   // The magic-link flow completes over plain HTTP, so without this push the
   // LINE chat never learns the verification actually succeeded.
   const language = await getUserLanguage(consumed.data.userId);
-  await linkHomeMenuAfterVerify(consumed.data.userId, consumed.data.channelId, language, Boolean(salesTier));
+  await linkHomeMenuAfterVerify(consumed.data.userId, consumed.data.channelId, language, true);
   const successCard = createBotTextFlexMessage({
     title: tr(language, 'ผู้ช่วย Cloudnex', 'Cloudnex assistant'),
-    body: tr(
-      language,
-      `✅ ยืนยันบัญชี Odoo สำเร็จแล้ว — ${verificationKindLabel(language, salesTier)}`,
-      `✅ Odoo verification completed — ${verificationKindLabel(language, salesTier)}.`,
-    ),
+    body: verificationSuccessMessage(language, '', salesTier),
     language,
     tone: 'success',
   });
+  const profile = await getUserProfile(consumed.data.userId);
+  const channel = resolveChannelConfig(consumed.data.channelId || DEFAULT_CHANNEL_ID);
+  const { buildHomeMenuMessage } = await import('../line/command-router');
+  const home = buildHomeMenuMessage(
+    language,
+    getAgentName(language),
+    channel ? { channelId: channel.channelId, enabledServices: channel.enabledServices } : undefined,
+    profile.role === 'admin',
+    true,
+  );
   await sendTargetedFlexMessage([consumed.data.userId], successCard, consumed.data.channelId);
+  if (home.type === 'flex') {
+    await sendTargetedFlexMessage([consumed.data.userId], home, consumed.data.channelId);
+  }
 
   notifyAdminOfVerification({
     userId: consumed.data.userId,

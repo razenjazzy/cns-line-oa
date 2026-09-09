@@ -88,6 +88,8 @@ describe('richMenuIdForLanguage', () => {
       }),
     };
     expect(richMenuIdForLanguage('en', withSession, 'default', true)).toBe('richmenu-en-verified');
+    expect(richMenuIdForLanguage('en', withSession, 'home', true)).toBe('richmenu-en-verified');
+    expect(richMenuIdForLanguage('en', withSession, 'verify', true)).toBe('richmenu-en-verified');
   });
 });
 

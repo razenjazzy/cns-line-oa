@@ -20,7 +20,7 @@ const fills = { teal: TEAL, tealTint: TEAL_TINT, gold: GOLD, goldTint: GOLD_TINT
 const inks = { teal: '#FFFFFF', tealTint: TEAL_STRONG, gold: '#FFFFFF', goldTint: GOLD };
 
 const tileFill = (area, activeId, lang, sessionOn) => {
-  if (area.id === 'verify') return sessionOn ? 'gold' : 'tealTint';
+  if (area.id === 'verify') return (sessionOn || activeId === 'verify') ? 'gold' : 'tealTint';
   if (area.id === 'language') return lang === 'en' ? 'gold' : 'tealTint';
   if (area.id === activeId) return 'teal';
   return 'tealTint';

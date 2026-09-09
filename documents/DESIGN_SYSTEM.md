@@ -22,9 +22,9 @@ Defined as `BRAND` in `src/line/templates.ts`:
 | `surface` | `#FFFFFF` | Card/bubble background |
 | `paper` | `#F1F4F2` | (reserved — page-level background, unused inside Flex bubbles) |
 
-Result icons (`createResultIconBox`): 22px rounded square, `#12B76A` + white tick
-for success, `#B42318` + white cross for fail. Used on optional-field chips
-and Action Verify result cards, with `spacing: md` between icon and text.
+Filled optional-field rows and identity VERIFY success use the `✅` emoji, not a
+drawn circle/square. Action Verify fail still uses `createResultIconBox` (red
+cross). Do not add a second tick beside copy that already has `✅`.
 
 Two extra colors for error tone: `#B42318` (icon/accent) and `#7A271A`
 (error body text).
