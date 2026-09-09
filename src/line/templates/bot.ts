@@ -1,7 +1,7 @@
 import { messagingApi } from '@line/bot-sdk';
 import { t } from '../../services/i18n';
 import { getAgentName } from '../channels';
-import { BRAND, createMessageActionButton, createUriActionButton, formatMoney, truncate, type ReportLanguage } from './shared';
+import { BRAND, createMessageActionButton, createResultIconBox, createUriActionButton, formatMoney, truncate, type ReportLanguage } from './shared';
 
 export const createBotTextFlexMessage = (params: {
   title: string;
@@ -74,12 +74,22 @@ export const createBotTextFlexMessage = (params: {
           {
             type: 'box',
             layout: 'vertical',
-            backgroundColor: tone === 'warning' ? BRAND.goldTint : BRAND.tealTint,
+            backgroundColor: tone === 'warning' ? BRAND.goldTint : tone === 'error' ? '#F8D7DA' : BRAND.tealTint,
             cornerRadius: BRAND.radius,
             paddingAll: 'md',
-            contents: [
-              { type: 'text', text: params.body, color: tone === 'error' ? '#7A271A' : BRAND.ink, size: 'sm', wrap: true },
-            ],
+            contents: (tone === 'success' || tone === 'error')
+              ? [{
+                  type: 'box' as const,
+                  layout: 'horizontal' as const,
+                  spacing: 'md' as const,
+                  contents: [
+                    createResultIconBox(tone === 'error' ? 'error' : 'success'),
+                    { type: 'text' as const, text: params.body, color: tone === 'error' ? '#7A271A' : BRAND.ink, size: 'sm' as const, wrap: true, flex: 1, gravity: 'center' as const },
+                  ],
+                }]
+              : [
+                  { type: 'text', text: params.body, color: BRAND.ink, size: 'sm', wrap: true },
+                ],
           },
           { type: 'text', text: t('nextStepHint', params.language), size: 'xs', color: toneColor, wrap: true },
         ],

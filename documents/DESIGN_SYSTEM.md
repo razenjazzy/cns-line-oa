@@ -15,16 +15,19 @@ Defined as `BRAND` in `src/line/templates.ts`:
 | `teal` | `#0B6E6A` | Primary brand color — headers, primary buttons |
 | `tealStrong` | `#063F3D` | Info-tone header/accent, daily-report header |
 | `tealTint` | `#E3F0EE` | Light highlight boxes, secondary-button backgrounds |
-| `gold` | `#A97A2B` | Warning tone, secondary accent |
+| `gold` | `#A97A2B` | LANG (English on) and VERIFY (sales session on) only — never Home/commerce/orders/help |
 | `goldTint` | `#F4E9D4` | Warning highlight boxes, secondary-button backgrounds |
 | `ink` | `#10201E` | Primary body text |
 | `inkSoft` | `#5B6C69` | Secondary/caption text |
 | `surface` | `#FFFFFF` | Card/bubble background |
 | `paper` | `#F1F4F2` | (reserved — page-level background, unused inside Flex bubbles) |
 
-Two colors outside `BRAND` are used for the error tone only: `#B42318`
-(accent/header) and `#7A271A` (error body text, better contrast on the
-error highlight box than pure `ink`).
+Result icons (`createResultIconBox`): 22px rounded square, `#12B76A` + white tick
+for success, `#B42318` + white cross for fail. Used on optional-field chips
+and Action Verify result cards, with `spacing: md` between icon and text.
+
+Two extra colors for error tone: `#B42318` (icon/accent) and `#7A271A`
+(error body text).
 
 ## Tone → color mapping
 
@@ -112,7 +115,8 @@ Never re-ask a field the current card already established. Seed
 `xs` captions, `md` titles, `lg` NAV menu rows (not bold), `xl` hero numbers.
 
 LINE has no native dropdown: Odoo lists are tap rows + quick replies
-(max 13). Button labels cap at 20 characters.
+(max 13). Button labels cap at 20 characters. Half-width pairs stay short
+(**Download**, **Invoice**, **Print**) so LINE does not clip them.
 
 ## Quick replies
 
@@ -132,20 +136,24 @@ LINE size **2500×843** (not the tall 2500×1686 canvas). Tokens:
 
 - Canvas: `#F3F5F4`. Tile pad **20px**, corner radius **28px**, label **48px**
   semibold sentence case
-- Default tiles: `tealTint` fill, `tealStrong` marks (Verify and Language
-  are **not** permanently filled)
-- Active tile only: `teal` fill, white marks — after that tray tap LINE
-  links `menu-{lang}-{id}.png` via `LINE_RICH_MENU_JSON`
+- Default tiles: `tealTint` fill, `tealStrong` marks
+- Language gold **only** on the English tray (LANG on). Thai tray: Language regular
+- Verify gold **only** on `*-verified` PNGs (sales session on). Tap Verify again, TTL, or unfollow → regular
+- Home / Products & Quotes / Order Status / Help are never gold. Current screen = `teal`
+- After a tray tap LINE links `menu-{lang}-{id}.png` or `menu-{lang}-{id}-verified.png` via `LINE_RICH_MENU_JSON`
 - Layout 2×3, icon above text: Home (`NAV HOME`), Verify, Products & Quotes
   (`NAV commerce`), Order Status (`FORM ORDER STATUS`), Help (`GUIDE`),
   Language
-- Languages: `menu-en.png` + `menu-th.png`. Default menu is English.
-  `LANG` links `LINE_RICH_MENU_TH` / `LINE_RICH_MENU_EN` per user
+- Languages: `menu-en.png` + `menu-th.png`, plus `*-verified.png` when the
+  sales session is on. Default is English (Language gold, Verify regular).
+  `LANG` and session state link `LINE_RICH_MENU_TH` / `LINE_RICH_MENU_EN`
+  plus verified ids from `LINE_RICH_MENU_JSON`
 - Chat bar: `Menu` / `เมนู`
 
 Regenerate with `npm run rich-menu:generate`. Publish with
-`npm run rich-menu:upload` on a laptop (Railway does not publish the tray;
-it only stores the rich-menu ids). Upload does not delete older menus.
+`npm run rich-menu:upload` on a laptop, then set the new
+`LINE_RICH_MENU_JSON` (and EN/TH ids) on Railway. Railway does not publish
+the tray; it only stores the rich-menu ids. Upload does not delete older menus.
 
 **Freeze:** do not restyle this tray until `documents/USER_JOURNEY.md` is
 signed off with screenshots.

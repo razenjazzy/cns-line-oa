@@ -1,6 +1,7 @@
 import { messagingApi } from '@line/bot-sdk';
 import type { CommandHandler } from './index';
 import { buildHomeMenuMessage } from '../command-router';
+import { hasActiveSalesSession } from '../../services/sales-session';
 import { getServiceDefinition, getVisibleCommands, isServiceEnabledForChannel } from '../../services/service-catalog';
 import { createServiceActionFlexMessage } from '../templates';
 
@@ -10,7 +11,7 @@ const tr = (language: string, th: string, en: string): string => (language === '
 const navHomeHandler: CommandHandler = {
   name: 'nav-home',
   match: (u) => u === 'NAV HOME' || u === 'NAV' || u === 'BACK',
-  handle: async (ctx) => [buildHomeMenuMessage(ctx.userLanguage, ctx.agentName, ctx.channel, ctx.profile.role === 'admin', ctx.profile.odooVerified)],
+  handle: async (ctx) => [buildHomeMenuMessage(ctx.userLanguage, ctx.agentName, ctx.channel, ctx.profile.role === 'admin', hasActiveSalesSession(ctx.profile))],
 };
 
 // NAV <serviceKey> — show service-specific action panel

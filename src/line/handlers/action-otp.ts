@@ -126,7 +126,16 @@ const actionVerifyHandler: CommandHandler = {
     // very action this code just verified. Patch it in locally instead of
     // re-fetching from Firestore, same "just-written value" shortcut every
     // other handler here already takes after its own writes.
-    return resolveCommandReply({ ...ctx, actionOtpReplay: true, text: consumed.data.pendingCommandText });
+    const replayed = await resolveCommandReply({ ...ctx, actionOtpReplay: true, text: consumed.data.pendingCommandText });
+    return [
+      botText(
+        tr(userLanguage, 'ยืนยันแล้ว', 'Action verified'),
+        tr(userLanguage, 'ดำเนินการต่อในขั้นตอนถัดไป', 'Continuing to the next step.'),
+        userLanguage,
+        'success',
+      ),
+      ...replayed,
+    ];
   },
 };
 

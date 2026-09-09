@@ -19,9 +19,9 @@ const GOLD_TINT = '#F4E9D4';
 const fills = { teal: TEAL, tealTint: TEAL_TINT, gold: GOLD, goldTint: GOLD_TINT };
 const inks = { teal: '#FFFFFF', tealTint: TEAL_STRONG, gold: '#FFFFFF', goldTint: GOLD };
 
-const tileFill = (area, activeId, lang) => {
-  if (area.id === 'verify') return 'gold';
-  if (area.id === 'language') return lang === 'th' ? 'teal' : 'goldTint';
+const tileFill = (area, activeId, lang, sessionOn) => {
+  if (area.id === 'verify') return sessionOn ? 'gold' : 'tealTint';
+  if (area.id === 'language') return lang === 'en' ? 'gold' : 'tealTint';
   if (area.id === activeId) return 'teal';
   return 'tealTint';
 };
@@ -42,11 +42,11 @@ const escapeXml = (value) => String(value)
   .replace(/</g, '&lt;')
   .replace(/>/g, '&gt;');
 
-const withFills = (activeId, lang) => ({
+const withFills = (activeId, lang, sessionOn = false) => ({
   ...layout,
   areas: layout.areas.map(area => ({
     ...area,
-    fill: tileFill(area, activeId, lang),
+    fill: tileFill(area, activeId, lang, sessionOn),
   })),
 });
 
@@ -123,11 +123,13 @@ const render = (spec, lang, pngName) => {
 };
 
 for (const lang of ['en', 'th']) {
-  const defaultSpec = withFills(null, lang);
+  const defaultSpec = withFills(null, lang, false);
   writeFileSync(join(outDir, `menu-${lang}.svg`), buildSvg(lang, defaultSpec));
   render(defaultSpec, lang, `menu-${lang}.png`);
+  render(withFills(null, lang, true), lang, `menu-${lang}-verified.png`);
   for (const area of layout.areas) {
-    render(withFills(area.id, lang), lang, `menu-${lang}-${area.id}.png`);
+    render(withFills(area.id, lang, false), lang, `menu-${lang}-${area.id}.png`);
+    render(withFills(area.id, lang, true), lang, `menu-${lang}-${area.id}-verified.png`);
   }
 }
 

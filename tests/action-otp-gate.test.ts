@@ -22,6 +22,15 @@ describe('isGatedMutation', () => {
     expect(isGatedMutation('SERVICE DELETE SVC-PRO')).toBe(true);
   });
 
+  it('does not gate send composers; gates only the confirm send', () => {
+    expect(isGatedMutation('QUOTE SEND 51')).toBe(false);
+    expect(isGatedMutation('QUOTE SEND OPTIONS 51')).toBe(false);
+    expect(isGatedMutation('QUOTE SEND CONFIRM 51 BOTH user@example.com')).toBe(true);
+    expect(isGatedMutation('QUOTE INVOICE SEND 51')).toBe(false);
+    expect(isGatedMutation('QUOTE INVOICE SEND CONFIRM 51 EMAIL user@example.com')).toBe(true);
+    expect(isGatedMutation('QUOTE INVOICE 51')).toBe(true);
+  });
+
   it('does not gate view-only commands', () => {
     expect(isGatedMutation('QUOTE STATUS 5')).toBe(false);
     expect(isGatedMutation('QUOTE LIST 0812345678')).toBe(false);

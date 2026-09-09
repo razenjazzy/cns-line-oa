@@ -190,3 +190,36 @@ export const processLineMessageJob = async (input: LineMessageJobInput): Promise
     return deliverMessages(client, input, messages);
   });
 };
+
+export const extractLineLifecycleEvents = (events: webhook.Event[]): Array<{
+  type: 'follow' | 'unfollow';
+  userId: string;
+  replyToken?: string;
+}> => {
+  const jobs: Array<{ type: 'follow' | 'unfollow'; userId: string; replyToken?: string }> = [];
+  for (const event of events) {
+    if (event.type !== 'follow' && event.type !== 'unfollow') continue;
+    const userId = (event as { source?: { userId?: string } }).source?.userId;
+    if (!userId) continue;
+    jobs.push({
+      type: event.type,
+      userId,
+      replyToken: (event as { replyToken?: string }).replyToken,
+    });
+  }
+  return jobs;
+};
+
+export const processLineLifecycleEvent = async (input: {
+  type: 'follow' | 'unfollow';
+  userId: string;
+  channelId: string;
+}): Promise<void> => {
+  if (input.type === 'unfollow') {
+    const { clearSalesLogin } = await import('../services/sales-session');
+    await clearSalesLogin(input.userId);
+    return;
+  }
+  const { deliverPendingQuoteInvites } = await import('./quote-notify');
+  await deliverPendingQuoteInvites(input.userId, input.channelId);
+};

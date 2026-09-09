@@ -1,12 +1,37 @@
 import { createQuotationJourneyFlexMessage } from './templates';
-import { DEFAULT_CHANNEL_ID } from './channels';
+import { DEFAULT_CHANNEL_ID, oaChatDeepLink } from './channels';
 import { sendTargetedFlexMessage } from './messaging';
-import { getPartnerById, getSaleOrderPdfLink, getSaleOrderPortalLink } from '../services/odoo';
+import { getPartnerById, getSaleOrderById, getSaleOrderPdfLink, getSaleOrderPortalLink } from '../services/odoo';
 import type { OdooSaleOrder } from '../services/odoo/types';
-import { findVerifiedUserIdByPartnerId, findLineUserIdByPhone, getUserLanguage, listVerifiedSalesLineUserIds } from '../services/firestore';
+import { findVerifiedUserIdByPartnerId, findLineUserIdByPhone, getUserLanguage, getUserProfile, listVerifiedSalesLineUserIds } from '../services/firestore';
 import { getErpAdapter } from '../erp/registry';
+import { phoneMatchVariants } from '../services/phone-match';
 
 export type QuoteSendChannel = 'line' | 'email' | 'both';
+
+const quoteInvites = new Map<string, Array<{ orderId: number; channelId: string }>>();
+
+export const saveQuoteInvite = (phone: string, orderId: number, channelId: string): void => {
+  for (const key of phoneMatchVariants(phone)) {
+    const list = quoteInvites.get(key) || [];
+    if (!list.some(invite => invite.orderId === orderId)) list.push({ orderId, channelId });
+    quoteInvites.set(key, list);
+  }
+};
+
+export const takeQuoteInvitesForPhone = (phone: string): Array<{ orderId: number; channelId: string }> => {
+  const found: Array<{ orderId: number; channelId: string }> = [];
+  for (const key of phoneMatchVariants(phone)) {
+    found.push(...(quoteInvites.get(key) || []));
+    quoteInvites.delete(key);
+  }
+  const seen = new Set<number>();
+  return found.filter(invite => {
+    if (seen.has(invite.orderId)) return false;
+    seen.add(invite.orderId);
+    return true;
+  });
+};
 
 const salesAdminUserIds = (): string[] =>
   (process.env.ADMIN_USER_ID || '')
@@ -49,7 +74,7 @@ export const notifyQuoteParties = async (input: {
   notifySales?: boolean;
   viaLine?: boolean;
   email?: { to: string; subject: string; body: string };
-}): Promise<{ customerLineId: string | null; emailed: boolean; salesPushed: number }> => {
+}): Promise<{ customerLineId: string | null; emailed: boolean; salesPushed: number; inviteUri?: string }> => {
   const notifyCustomer = input.notifyCustomer !== false;
   const notifySales = input.notifySales !== false;
   const viaLine = input.viaLine !== false;
@@ -58,6 +83,10 @@ export const notifyQuoteParties = async (input: {
   const partner = input.order.partner_id ? await getPartnerById(input.order.partner_id[0]) : null;
   const customerLineId = notifyCustomer && viaLine ? await resolveCustomerLineUserId(partner) : null;
   const links = await getOrderLinks(input.order.id);
+
+  if (notifyCustomer && viaLine && !customerLineId && partner?.phone) {
+    saveQuoteInvite(partner.phone, input.order.id, channelId);
+  }
 
   if (customerLineId && customerLineId !== input.actorUserId) {
     const language = await getUserLanguage(customerLineId);
@@ -89,5 +118,24 @@ export const notifyQuoteParties = async (input: {
     customerLineId: customerLineId && customerLineId !== input.actorUserId ? customerLineId : null,
     emailed,
     salesPushed: salesIds.length,
+    inviteUri: notifyCustomer && viaLine && !customerLineId ? oaChatDeepLink(channelId) : undefined,
   };
+};
+
+export const deliverPendingQuoteInvites = async (userId: string, channelId: string): Promise<void> => {
+  const profile = await getUserProfile(userId);
+  if (!profile.phone) return;
+  const pending = takeQuoteInvitesForPhone(profile.phone);
+  if (!pending.length) return;
+  const language = await getUserLanguage(userId);
+  for (const invite of pending) {
+    const order = await getSaleOrderById(invite.orderId);
+    if (!order) continue;
+    const links = await getOrderLinks(order.id);
+    await sendTargetedFlexMessage(
+      [userId],
+      createQuotationJourneyFlexMessage(order, { role: 'customer', ...links }, language),
+      invite.channelId || channelId,
+    );
+  }
 };

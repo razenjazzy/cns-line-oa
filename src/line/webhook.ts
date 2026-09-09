@@ -1,7 +1,7 @@
 import { middleware } from '@line/bot-sdk';
 import express from 'express';
 import { ChannelConfig, DEFAULT_CHANNEL_ID, resolveChannelConfig, resolveEffectiveChannelContext } from './channels';
-import { extractLineMessageJobs, processLineMessageJob } from './process-message';
+import { extractLineLifecycleEvents, extractLineMessageJobs, processLineLifecycleEvent, processLineMessageJob } from './process-message';
 import { enqueueLineEvent, isQueueBackendReady } from '../jobs/queue';
 import { isLineWebhookAsync } from '../http/env';
 import { appLogger } from '../services/logger';
@@ -38,7 +38,13 @@ export const handleWebhook = [
         const requestId = String(res.getHeader('x-request-id') || '') || undefined;
         const channel = await resolveEffectiveChannelContext(channelConfig);
         const jobs = extractLineMessageJobs(events);
+        const lifecycle = extractLineLifecycleEvents(events);
         const receivedAt = Date.now();
+        await Promise.all(lifecycle.map(event => processLineLifecycleEvent({
+          type: event.type,
+          userId: event.userId,
+          channelId: channelConfig.channelId,
+        }).catch(error => appLogger.warn('line_lifecycle_failed', { type: event.type, error: String(error) }))));
 
         const useAsync = isLineWebhookAsync && isQueueBackendReady();
         if (isLineWebhookAsync && !isQueueBackendReady()) {

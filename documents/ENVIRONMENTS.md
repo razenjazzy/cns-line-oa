@@ -48,6 +48,6 @@ Cloud Run `release.yml` remains manual until GCP secrets exist. Railway is not p
 
 ## Identity and ERP (all lanes)
 
-Firestore is identity SoR. Odoo is ERP via `getErpAdapter()`. Mongo is optional LINE FAQ only.
+Firestore is identity SoR. Odoo is ERP via `getErpAdapter()`. Mongo is optional LINE FAQ only. `SALES_SESSION_TTL_HOURS` (default 24) is the gold VERIFY sales-login window.
 
 Variable names for each lane: `src/http/env-params.ts`. Railway copy-paste keys: `deploy.env.staging.example`. Delivery keys: `deploy.env.production.example`. `GET /ops/platform` reports `env.missingRequired`.

@@ -74,6 +74,7 @@ export type UserProfile = {
     marketingOptIn: boolean;
     lastActionOtpAt?: string;
     salesTier?: OdooSalesTier;
+    salesSessionExpiresAt?: string;
 };
 
 export type OdooVerificationChallenge = {

@@ -17,6 +17,31 @@ export const BRAND = {
   radius: '12px',
 } as const;
 
+const RESULT_ICON = {
+  success: { background: '#12B76A', mark: '✓' },
+  error: { background: '#B42318', mark: '✕' },
+} as const;
+
+/** 22px rounded square — success tick or fail cross, used on optional chips and Action Verify result cards. */
+export const createResultIconBox = (kind: 'success' | 'error'): messagingApi.FlexBox => ({
+  type: 'box',
+  layout: 'vertical',
+  width: '22px',
+  height: '22px',
+  cornerRadius: BRAND.radius,
+  backgroundColor: RESULT_ICON[kind].background,
+  justifyContent: 'center',
+  flex: 0,
+  contents: [{
+    type: 'text',
+    text: RESULT_ICON[kind].mark,
+    size: 'xs',
+    color: '#FFFFFF',
+    align: 'center',
+    gravity: 'center',
+  }],
+});
+
 
 export const buttonLabel = (label: string): string => {
   const cleaned = label.trim();

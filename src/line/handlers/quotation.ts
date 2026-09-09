@@ -40,13 +40,19 @@ const inferTone = (value: string): 'info' | 'success' | 'warning' | 'error' => {
   return 'info';
 };
 
-const botText = (value: string, language: UserLanguage, actions?: { label: string; text: string; style?: 'primary' | 'secondary' }[]) =>
+const botText = (
+  value: string,
+  language: UserLanguage,
+  actions?: { label: string; text: string; style?: 'primary' | 'secondary' }[],
+  linkAction?: { label: string; uri: string },
+) =>
   createBotTextFlexMessage({
     title: getBrandTitle(language),
     body: value,
     language,
     tone: inferTone(value),
     actions,
+    ...(linkAction ? { linkAction } : {}),
   });
 
 const statusRetryActions = (orderId: number, language: UserLanguage) => [
@@ -284,43 +290,20 @@ const quoteSendOptionsHandler: CommandHandler = {
   },
 };
 
-// QUOTE SEND <orderId> — staff footer Send. Marks Odoo sent and pushes the
-// customer Flex (Approve, View Quote, Download PDF) so the bar can move to
-// Quotation Sent. Confirm on the same row still converts to Sales Order.
+// QUOTE SEND <orderId> — staff footer Send opens the email/LINE composer.
 const quoteSendHandler: CommandHandler = {
   name: 'quote-send',
   match: (u) => u.startsWith('QUOTE SEND') && !u.startsWith('QUOTE SEND CONFIRM') && !u.startsWith('QUOTE SEND OPTIONS'),
   handle: async (ctx) => {
-    const { userLanguage, userId, channel, requestId, text } = ctx;
-    const profile = await syncStaffProfile(userId, ctx.profile);
+    const { userLanguage, text } = ctx;
+    const profile = await syncStaffProfile(ctx.userId, ctx.profile);
     if (!isQuoteStaff(profile)) return [staffOnlyReply(userLanguage)];
     const orderId = parseOrderId(text, 'QUOTE SEND');
     if (!orderId) return [notFoundReply(userLanguage)];
     const order = await getSaleOrderById(orderId);
     if (!order || !order.partner_id) return [notFoundReply(userLanguage)];
-
-    await markSaleOrderSent(orderId);
-    const sentOrder = (await getSaleOrderById(orderId)) || { ...order, state: 'sent' };
-    const result = await notifyQuoteParties({
-      order: sentOrder,
-      channelId: channel?.channelId,
-      actorUserId: userId,
-      viaLine: true,
-    });
-    const { portalLink, pdfLink } = await getOrderLinks(orderId);
-    recordAuditEvent({
-      action: 'quote_send',
-      outcome: result.customerLineId ? 'success' : 'failure',
-      actorUserId: userId,
-      channelId: channel?.channelId,
-      requestId,
-      targetId: String(orderId),
-      detail: `line:${result.customerLineId ? 'line' : 'no_line'}`,
-    });
-    return [
-      botText(sendChannelSummary(userLanguage, result, 'line'), userLanguage),
-      createQuotationJourneyFlexMessage(sentOrder, staffCardOptions(profile, { portalLink, pdfLink }, sentOrder), userLanguage),
-    ];
+    const partner = await getPartnerById(order.partner_id[0]);
+    return [createQuoteSendComposerFlexMessage(order, partner?.email, userLanguage, 'quotation', partner?.phone)];
   },
 };
 
@@ -375,7 +358,12 @@ const quoteSendConfirmHandler: CommandHandler = {
     });
 
     return [
-      botText(sendChannelSummary(userLanguage, result, sendChannel), userLanguage),
+      botText(
+        sendChannelSummary(userLanguage, result, sendChannel),
+        userLanguage,
+        undefined,
+        result.inviteUri ? { label: t('addFriend', userLanguage), uri: result.inviteUri } : undefined,
+      ),
       createQuotationJourneyFlexMessage(sentOrder, staffCardOptions(profile, { portalLink, pdfLink }, sentOrder), userLanguage),
     ];
   },
@@ -720,7 +708,12 @@ const quoteInvoiceSendConfirmHandler: CommandHandler = {
     });
 
     return [
-      botText(sendChannelSummary(userLanguage, result, sendChannel), userLanguage),
+      botText(
+        sendChannelSummary(userLanguage, result, sendChannel),
+        userLanguage,
+        undefined,
+        result.inviteUri ? { label: t('addFriend', userLanguage), uri: result.inviteUri } : undefined,
+      ),
       createQuotationJourneyFlexMessage(invoicedOrder, staffCardOptions(profile, { portalLink, pdfLink }, invoicedOrder), userLanguage),
     ];
   },

@@ -27,16 +27,32 @@ describe('NAV HOME rounded boxes', () => {
     expect(row?.contents?.[0]?.weight).toBeUndefined();
   });
 
-  it('keeps Verify gold when the viewer is not an Odoo user yet', () => {
-    const message = createServiceHomeFlexMessage(
+  it('golds Verify only when the sales session is on', () => {
+    const on = createServiceHomeFlexMessage(
       [{ key: 'VERIFY', label: 'Verify account' }, { key: 'commerce', label: 'Products & Quotes' }],
       'en',
       'Sora',
       true,
     );
-    const bubble = message.contents as { body?: { contents?: Array<Record<string, unknown>> } };
-    expect(bubble.body?.contents?.[0]?.backgroundColor).toBe(BRAND.gold);
-    expect(bubble.body?.contents?.[1]?.backgroundColor).toBe(BRAND.tealTint);
+    const off = createServiceHomeFlexMessage(
+      [{ key: 'VERIFY', label: 'Verify account' }, { key: 'commerce', label: 'Products & Quotes' }],
+      'en',
+      'Sora',
+      false,
+    );
+    const onBody = on.contents as { body?: { contents?: Array<Record<string, unknown>> }; footer?: { contents?: Array<Record<string, unknown>> } };
+    const offBody = off.contents as { body?: { contents?: Array<Record<string, unknown>> } };
+    expect(onBody.body?.contents?.[0]?.backgroundColor).toBe(BRAND.gold);
+    expect(onBody.body?.contents?.[1]?.backgroundColor).toBe(BRAND.teal);
+    expect(offBody.body?.contents?.[0]?.backgroundColor).toBe(BRAND.tealTint);
+    expect(offBody.body?.contents?.[1]?.backgroundColor).toBe(BRAND.teal);
+    expect(onBody.footer?.contents?.[0]?.backgroundColor).toBe(BRAND.gold);
+  });
+
+  it('uses regular Language fill on the Thai home footer', () => {
+    const message = createServiceHomeFlexMessage([{ key: 'commerce', label: 'สินค้าและใบเสนอราคา' }], 'th', 'โซระ');
+    const bubble = message.contents as { footer?: { contents?: Array<Record<string, unknown>> } };
+    expect(bubble.footer?.contents?.[0]?.backgroundColor).toBe(BRAND.tealTint);
   });
 
   it('puts Language and Guide in the same tap-row type as the service list', () => {

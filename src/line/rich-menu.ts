@@ -19,12 +19,15 @@ export const richMenuIdForLanguage = (
   language: UserLanguage,
   env: NodeJS.ProcessEnv = process.env,
   variant: RichMenuVariant = 'default',
+  salesSessionActive = false,
 ): string | undefined => {
-  const mapped = parseMenuMap(env)[language]?.[variant]?.trim();
+  const map = parseMenuMap(env)[language] || {};
+  const sessionKey = salesSessionActive ? `${variant}-verified` : variant;
+  const mapped = map[sessionKey]?.trim() || map[variant]?.trim();
   if (mapped) return mapped;
   if (variant !== 'default') {
-    const fallbackVariant = parseMenuMap(env)[language]?.default?.trim();
-    if (fallbackVariant) return fallbackVariant;
+    const fallback = (salesSessionActive ? map['default-verified'] : undefined) || map.default?.trim();
+    if (fallback) return fallback;
   }
   const key = language === 'th' ? 'LINE_RICH_MENU_TH' : 'LINE_RICH_MENU_EN';
   return env[key]?.trim() || undefined;
@@ -46,8 +49,9 @@ export const linkUserRichMenu = async (
   language: UserLanguage,
   channelId: string = DEFAULT_CHANNEL_ID,
   variant: RichMenuVariant = 'default',
+  salesSessionActive = false,
 ): Promise<void> => {
-  const richMenuId = richMenuIdForLanguage(language, process.env, variant);
+  const richMenuId = richMenuIdForLanguage(language, process.env, variant, salesSessionActive);
   if (!richMenuId) return;
   const channel = resolveChannelConfig(channelId || DEFAULT_CHANNEL_ID);
   if (!channel) {

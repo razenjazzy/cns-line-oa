@@ -16,6 +16,7 @@ type CachedProfileState = {
     marketingOptIn?: boolean;
     lastActionOtpAt?: string;
     salesTier?: 'salesperson' | 'sales_manager';
+    salesSessionExpiresAt?: string;
 };
 
 type PendingFlowPredicate = (pendingFlow: PendingFlowState | undefined | null) => pendingFlow is PendingFlowState;
@@ -40,6 +41,7 @@ export const buildFallbackUserProfile = (
     marketingOptIn: cached.marketingOptIn || false,
     lastActionOtpAt: cached.lastActionOtpAt,
     salesTier: cached.salesTier,
+    salesSessionExpiresAt: cached.salesSessionExpiresAt,
 });
 
 /**
@@ -91,5 +93,6 @@ export const parseStoredUserProfile = (
         marketingOptIn: data.marketingOptIn === true,
         lastActionOtpAt: typeof data.lastActionOtpAt === 'string' ? data.lastActionOtpAt : undefined,
         salesTier: data.salesTier === 'salesperson' || data.salesTier === 'sales_manager' ? data.salesTier : undefined,
+        salesSessionExpiresAt: typeof data.salesSessionExpiresAt === 'string' ? data.salesSessionExpiresAt : undefined,
     };
 };

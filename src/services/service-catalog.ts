@@ -115,13 +115,17 @@ const COMMAND_PREFIX_SERVICE_MAP: CommandPrefixMapping[] = [
   { prefix: 'FORM ORDER STATUS', service: 'commerce' },
   { prefix: 'QUOTE STATUS', service: 'commerce' },
   { prefix: 'QUOTE CONFIRM', service: 'commerce', requiresOtp: true },
-  { prefix: 'QUOTE SEND', service: 'commerce', requiresOtp: true },
+  { prefix: 'QUOTE SEND OPTIONS', service: 'commerce' },
+  { prefix: 'QUOTE SEND CONFIRM', service: 'commerce', requiresOtp: true },
+  { prefix: 'QUOTE SEND', service: 'commerce' },
   { prefix: 'QUOTE APPROVE', service: 'commerce' },
   { prefix: 'QUOTE ADD', service: 'commerce', requiresOtp: true },
   { prefix: 'QUOTE LINES', service: 'commerce' },
   { prefix: 'QUOTE EDIT', service: 'commerce', requiresOtp: true },
   { prefix: 'QUOTE REMOVE', service: 'commerce', requiresOtp: true },
   { prefix: 'QUOTE CANCEL', service: 'commerce', requiresOtp: true },
+  { prefix: 'QUOTE INVOICE SEND CONFIRM', service: 'commerce', requiresOtp: true },
+  { prefix: 'QUOTE INVOICE SEND', service: 'commerce' },
   { prefix: 'QUOTE INVOICE', service: 'commerce', requiresOtp: true },
   { prefix: 'QUOTE LIST', service: 'commerce' },
   { prefix: 'QUOTE MESSAGE', service: 'commerce', requiresOtp: true },
@@ -153,13 +157,22 @@ const COMMAND_PREFIX_SERVICE_MAP: CommandPrefixMapping[] = [
   { prefix: 'CANCEL GROUPBUY', service: 'groupBuy' },
 ];
 
+const longestPrefixMatch = (upperText: string): CommandPrefixMapping | null => {
+  let best: CommandPrefixMapping | null = null;
+  for (const mapping of COMMAND_PREFIX_SERVICE_MAP) {
+    if (upperText === mapping.prefix || upperText.startsWith(`${mapping.prefix} `)) {
+      if (!best || mapping.prefix.length > best.prefix.length) best = mapping;
+    }
+  }
+  return best;
+};
+
 export const resolveServiceForCommand = (upperText: string): ServiceKey | null => {
-  const match = COMMAND_PREFIX_SERVICE_MAP.find(m => upperText.startsWith(m.prefix));
-  return match ? match.service : null;
+  return longestPrefixMatch(upperText)?.service || null;
 };
 
 export const isOtpGatedCommand = (upperText: string): boolean =>
-  COMMAND_PREFIX_SERVICE_MAP.some(m => m.requiresOtp && upperText.startsWith(m.prefix));
+  Boolean(longestPrefixMatch(upperText)?.requiresOtp);
 
 export const isCommandDisabled = (upperText: string): boolean => {
   const raw = process.env.DISABLED_COMMANDS?.trim();

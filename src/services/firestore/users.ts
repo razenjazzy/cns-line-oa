@@ -15,6 +15,7 @@ export {
   setUserLanguage,
   setUserOdooPartner,
   setUserOdooVerificationStatus,
+  setSalesSessionExpiresAt,
   setUserPendingFlow,
   setLastProductContext,
   setLastQuoteListFrom,

@@ -20,6 +20,7 @@ export const ENV_PARAMS: EnvParam[] = [
   { key: 'LINE_RICH_MENU_JSON', requiredIn: [], note: 'Per-cell active rich-menu ids from npm run rich-menu:upload' },
   { key: 'LINE_AGENT_NAME_EN', requiredIn: [], note: 'English persona name; defaults to Sora' },
   { key: 'LINE_AGENT_NAME_TH', requiredIn: [], note: 'Thai persona name; defaults to โซระ' },
+  { key: 'SALES_SESSION_TTL_HOURS', requiredIn: [], note: 'Sales VERIFY gold session; default 24' },
   { key: 'ADMIN_USER_ID', requiredIn: ['staging', 'production'], note: 'Fail-closed allowlist for ADMIN ENABLE' },
   { key: 'GOOGLE_CLOUD_PROJECT', requiredIn: ['staging', 'production'], note: 'Firestore project' },
   { key: 'GOOGLE_APPLICATION_CREDENTIALS_JSON', requiredIn: ['staging'], note: 'Required off-GCP (Railway). Omit on Cloud Run ADC' },

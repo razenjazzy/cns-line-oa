@@ -19,6 +19,7 @@ type CachedUserState = {
     marketingOptIn?: boolean;
     lastActionOtpAt?: string;
     salesTier?: 'salesperson' | 'sales_manager';
+    salesSessionExpiresAt?: string;
 };
 
 type RepositoryDependencies = {
@@ -227,6 +228,16 @@ export const createUserProfileRepository = (dependencies: RepositoryDependencies
         dependencies.mergeCached(userId, patch);
         const result = await dependencies.write('setUserOdooVerificationStatus', async database => {
             await database.collection('users').doc(userId).set(patch, { merge: true });
+        });
+        if (!result.ok) dependencies.restorePrevious(userId, previous);
+        return result;
+    },
+
+    setSalesSessionExpiresAt: async (userId: string, salesSessionExpiresAt: string | null) => {
+        const previous = dependencies.getPrevious(userId);
+        dependencies.mergeCached(userId, { salesSessionExpiresAt: salesSessionExpiresAt || undefined });
+        const result = await dependencies.write('setSalesSessionExpiresAt', async database => {
+            await database.collection('users').doc(userId).set({ salesSessionExpiresAt: salesSessionExpiresAt || null }, { merge: true });
         });
         if (!result.ok) dependencies.restorePrevious(userId, previous);
         return result;

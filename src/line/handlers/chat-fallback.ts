@@ -16,6 +16,7 @@ import { messagingApi } from '@line/bot-sdk';
 import { processChatMessage } from '../../services/chat';
 import { createBotTextFlexMessage } from '../templates';
 import { buildHomeMenuMessage } from '../command-router';
+import { hasActiveSalesSession } from '../../services/sales-session';
 import type { CommandReplyContext } from '../command-router';
 import { getEscalationState } from '../../services/firestore';
 import type { UserLanguage } from '../../services/firestore';
@@ -91,7 +92,7 @@ export const handleChatFallback = async (
     }
     return [
       ...materializeMessages(chatResult.messages, userLanguage),
-      buildHomeMenuMessage(userLanguage, agentName, channel, profile.role === 'admin', profile.odooVerified),
+      buildHomeMenuMessage(userLanguage, agentName, channel, profile.role === 'admin', hasActiveSalesSession(profile)),
     ];
   }
 

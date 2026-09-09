@@ -54,10 +54,11 @@ describe('rich menu SVG type', () => {
     expect(svg).toContain('>Verify<');
     expect(svg).toContain('>Products &amp; Quotes<');
     expect(svg).toContain('stroke-width="10"');
-    expect(svg).toContain('#F4E9D4');
+    expect(svg).toContain('#A97A2B');
+    expect(svg).toContain('#E3F0EE');
     const th = readFileSync('assets/rich-menu/menu-th.svg', 'utf8');
     expect(th).toContain('>หน้าหลัก<');
-    expect(th).toContain('#0B6E6A');
+    expect(th).toContain('#E3F0EE');
   });
 });
 
@@ -79,6 +80,14 @@ describe('richMenuIdForLanguage', () => {
     expect(richMenuIdForLanguage('en', env, 'verify')).toBe('richmenu-en-verify');
     expect(richMenuIdForLanguage('en', env, 'home')).toBe('richmenu-en-default');
     expect(richMenuIdForLanguage('th', env, 'language')).toBe('richmenu-th-language');
+    const withSession = {
+      ...env,
+      LINE_RICH_MENU_JSON: JSON.stringify({
+        en: { default: 'richmenu-en-default', 'default-verified': 'richmenu-en-verified', verify: 'richmenu-en-verify' },
+        th: { default: 'richmenu-th-default' },
+      }),
+    };
+    expect(richMenuIdForLanguage('en', withSession, 'default', true)).toBe('richmenu-en-verified');
   });
 });
 

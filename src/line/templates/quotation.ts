@@ -109,7 +109,12 @@ export const createQuotationJourneyFlexMessage = (
             createMessageActionButton(t('createInvoice', language), `QUOTE INVOICE ${order.id}`, 'primary', BRAND.teal),
             createMessageActionButton(t('sendInvoice', language), `QUOTE INVOICE SEND ${order.id}`, 'secondary', BRAND.tealTint),
           )
-        : createMessageActionButton(t('sendInvoice', language), `QUOTE INVOICE SEND ${order.id}`, 'secondary', BRAND.tealTint));
+        : options.pdfLink
+          ? pairButtons(
+              createMessageActionButton(t('sendInvoice', language), `QUOTE INVOICE SEND ${order.id}`, 'secondary', BRAND.tealTint),
+              createUriActionButton(t('print', language), options.pdfLink, 'secondary', BRAND.goldTint),
+            )
+          : createMessageActionButton(t('sendInvoice', language), `QUOTE INVOICE SEND ${order.id}`, 'secondary', BRAND.tealTint));
     }
   } else if (!isCancelled && isSent) {
     bodyActions.push(options.portalLink

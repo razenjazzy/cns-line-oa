@@ -1,6 +1,6 @@
 import { messagingApi } from '@line/bot-sdk';
 import { t, tFill } from '../../services/i18n';
-import { BRAND, buttonLabel, createDatePickerButton, createMessageActionButton, truncate, type ReportLanguage } from './shared';
+import { BRAND, buttonLabel, createDatePickerButton, createMessageActionButton, createResultIconBox, truncate, type ReportLanguage } from './shared';
 
 export const createFormPromptFlexMessage = (params: {
   title: string;
@@ -145,31 +145,14 @@ export const createOptionalSummaryFlexMessage = (params: {
         contents: params.fields.map(f => ({
           type: 'box' as const,
           layout: 'horizontal' as const,
-          spacing: 'sm' as const,
+          spacing: 'md' as const,
           backgroundColor: BRAND.paper,
           cornerRadius: BRAND.radius,
           paddingAll: 'md' as const,
           action: { type: 'message' as const, text: `FORM FIELD ${f.index}` },
           contents: [
             f.value
-              ? {
-                  type: 'box' as const,
-                  layout: 'vertical' as const,
-                  width: '22px',
-                  height: '22px',
-                  cornerRadius: '11px',
-                  backgroundColor: BRAND.teal,
-                  justifyContent: 'center' as const,
-                  flex: 0,
-                  contents: [{
-                    type: 'text' as const,
-                    text: '✓',
-                    size: 'xs' as const,
-                    color: '#FFFFFF',
-                    align: 'center' as const,
-                    gravity: 'center' as const,
-                  }],
-                }
+              ? createResultIconBox('success')
               : {
                   type: 'box' as const,
                   layout: 'vertical' as const,

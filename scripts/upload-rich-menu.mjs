@@ -19,10 +19,16 @@ if (!token) {
 const layout = JSON.parse(readFileSync(join(root, 'assets/rich-menu/layout.json'), 'utf8'));
 const headers = { Authorization: `Bearer ${token}` };
 const areas = layout.areas.map(({ bounds, action }) => ({ bounds, action }));
-const variants = ['default', ...layout.areas.map(area => area.id)];
+const variants = [
+  'default',
+  'default-verified',
+  ...layout.areas.flatMap(area => [area.id, `${area.id}-verified`]),
+];
 
 const publish = async (language, variant) => {
-  const pngName = variant === 'default' ? `menu-${language}.png` : `menu-${language}-${variant}.png`;
+  const pngName = variant === 'default' || variant === 'default-verified'
+    ? `menu-${language}${variant === 'default' ? '' : '-verified'}.png`
+    : `menu-${language}-${variant}.png`;
   const createRes = await fetch('https://api.line.me/v2/bot/richmenu', {
     method: 'POST',
     headers: { ...headers, 'Content-Type': 'application/json' },

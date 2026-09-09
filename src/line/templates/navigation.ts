@@ -43,12 +43,13 @@ export const createServiceHomeFlexMessage = (
         spacing: 'sm',
         paddingBottom: 'lg',
         contents: services.slice(0, 10).map(service => {
-          const active = highlightVerify && service.key === 'VERIFY';
+          const verifyOn = highlightVerify && service.key === 'VERIFY';
+          const isVerify = service.key === 'VERIFY';
           return createTapRow(
             `${SERVICE_ICON[service.key] || ''} ${service.label}`.trim(),
             `NAV ${service.key}`,
-            active ? BRAND.gold : !highlightVerify ? BRAND.teal : BRAND.tealTint,
-            active || !highlightVerify ? '#FFFFFF' : BRAND.tealStrong,
+            verifyOn ? BRAND.gold : isVerify ? BRAND.tealTint : BRAND.teal,
+            verifyOn || !isVerify ? '#FFFFFF' : BRAND.tealStrong,
             'lg',
           );
         }),
@@ -58,7 +59,7 @@ export const createServiceHomeFlexMessage = (
         layout: 'horizontal',
         spacing: 'md',
         contents: [
-          { ...createTapRow(`🌐 ${t('languageToggle', language)}`, language === 'en' ? 'LANG TH' : 'LANG EN', BRAND.tealTint, BRAND.tealStrong, 'lg'), flex: 1 },
+          { ...createTapRow(`🌐 ${t('languageToggle', language)}`, language === 'en' ? 'LANG TH' : 'LANG EN', language === 'en' ? BRAND.gold : BRAND.tealTint, language === 'en' ? '#FFFFFF' : BRAND.tealStrong, 'lg'), flex: 1 },
           { ...createTapRow(`📖 ${t('guide', language)}`, 'GUIDE', BRAND.tealTint, BRAND.tealStrong, 'lg'), flex: 1 },
         ],
       },

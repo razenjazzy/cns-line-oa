@@ -3,6 +3,7 @@ import { sendTargetedFlexMessage, sendTargetedMessage } from '../line/messaging'
 import { DEFAULT_CHANNEL_ID, getBrandTitle, resolveChannelConfig } from '../line/channels';
 import { getSaleOrderPortalLink } from './odoo';
 import { appLogger } from './logger';
+import { createBotTextFlexMessage } from '../line/templates';
 
 /** After action OTP, these commands should open the Odoo portal instead of the identity-verify HTML page. */
 export const portalOrderIdFromPendingCommand = (text: string): number | null => {
@@ -46,7 +47,13 @@ export const completeActionOtpByLinkToken = async (token: string): Promise<{
     actionOtpReplay: true,
   });
 
-  for (const message of messages) {
+  const successCard = createBotTextFlexMessage({
+    title: language === 'en' ? 'Action verified' : 'ยืนยันแล้ว',
+    body: language === 'en' ? 'Continuing to the next step.' : 'ดำเนินการต่อในขั้นตอนถัดไป',
+    language,
+    tone: 'success',
+  });
+  for (const message of [successCard, ...messages]) {
     if (message.type === 'flex') {
       await sendTargetedFlexMessage([consumed.data.userId], message, channelId);
     } else if (message.type === 'text') {

@@ -4,6 +4,7 @@ import { createBotTextFlexMessage } from '../templates';
 import type { UserLanguage } from '../../services/firestore';
 import { DEFAULT_CHANNEL_ID, getBrandTitle } from '../channels';
 import { linkUserRichMenu } from '../rich-menu';
+import { hasActiveSalesSession } from '../../services/sales-session';
 
 const tr = (language: UserLanguage, th: string, en: string): string => (language === 'en' ? en : th);
 
@@ -30,7 +31,7 @@ const langThHandler: CommandHandler = {
         tone: 'error',
       })];
     }
-    await linkUserRichMenu(userId, 'th', ctx.channel?.channelId || DEFAULT_CHANNEL_ID, ctx.profile.odooVerified ? 'language' : 'verify');
+    await linkUserRichMenu(userId, 'th', ctx.channel?.channelId || DEFAULT_CHANNEL_ID, 'language', hasActiveSalesSession(ctx.profile));
     return [botText(`${agentName} เปลี่ยนภาษาเป็นไทยแล้วค่ะ`, 'th')];
   },
 };
@@ -50,7 +51,7 @@ const langEnHandler: CommandHandler = {
         tone: 'error',
       })];
     }
-    await linkUserRichMenu(userId, 'en', ctx.channel?.channelId || DEFAULT_CHANNEL_ID, ctx.profile.odooVerified ? 'language' : 'verify');
+    await linkUserRichMenu(userId, 'en', ctx.channel?.channelId || DEFAULT_CHANNEL_ID, 'language', hasActiveSalesSession(ctx.profile));
     return [botText(`${agentName} switched language to English.`, 'en')];
   },
 };
@@ -75,7 +76,7 @@ const langToggleHandler: CommandHandler = {
         tone: 'error',
       })];
     }
-    await linkUserRichMenu(userId, target, ctx.channel?.channelId || DEFAULT_CHANNEL_ID, ctx.profile.odooVerified ? 'language' : 'verify');
+    await linkUserRichMenu(userId, target, ctx.channel?.channelId || DEFAULT_CHANNEL_ID, 'language', hasActiveSalesSession(ctx.profile));
     return [botText(target === 'en' ? `${ctx.agentName} switched language to English.` : `${ctx.agentName} เปลี่ยนภาษาเป็นไทยแล้วค่ะ`, target)];
   },
 };

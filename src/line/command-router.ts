@@ -35,6 +35,7 @@ import { createBotTextFlexMessage, createFormPromptFlexMessage, createOptionalSu
 import { getAvailableServices } from '../services/service-catalog';
 import { ChannelContext, DEFAULT_CHANNEL_ID, getBrandTitle } from './channels';
 import { linkUserRichMenu, trayVariantForCommand } from './rich-menu';
+import { clearSalesLogin, hasActiveSalesSession, salesSessionExpired } from '../services/sales-session';
 import type { FlowSpec } from '../services/guided-forms';
 import { COMMAND_HANDLERS } from './handlers/index';
 import { buildKeywordGuidanceMessages } from './handlers/help';
@@ -95,14 +96,14 @@ export const buildHomeMenuMessage = (
   agentName: string,
   channel: ChannelContext | undefined,
   isAdmin: boolean,
-  odooVerified = true,
+  salesSessionActive = false,
 ): messagingApi.Message => {
   const availableServices = getAvailableServices(channel, isAdmin);
   const menuItems = [
     { key: 'VERIFY', label: tr(language, 'ยืนยันตัวตน', 'Verify account') },
     ...availableServices.map(svc => ({ key: svc.key, label: language === 'en' ? svc.labelEn : svc.labelTh })),
   ];
-  return createServiceHomeFlexMessage(menuItems, language, agentName, !odooVerified);
+  return createServiceHomeFlexMessage(menuItems, language, agentName, salesSessionActive);
 };
 
 // ---------------------------------------------------------------------------
@@ -128,8 +129,8 @@ const buildFormPromptMessage = async (
     : undefined;
   const savedPhoneNote = field.key === 'phone' && options?.[0]
     ? tr(language,
-      `เบอร์ใน Odoo: ${options[0]} — กดชิปด้านล่างหรือพิมพ์เบอร์ใหม่`,
-      `Saved in Odoo: ${options[0]}. Tap the chip below or type a new number.`,
+      `เบอร์ใน Odoo: ${options[0]}`,
+      `Saved in Odoo: ${options[0]}`,
     )
     : undefined;
   return createFormPromptFlexMessage({
@@ -220,7 +221,7 @@ const handleGuidedFormStep = async (ctx: CommandReplyContext): Promise<messaging
     await setUserPendingFlow(userId, null);
     return [
       text(tr(userLanguage, `${agentName} ยกเลิกแบบฟอร์มแล้ว`, `${agentName} form cancelled.`)),
-      buildHomeMenuMessage(userLanguage, agentName, ctx.channel, profile.role === 'admin', profile.odooVerified),
+      buildHomeMenuMessage(userLanguage, agentName, ctx.channel, profile.role === 'admin', hasActiveSalesSession(profile)),
     ];
   }
 
@@ -388,6 +389,23 @@ const handleFormCommand = async (ctx: CommandReplyContext): Promise<messagingApi
     ), userLanguage)];
   }
 
+  if (flowSpec.key === 'VERIFY' && hasActiveSalesSession(profile)) {
+    await setUserPendingFlow(userId, null);
+    await clearSalesLogin(userId);
+    if (!ctx.isGroupContext) {
+      await linkUserRichMenu(userId, userLanguage, ctx.channel?.channelId || DEFAULT_CHANNEL_ID, 'default', false);
+    }
+    return [
+      createBotTextFlexMessage({
+        title: tr(userLanguage, 'ออกจากระบบแล้ว', 'Signed out'),
+        body: tr(userLanguage, `${agentName} ยกเลิกการยืนยันแล้ว แตะ Verify เพื่อเข้าอีกครั้ง`, `${agentName} verification is off. Tap Verify to sign in again.`),
+        language: userLanguage,
+        tone: 'success',
+      }),
+      buildHomeMenuMessage(userLanguage, agentName, ctx.channel, profile.role === 'admin', false),
+    ];
+  }
+
   await setUserPendingFlow(userId, {
     flow: flowSpec.key,
     stepIndex: 0,
@@ -423,12 +441,18 @@ const isGuestAllowedCommand = (upperText: string, pendingFlow?: { flow: string }
 };
 
 const dispatchCommandReply = async (ctx: CommandReplyContext): Promise<messagingApi.Message[]> => {
-  const { profile, userId, userLanguage, agentName } = ctx;
+  const { userId, userLanguage, agentName } = ctx;
+  if (salesSessionExpired(ctx.profile)) {
+    await clearSalesLogin(userId);
+    ctx.profile = { ...ctx.profile, odooVerified: false, salesSessionExpiresAt: undefined };
+  }
+  const { profile } = ctx;
   const trimmed = ctx.text.trim();
   const upperText = trimmed.toUpperCase();
-  const trayVariant = profile.odooVerified ? trayVariantForCommand(trimmed) : 'verify';
+  const sessionOn = hasActiveSalesSession(profile);
+  const trayVariant = trayVariantForCommand(trimmed);
   if (trayVariant && !ctx.isGroupContext) {
-    await linkUserRichMenu(userId, userLanguage, ctx.channel?.channelId || DEFAULT_CHANNEL_ID, trayVariant);
+    await linkUserRichMenu(userId, userLanguage, ctx.channel?.channelId || DEFAULT_CHANNEL_ID, trayVariant, sessionOn);
   }
 
   // Step 1: Guided form intercept

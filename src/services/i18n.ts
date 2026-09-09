@@ -58,7 +58,7 @@ export const UI_STRINGS = {
   nextPage: { en: 'Next 5', th: 'ถัดไป 5 รายการ' },
   filterDates: { en: 'Filter dates', th: 'กรองวันที่' },
   // Kept short deliberately — this button often sits half-width next to
-  // "Download PDF", and a longer label gets visually clipped by the LINE
+  // "Download", and a longer label gets visually clipped by the LINE
   // client itself (its width-based clipping, not the 20-char cap below).
   viewFullQuotation: { en: 'View Quote', th: 'ดูใบเสนอราคา' },
   quoteSentToAdmin: { en: 'Quotation sent to the customer to Confirm or Approve.', th: 'ส่งใบเสนอราคาให้ลูกค้าเพื่อยืนยันหรืออนุมัติแล้ว' },
@@ -70,9 +70,10 @@ export const UI_STRINGS = {
   sendViaBoth: { en: 'Send both', th: 'ส่งทั้งคู่' },
   phoneField: { en: 'Phone', th: 'เบอร์โทร' },
   quoteNotLinked: {
-    en: 'LINE cannot message this customer yet. Ask them to open this Official Account first so the quotation can be delivered. They do not need to VERIFY just to receive it.',
-    th: 'ยังส่งข้อความทาง LINE ให้ลูกค้ารายนี้ไม่ได้ กรุณาให้ลูกค้าทัก Official Account นี้ก่อน จึงจะส่งใบเสนอราคาได้ ลูกค้าไม่ต้อง VERIFY เพียงเพื่อรับใบเสนอราคา',
+    en: 'This customer has not opened the Official Account yet. Share the Add friend link below or send email. They do not need VERIFY to receive it.',
+    th: 'ลูกค้ายังไม่ได้เพิ่ม Official Account นี้ ส่งลิงก์เพิ่มเพื่อนด้านล่างหรือส่งอีเมล ลูกค้าไม่ต้อง VERIFY เพื่อรับใบเสนอราคา',
   },
+  addFriend: { en: 'Add friend', th: 'เพิ่มเพื่อน' },
   quoteNotYours: {
     en: "This quotation isn't linked to your account.",
     th: 'ใบเสนอราคานี้ไม่ได้ผูกกับบัญชีของคุณ',
@@ -85,8 +86,9 @@ export const UI_STRINGS = {
   editQuoteHint: { en: 'Tap a line to change qty. Add or remove below.', th: 'แตะรายการเพื่อแก้จำนวน เพิ่มหรือลบด้านล่าง' },
   removeItem: { en: 'Remove', th: 'ลบรายการ' },
   cancelQuote: { en: 'Cancel', th: 'ยกเลิก' },
-  createInvoice: { en: 'Create invoice', th: 'สร้างใบแจ้งหนี้' },
-  downloadPdf: { en: 'Download PDF', th: 'ดาวน์โหลด PDF' },
+  createInvoice: { en: 'Invoice', th: 'ใบแจ้งหนี้' },
+  downloadPdf: { en: 'Download', th: 'ดาวน์โหลด' },
+  print: { en: 'Print', th: 'พิมพ์' },
   myQuotations: { en: 'My quotations', th: 'ใบเสนอราคาของฉัน' },
   noQuotations: { en: "No quotations found.", th: 'ไม่พบใบเสนอราคา' },
   moreQuotations: { en: 'More quotations exist — ask an admin to narrow the search.', th: 'มีใบเสนอราคาเพิ่มเติม — กรุณาแจ้งแอดมินให้ช่วยค้นหาแบบเจาะจงมากขึ้น' },

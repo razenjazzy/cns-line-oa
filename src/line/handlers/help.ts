@@ -1,5 +1,6 @@
 import type { CommandHandler } from './index';
 import { buildHomeMenuMessage } from '../command-router';
+import { hasActiveSalesSession } from '../../services/sales-session';
 import { buildCommandKeywordGuidance, isGuideCommand, parseGuideCategoryKey } from '../command-guide';
 import { createBotTextFlexMessage, createGuideCategoriesFlexMessage, createGuideCategoryFlexMessage } from '../templates';
 import { pingOdoo, seedOdooSampleSalesData } from '../../services/odoo';
@@ -35,7 +36,7 @@ const homeMenuHandler: CommandHandler = {
   name: 'help-home',
   match: (u) => ['เริ่มต้น', 'START', 'HELP', 'OPTIONS', 'MENU'].includes(u),
   handle: async (ctx) =>
-    [buildHomeMenuMessage(ctx.userLanguage, ctx.agentName, ctx.channel, ctx.profile.role === 'admin', ctx.profile.odooVerified)],
+    [buildHomeMenuMessage(ctx.userLanguage, ctx.agentName, ctx.channel, ctx.profile.role === 'admin', hasActiveSalesSession(ctx.profile))],
 };
 
 // FEATURES — list bot capabilities
@@ -150,7 +151,7 @@ export const buildKeywordGuidanceMessages = (
   if (!guidance) return null;
   return [
     botText(guidance, ctx.userLanguage),
-    buildHomeMenuMessage(ctx.userLanguage, ctx.agentName, ctx.channel, ctx.profile.role === 'admin', ctx.profile.odooVerified),
+    buildHomeMenuMessage(ctx.userLanguage, ctx.agentName, ctx.channel, ctx.profile.role === 'admin', hasActiveSalesSession(ctx.profile)),
   ];
 };
 

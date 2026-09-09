@@ -54,6 +54,7 @@ type CachedUserState = {
     /** Last time this user completed the step-up OTP gate for a mutating quote action. */
     lastActionOtpAt?: string;
     salesTier?: 'salesperson' | 'sales_manager';
+    salesSessionExpiresAt?: string;
 };
 
 const isPendingFlowActive = (pendingFlow: PendingFlowState | undefined | null): pendingFlow is PendingFlowState => {
@@ -435,6 +436,7 @@ export const setUserOdooPartner = userProfileRepository.setOdooPartner;
 export const setUserContactPhone = userProfileRepository.setContactPhone;
 
 export const setUserOdooVerificationStatus = userProfileRepository.setVerificationStatus;
+export const setSalesSessionExpiresAt = userProfileRepository.setSalesSessionExpiresAt;
 
 const phoneVariantsOverlap = (left: string, right: string): boolean => {
     const a = phoneMatchVariants(left);

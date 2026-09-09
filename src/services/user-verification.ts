@@ -18,6 +18,7 @@ import { sendTargetedMessage, sendTargetedFlexMessage } from '../line/messaging'
 import { createBotTextFlexMessage } from '../line/templates';
 import { appLogger } from './logger';
 import { linkUserRichMenu } from '../line/rich-menu';
+import { startSalesSession } from './sales-session';
 
 const tr = (language: UserLanguage, th: string, en: string): string => (language === 'en' ? en : th);
 
@@ -32,9 +33,9 @@ const bindSalesTierIfOdooSalesUser = async (userId: string, partnerId: number): 
   return salesTier;
 };
 
-const linkHomeMenuAfterVerify = async (userId: string, channelId?: string, language?: UserLanguage) => {
+const linkHomeMenuAfterVerify = async (userId: string, channelId?: string, language?: UserLanguage, salesSessionActive = false) => {
   const lang = language || await getUserLanguage(userId);
-  await linkUserRichMenu(userId, lang, channelId || DEFAULT_CHANNEL_ID, 'home');
+  await linkUserRichMenu(userId, lang, channelId || DEFAULT_CHANNEL_ID, 'home', salesSessionActive);
 };
 
 const verificationKindLabel = (language: UserLanguage, salesTier?: 'salesperson' | 'sales_manager') => {
@@ -236,7 +237,10 @@ export const verifyOdooUserByOtp = async (input: VerifyOtpInput): Promise<string
   }
 
   const salesTier = await bindSalesTierIfOdooSalesUser(input.userId, consumed.data.partnerId);
-  await linkHomeMenuAfterVerify(input.userId, consumed.data.channelId, input.language);
+  if (salesTier) await startSalesSession(input.userId);
+  await linkHomeMenuAfterVerify(input.userId, consumed.data.channelId, input.language, Boolean(salesTier));
+  const { deliverPendingQuoteInvites } = await import('../line/quote-notify');
+  await deliverPendingQuoteInvites(input.userId, consumed.data.channelId || DEFAULT_CHANNEL_ID);
 
   notifyAdminOfVerification({
     userId: input.userId,
@@ -276,11 +280,14 @@ export const verifyOdooUserByToken = async (token: string): Promise<{ ok: boolea
   }
 
   const salesTier = await bindSalesTierIfOdooSalesUser(consumed.data.userId, consumed.data.partnerId);
+  if (salesTier) await startSalesSession(consumed.data.userId);
+  const { deliverPendingQuoteInvites } = await import('../line/quote-notify');
+  await deliverPendingQuoteInvites(consumed.data.userId, consumed.data.channelId || DEFAULT_CHANNEL_ID);
 
   // The magic-link flow completes over plain HTTP, so without this push the
   // LINE chat never learns the verification actually succeeded.
   const language = await getUserLanguage(consumed.data.userId);
-  await linkHomeMenuAfterVerify(consumed.data.userId, consumed.data.channelId, language);
+  await linkHomeMenuAfterVerify(consumed.data.userId, consumed.data.channelId, language, Boolean(salesTier));
   const successCard = createBotTextFlexMessage({
     title: tr(language, 'ผู้ช่วย Cloudnex', 'Cloudnex assistant'),
     body: tr(
