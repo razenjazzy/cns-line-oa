@@ -22,10 +22,13 @@ export const richMenuIdForLanguage = (
   salesSessionActive = false,
 ): string | undefined => {
   const map = parseMenuMap(env)[language] || {};
+  if (variant === 'verify') {
+    const pressed = map.verify?.trim();
+    if (pressed) return pressed;
+  }
   if (salesSessionActive) {
     const verified = map[`${variant}-verified`]?.trim()
-      || map['default-verified']?.trim()
-      || map['verify-verified']?.trim();
+      || map['default-verified']?.trim();
     if (verified) return verified;
   }
   const mapped = map[variant]?.trim();

@@ -1,10 +1,10 @@
 # Railway Test Deployment
 
-Staging path: see [RAILWAY_STAGING.md](./RAILWAY_STAGING.md). This file is the short operator note.
+Live staging: [VPS_STAGING.md](./VPS_STAGING.md) (`https://amardhaka.io`). Railway variable names: [RAILWAY_STAGING.md](./RAILWAY_STAGING.md).
 
-Production deploys go through Cloud Run (`.github/workflows/release.yml`, `workflow_dispatch` only). Railway is the fast staging environment.
+Production deploys go through Cloud Run (`.github/workflows/release.yml`, `workflow_dispatch` only).
 
-`railway.json` builds the `Dockerfile` and probes `/healthz`.
+`railway.json` still describes the Docker image (`Dockerfile`, `/healthz`).
 
 ## Docker vs env
 

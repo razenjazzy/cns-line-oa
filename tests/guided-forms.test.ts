@@ -188,3 +188,13 @@ describe('pickDefaultPaymentTermName', () => {
     expect(pickDefaultPaymentTermName([{ id: 1, name: '15 Days' }])).toBe('15 Days');
   });
 });
+
+describe('QUOTE_SEND and INVOICE_SEND flows', () => {
+  it('reconstructs confirm commands with channel and email', () => {
+    expect(FLOW_SPECS.QUOTE_SEND.buildFinalCommand({ orderId: '17', channel: 'LINE' })).toBe('QUOTE SEND CONFIRM 17 LINE');
+    expect(FLOW_SPECS.QUOTE_SEND.buildFinalCommand({ orderId: '17', channel: 'EMAIL', email: 'a@b.com', template: 'Hello' })).toBe('QUOTE SEND CONFIRM 17 EMAIL a@b.com | Hello');
+    expect(FLOW_SPECS.INVOICE_SEND.buildFinalCommand({ orderId: '17', channel: 'BOTH', email: 'a@b.com' })).toBe('QUOTE INVOICE SEND CONFIRM 17 BOTH a@b.com');
+    expect(getFlowByStartCommand('FORM QUOTE SEND')?.key).toBe('QUOTE_SEND');
+    expect(getFlowByStartCommand('FORM INVOICE SEND')?.key).toBe('INVOICE_SEND');
+  });
+});

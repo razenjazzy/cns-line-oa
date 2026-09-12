@@ -58,6 +58,8 @@ describe('portalOrderIdFromPendingCommand', () => {
 
   it('returns to chat after Send', () => {
     expect(portalOrderIdFromPendingCommand('QUOTE SEND 17')).toBeNull();
+    expect(portalOrderIdFromPendingCommand('QUOTE SEND CONFIRM 17 EMAIL a@b.com')).toBeNull();
     expect(portalOrderIdFromPendingCommand('QUOTE INVOICE SEND 17')).toBeNull();
+    expect(portalOrderIdFromPendingCommand('QUOTE INVOICE SEND CONFIRM 17 BOTH a@b.com')).toBeNull();
   });
 });

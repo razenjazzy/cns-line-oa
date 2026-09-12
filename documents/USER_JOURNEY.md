@@ -1,6 +1,6 @@
 # User journey book — CloudNex Connect (LINE OA)
 
-Capture this on the **staging** Official Account after Railway is green and the compact rich menu is published. English is the default. Thai appears only after **Language**. Do not screenshot OTP codes or real customer PII; use dummy Odoo partners.
+Capture this on the **staging** Official Account (`https://amardhaka.io`) after `/healthz` is green and the compact rich menu is published. English is the default. Thai appears only after **Language**. Do not screenshot OTP codes or real customer PII; use dummy Odoo partners.
 
 Each step: send the listed command (tray or button), confirm the expected UI, then save one PNG into `documents/journey/` using the filename. Chat plus the native tray should be visible when the tray is part of the step.
 
@@ -10,9 +10,9 @@ Persona names: **Sora** (EN), **โซระ** (TH). Guide/home titles: **CloudN
 
 ## Setup (once per capture session)
 
-1. Railway `/healthz` and `/readyz` are 200.
-2. LINE webhook is `POST https://<host>/webhook`.
-3. Compact tray is live (2×3: Home, Verify, Products & Quotes, Order Status, Help, Language). Gold is only on **Language** while English and on **Verify** while the sales session is on. After a generate/upload, set `LINE_RICH_MENU_EN`, `LINE_RICH_MENU_TH`, and `LINE_RICH_MENU_JSON` (includes `*-verified` ids) on Railway, then restart. Also `LINE_AGENT_NAME_EN=Sora` and `LINE_AGENT_NAME_TH=โซระ` or omit for the same defaults. `SALES_SESSION_TTL_HOURS` defaults to 24.
+1. `https://amardhaka.io/healthz` and `/readyz` are 200.
+2. LINE webhook is `POST https://amardhaka.io/webhook`.
+3. Compact tray is live (2×3: Home, Verify, Products & Quotes, Order Status, Help, Language). Gold is only on **Language** while English and on **Verify** while the sales session is on. After a generate/upload, set `LINE_RICH_MENU_EN`, `LINE_RICH_MENU_TH`, and `LINE_RICH_MENU_JSON` (includes `*-verified` ids) on the VPS `.env`, then recreate. Also `LINE_AGENT_NAME_EN=Sora` and `LINE_AGENT_NAME_TH=โซระ` or omit for the same defaults. `SALES_SESSION_TTL_HOURS` defaults to 24.
 4. Sales onboard: add this Official Account as a friend, then **VERIFY**. Capture account language is English (or tap Language until English). Existing Firestore `language: th` stays Thai until Language is tapped.
 
 ---
@@ -22,8 +22,8 @@ Persona names: **Sora** (EN), **โซระ** (TH). Guide/home titles: **CloudN
 | # | Command | You should see | File |
 |---|---|---|---|
 | A1 | First message (any text) from a new user, or `NAV HOME` | PDPA notice (first contact only) + Flex home titled CloudNex Connect: Sora | `journey/a1-home-en.png` |
-| A2 | Open chat-bar **Menu** | Compact 2×3: Home/Products/Orders/Help regular; **Verify regular** (off); **Language gold** (English on) | `journey/a2-tray-en.png` |
-| A3 | `FORM VERIFY` (tray Verify) | Tray Verify turns **gold** on tap. Guided verify form in English. After success the gold stays (session on). Tap Verify again to unverify (regular). | `journey/a3-verify.png` |
+| A2 | Open chat-bar **Menu** | Compact 2×3. **Language gold** while English; **Verify regular teal** until a sales session is on. | `journey/a2-tray-en.png` |
+| A3 | `FORM VERIFY` (tray Verify) | Tray Verify turns **dark teal** on tap, then **gold** after success. Tap again: dark teal + confirm sign-out. Confirm → regular teal. | `journey/a3-verify.png` |
 | A4 | `NAV commerce` (tray Products & Quotes) | Service action list: find product, create quote, order status, my quotations | `journey/a4-products-quotes.png` |
 | A5 | `FORM ORDER STATUS` (tray Order Status) | Order-status form prompt | `journey/a5-order-status.png` |
 | A6 | `GUIDE` (tray Help) | Guide categories; header CloudNex Connect: Sora | `journey/a6-help-guide.png` |
@@ -42,7 +42,7 @@ Capture on a LINE user who has **VERIFY** as an Odoo Sales User or Sales Adminis
 | B4 | Customer phone | `Tap an option below…` then only **Saved in Odoo: &lt;phone&gt;**. Phone chips. After this phone is set, send later stores an OA-friend invite | `journey/b4-quote-phone.png` |
 | B5 | Optional summary | Equal rows: label left, **value right bold**. Filled rows use a **green rounded-square tick** with a gap before the label | `journey/b5-quote-optional.png` |
 | B6 | **Create now** (Action Verify on create) | **Quotation** card. Body: **Confirm \| Send**. Footer: **View Quote \| Download**, **More**, **Home** | `journey/b6-quote-draft.png` |
-| B7 | **Send** | Composer (LINE / email chip / template). Action Verify only on confirm-send. Then Quotation Sent + success card. If the customer is not an OA friend: **Add friend** link + email, not “must VERIFY” | `journey/b8-quote-sent-admin.png` |
+| B7 | **Send** | Guided form: LINE / EMAIL / BOTH, then email if needed, then edit template (portal URL included). Action Verify on confirm-send. Staff: sent via method + **waiting for approval** + quote card. No NAV HOME. If the customer is not an OA friend: **Add friend** + email, not “LINE sent”. | `journey/b8-quote-sent-admin.png` |
 | B8 | Same order, **customer** OA card (after they add the OA / follow) | Body **Confirm**. Footer **View Quote \| Download**. No Send, More, or Home | `journey/b9-quote-sent-customer.png` |
 | B9 | Staff **More** | More card: **Edit Quote**, Send Email, Cancel (Sales Admin only), Message customer, Create More, Back | `journey/b10-quote-more.png` |
 | B10 | **Edit Quote** | **Edit Quote** card: each line Edit item / Remove; footer Add item + Back | `journey/b11-quote-edit.png` |
@@ -57,10 +57,10 @@ Footer **Send** and **More → Send Email** both open the same composer. Action 
 
 | # | Tap / command | You should see | File |
 |---|---|---|---|
-| C1 | Customer **Confirm** | Thank-you + Sales Order (View Quote \| Download + **Invoice**). Staff is pushed a Sales Order card. Success uses the green square tick | `journey/c1-customer-approve.png` |
+| C1 | Customer **Confirm** | Thank-you + Sales Order (View Quote \| Download + **Invoice**). Staff is pushed “customer approved” + Sales Order card (**Invoice \| Send Invoice**). No NAV HOME. Success uses the green square tick | `journey/c1-customer-approve.png` |
 | C2 | Staff **Confirm** on a *sent* quote (if C1 was skipped) | **Sales Order**. Body: **Invoice \| Send Invoice**. Footer: View Quote \| Download, More, Home | `journey/c2-sales-order-admin.png` |
 | C3 | Customer OA card after sale | **Sales Order**; View Quote \| Download and **Invoice**. No More/Home | `journey/c3-sales-order-customer.png` |
-| C4 | Staff **Invoice** (when invoice chip is To invoice) | Same Sales Order card; invoice chip updates. **Send Invoice** opens the composer. After send: **Send Invoice \| Print**. Action Verify only on confirm-send | `journey/c4-invoice-staff.png` |
+| C4 | Staff **Invoice** (when invoice chip is To invoice) | Same Sales Order card; invoice chip updates. **Send Invoice** opens the composer. After send: status Flex + **NAV HOME**. Action Verify only on confirm-send. Cancel also ends with status + NAV HOME. | `journey/c4-invoice-staff.png` |
 
 Odoo analog: Send marks the quote sent; Confirm/Approve converts to sales order; Invoice / Send Invoice match the SO header. Not on LINE: e-sign, payment, delivery.
 

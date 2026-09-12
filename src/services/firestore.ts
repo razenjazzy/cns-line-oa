@@ -681,6 +681,38 @@ export const createActionOtpChallenge = actionOtpStore.create;
 export const consumeActionOtpChallenge = actionOtpStore.consume;
 export const consumeActionOtpChallengeByToken = actionOtpStore.consumeByToken;
 
+const inviteDocId = (phone: string): string => phone.replace(/[^\d+]/g, '') || 'unknown';
+
+export const persistQuoteInvite = async (phone: string, orderId: number, channelId: string): Promise<void> => {
+  await withFirestoreWrite('persistQuoteInvite', async database => {
+    const id = inviteDocId(phone);
+    const ref = database.collection('quoteInvites').doc(id);
+    const existing = await ref.get();
+    const orders = Array.isArray(existing.data()?.orders) ? existing.data()!.orders as Array<{ orderId: number; channelId: string }> : [];
+    if (!orders.some(item => item.orderId === orderId)) orders.push({ orderId, channelId });
+    await ref.set({ phone, orders, updatedAt: new Date().toISOString() }, { merge: true });
+  });
+};
+
+export const consumeQuoteInvites = async (phone: string): Promise<Array<{ orderId: number; channelId: string }>> => {
+  return withFirestoreRead('consumeQuoteInvites', [] as Array<{ orderId: number; channelId: string }>, async database => {
+    const found: Array<{ orderId: number; channelId: string }> = [];
+    for (const key of phoneMatchVariants(phone)) {
+      const ref = database.collection('quoteInvites').doc(inviteDocId(key));
+      const snap = await ref.get();
+      const orders = Array.isArray(snap.data()?.orders) ? snap.data()!.orders as Array<{ orderId: number; channelId: string }> : [];
+      found.push(...orders);
+      if (snap.exists) await ref.delete();
+    }
+    const seen = new Set<number>();
+    return found.filter(item => {
+      if (seen.has(item.orderId)) return false;
+      seen.add(item.orderId);
+      return true;
+    });
+  });
+};
+
 export const createGroupBuy = groupBuyStore.create;
 
 export const getGroupBuyById = groupBuyStore.getById;

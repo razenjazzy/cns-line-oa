@@ -3,7 +3,7 @@
 Use this checklist after the reviewed release snapshot is committed. Do not put
 credentials or secret values in this repository.
 
-**Note (2026-09-05):** Cloud Run (`release.yml`) is manual `workflow_dispatch` only. **Railway** (`railway.json` + `Dockerfile`) is the staging deploy that runs on git push. Use `documents/RAILWAY_STAGING.md` for variables. Work through the Cloud Run list below only if Cloud Run is actually going to be used.
+**Note:** Cloud Run (`release.yml`) is manual `workflow_dispatch` only. **Staging** is Hostinger VPS (`documents/VPS_STAGING.md`). Railway variable names remain in `documents/RAILWAY_STAGING.md`. Work through the Cloud Run list below only if Cloud Run is actually going to be used.
 
 ## Railway staging (current path)
 
@@ -12,7 +12,7 @@ credentials or secret values in this repository.
 - [ ] Railway service has `APP_ENV=staging`, LINE, Firestore JSON credentials, sandbox Odoo, `ADMIN_USER_ID`, `OPS_API_TOKEN`.
 - [ ] Staging demo flags: `ENABLE_DEMO_CONTROL_PANEL`, `ENABLE_WEBHOOK_TEST` (+ token), optional `ENABLE_GRAPHQL` / `ENABLE_API_DOCS`.
 - [ ] `LINE_WEBHOOK_ASYNC` remains false unless Redis + a worker process exist.
-- [ ] After deploy: `/healthz` 200, `/readyz` 200, `scripts/validate-railway.sh`.
+- [ ] After deploy: `/healthz` 200, `/readyz` 200, `scripts/validate-railway.sh https://amardhaka.io`.
 - [ ] LINE webhook URL points at the Railway host `/webhook` on a **test** OA.
 
 ## Automated Local Evidence

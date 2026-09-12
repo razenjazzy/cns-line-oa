@@ -1,9 +1,9 @@
 import { createQuotationJourneyFlexMessage } from './templates';
 import { DEFAULT_CHANNEL_ID, oaChatDeepLink } from './channels';
-import { sendTargetedFlexMessage } from './messaging';
+import { sendTargetedFlexMessage, sendTargetedMessage } from './messaging';
 import { getPartnerById, getSaleOrderById, getSaleOrderPdfLink, getSaleOrderPortalLink } from '../services/odoo';
 import type { OdooSaleOrder } from '../services/odoo/types';
-import { findVerifiedUserIdByPartnerId, findLineUserIdByPhone, getUserLanguage, getUserProfile, listVerifiedSalesLineUserIds } from '../services/firestore';
+import { findVerifiedUserIdByPartnerId, findLineUserIdByPhone, getUserLanguage, getUserProfile, listVerifiedSalesLineUserIds, persistQuoteInvite, consumeQuoteInvites } from '../services/firestore';
 import { getErpAdapter } from '../erp/registry';
 import { phoneMatchVariants } from '../services/phone-match';
 
@@ -11,16 +11,17 @@ export type QuoteSendChannel = 'line' | 'email' | 'both';
 
 const quoteInvites = new Map<string, Array<{ orderId: number; channelId: string }>>();
 
-export const saveQuoteInvite = (phone: string, orderId: number, channelId: string): void => {
+export const saveQuoteInvite = async (phone: string, orderId: number, channelId: string): Promise<void> => {
   for (const key of phoneMatchVariants(phone)) {
     const list = quoteInvites.get(key) || [];
     if (!list.some(invite => invite.orderId === orderId)) list.push({ orderId, channelId });
     quoteInvites.set(key, list);
   }
+  await persistQuoteInvite(phone, orderId, channelId);
 };
 
-export const takeQuoteInvitesForPhone = (phone: string): Array<{ orderId: number; channelId: string }> => {
-  const found: Array<{ orderId: number; channelId: string }> = [];
+export const takeQuoteInvitesForPhone = async (phone: string): Promise<Array<{ orderId: number; channelId: string }>> => {
+  const found: Array<{ orderId: number; channelId: string }> = [...await consumeQuoteInvites(phone)];
   for (const key of phoneMatchVariants(phone)) {
     found.push(...(quoteInvites.get(key) || []));
     quoteInvites.delete(key);
@@ -74,6 +75,7 @@ export const notifyQuoteParties = async (input: {
   notifySales?: boolean;
   viaLine?: boolean;
   email?: { to: string; subject: string; body: string };
+  salesIntro?: string;
 }): Promise<{ customerLineId: string | null; emailed: boolean; salesPushed: number; inviteUri?: string }> => {
   const notifyCustomer = input.notifyCustomer !== false;
   const notifySales = input.notifySales !== false;
@@ -85,7 +87,7 @@ export const notifyQuoteParties = async (input: {
   const links = await getOrderLinks(input.order.id);
 
   if (notifyCustomer && viaLine && !customerLineId && partner?.phone) {
-    saveQuoteInvite(partner.phone, input.order.id, channelId);
+    await saveQuoteInvite(partner.phone, input.order.id, channelId);
   }
 
   if (customerLineId && customerLineId !== input.actorUserId) {
@@ -102,6 +104,9 @@ export const notifyQuoteParties = async (input: {
     : [];
   if (salesIds.length) {
     const language = await getUserLanguage(salesIds[0]);
+    if (input.salesIntro) {
+      await sendTargetedMessage(salesIds, input.salesIntro, channelId);
+    }
     await sendTargetedFlexMessage(
       salesIds,
       createQuotationJourneyFlexMessage(input.order, { role: 'admin', ...links }, language),
@@ -125,7 +130,7 @@ export const notifyQuoteParties = async (input: {
 export const deliverPendingQuoteInvites = async (userId: string, channelId: string): Promise<void> => {
   const profile = await getUserProfile(userId);
   if (!profile.phone) return;
-  const pending = takeQuoteInvitesForPhone(profile.phone);
+  const pending = await takeQuoteInvitesForPhone(profile.phone);
   if (!pending.length) return;
   const language = await getUserLanguage(userId);
   for (const invite of pending) {

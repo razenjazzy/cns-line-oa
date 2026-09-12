@@ -31,7 +31,7 @@ const langThHandler: CommandHandler = {
         tone: 'error',
       })];
     }
-    await linkUserRichMenu(userId, 'th', ctx.channel?.channelId || DEFAULT_CHANNEL_ID, 'language', hasActiveSalesSession(ctx.profile));
+    await linkUserRichMenu(userId, 'th', ctx.channel?.channelId || DEFAULT_CHANNEL_ID, 'default', hasActiveSalesSession(ctx.profile));
     return [botText(`${agentName} เปลี่ยนภาษาเป็นไทยแล้วค่ะ`, 'th')];
   },
 };
@@ -51,7 +51,7 @@ const langEnHandler: CommandHandler = {
         tone: 'error',
       })];
     }
-    await linkUserRichMenu(userId, 'en', ctx.channel?.channelId || DEFAULT_CHANNEL_ID, 'language', hasActiveSalesSession(ctx.profile));
+    await linkUserRichMenu(userId, 'en', ctx.channel?.channelId || DEFAULT_CHANNEL_ID, 'default', hasActiveSalesSession(ctx.profile));
     return [botText(`${agentName} switched language to English.`, 'en')];
   },
 };
@@ -76,7 +76,7 @@ const langToggleHandler: CommandHandler = {
         tone: 'error',
       })];
     }
-    await linkUserRichMenu(userId, target, ctx.channel?.channelId || DEFAULT_CHANNEL_ID, 'language', hasActiveSalesSession(ctx.profile));
+    await linkUserRichMenu(userId, target, ctx.channel?.channelId || DEFAULT_CHANNEL_ID, 'default', hasActiveSalesSession(ctx.profile));
     return [botText(target === 'en' ? `${ctx.agentName} switched language to English.` : `${ctx.agentName} เปลี่ยนภาษาเป็นไทยแล้วค่ะ`, target)];
   },
 };

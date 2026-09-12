@@ -25,6 +25,7 @@ import {
   markConsentNoticeShown,
   markUserFirstContact,
   setUserPendingFlow,
+  getUserProfile,
   UserLanguage,
   UserProfile,
 } from '../services/firestore';
@@ -390,20 +391,16 @@ const handleFormCommand = async (ctx: CommandReplyContext): Promise<messagingApi
   }
 
   if (flowSpec.key === 'VERIFY' && hasActiveSalesSession(profile)) {
-    await setUserPendingFlow(userId, null);
-    await clearSalesLogin(userId);
-    if (!ctx.isGroupContext) {
-      await linkUserRichMenu(userId, userLanguage, ctx.channel?.channelId || DEFAULT_CHANNEL_ID, 'default', false);
-    }
-    return [
-      createBotTextFlexMessage({
-        title: tr(userLanguage, 'ออกจากระบบแล้ว', 'Signed out'),
-        body: tr(userLanguage, `${agentName} ยกเลิกการยืนยันแล้ว แตะ Verify เพื่อเข้าอีกครั้ง`, `${agentName} verification is off. Tap Verify to sign in again.`),
-        language: userLanguage,
-        tone: 'success',
-      }),
-      buildHomeMenuMessage(userLanguage, agentName, ctx.channel, profile.role === 'admin', false),
-    ];
+    return [createBotTextFlexMessage({
+      title: tr(userLanguage, 'ปิดเซสชันยืนยัน?', 'End verification session?'),
+      body: tr(userLanguage, 'แตะยืนยันเพื่อออกจากเซสชัน Sales หรือยกเลิกเพื่อใช้งานต่อ', 'Confirm to sign out of the sales session, or cancel to keep it on.'),
+      language: userLanguage,
+      tone: 'warning',
+      actions: [
+        { label: tr(userLanguage, 'ยืนยันออก', 'Sign out'), text: 'VERIFY SIGNOUT', style: 'primary' },
+        { label: tr(userLanguage, 'ยกเลิก', 'Cancel'), text: 'NAV HOME', style: 'secondary' },
+      ],
+    })];
   }
 
   await setUserPendingFlow(userId, {
@@ -542,7 +539,18 @@ const dispatchCommandReply = async (ctx: CommandReplyContext): Promise<messaging
  */
 export const resolveCommandReply = async (ctx: CommandReplyContext): Promise<messagingApi.Message[]> => {
   return withSpan('line.resolveCommandReply', { 'line.user_id': ctx.userId, 'http.request_id': ctx.requestId || '' }, async () => {
+    const trayVariant = trayVariantForCommand(ctx.text.trim());
     const messages = await dispatchCommandReply(ctx);
+    if (trayVariant && !ctx.isGroupContext) {
+      const latest = await getUserProfile(ctx.userId);
+      await linkUserRichMenu(
+        ctx.userId,
+        latest.language || ctx.userLanguage,
+        ctx.channel?.channelId || DEFAULT_CHANNEL_ID,
+        'default',
+        hasActiveSalesSession(latest),
+      );
+    }
     const violations = checkMessagesAgainstLineLimits(messages);
     if (violations.length) {
       appLogger.error('line_limits_violation', { requestId: ctx.requestId, violations });

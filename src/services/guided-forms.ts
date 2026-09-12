@@ -33,6 +33,8 @@ export type FlowKey =
   | 'PRODUCT_FIND'
   | 'ORDER_STATUS'
   | 'QUOTE_CREATE'
+  | 'QUOTE_SEND'
+  | 'INVOICE_SEND'
   | 'MESSAGE_CUSTOMER'
   | 'VERIFY';
 
@@ -262,6 +264,32 @@ export const FLOW_SPECS: Record<FlowKey, FlowSpec> = {
       const productToken = c.productId && /^\d+$/.test(c.productId) ? `id:${c.productId}` : c.productName;
       return `QUOTE CREATE ${productToken},${c.qty},${c.customerName},${c.phone},${c.customerReference || ''},${c.discountPercent || ''},${c.validityDate || ''},${c.note || ''},${c.paymentTerm || ''}`;
     },
+  },
+  QUOTE_SEND: {
+    key: 'QUOTE_SEND',
+    startCommand: 'FORM QUOTE SEND',
+    requiresAdmin: false,
+    labelTh: 'ส่งใบเสนอราคา',
+    labelEn: 'Send quotation',
+    fields: [
+      { key: 'channel', promptTh: 'ส่งทาง LINE, EMAIL หรือ BOTH?', promptEn: 'Send via LINE, EMAIL, or BOTH?', validate: (value) => /^(LINE|EMAIL|BOTH)$/i.test(value.trim()), loadOptions: async () => ['LINE', 'EMAIL', 'BOTH'] },
+      { key: 'email', promptTh: 'อีเมลลูกค้า (SKIP ถ้าส่ง LINE อย่างเดียว)?', promptEn: "Customer email (SKIP if LINE only)?", optional: true, validate: isEmailLike },
+      { key: 'template', promptTh: 'แก้ไขข้อความอีเมล (SKIP เพื่อใช้ต้นฉบับ)?', promptEn: 'Edit the email body (SKIP to keep the template)?', optional: true, validate: isNonEmpty },
+    ],
+    buildFinalCommand: (c) => `QUOTE SEND CONFIRM ${c.orderId} ${(c.channel || 'BOTH').toUpperCase()}${c.email ? ` ${c.email}` : ''}${c.template ? ` | ${c.template}` : ''}`,
+  },
+  INVOICE_SEND: {
+    key: 'INVOICE_SEND',
+    startCommand: 'FORM INVOICE SEND',
+    requiresAdmin: false,
+    labelTh: 'ส่งใบแจ้งหนี้',
+    labelEn: 'Send invoice',
+    fields: [
+      { key: 'channel', promptTh: 'ส่งทาง LINE, EMAIL หรือ BOTH?', promptEn: 'Send via LINE, EMAIL, or BOTH?', validate: (value) => /^(LINE|EMAIL|BOTH)$/i.test(value.trim()), loadOptions: async () => ['LINE', 'EMAIL', 'BOTH'] },
+      { key: 'email', promptTh: 'อีเมลลูกค้า (SKIP ถ้าส่ง LINE อย่างเดียว)?', promptEn: "Customer email (SKIP if LINE only)?", optional: true, validate: isEmailLike },
+      { key: 'template', promptTh: 'แก้ไขข้อความอีเมล (SKIP เพื่อใช้ต้นฉบับ)?', promptEn: 'Edit the email body (SKIP to keep the template)?', optional: true, validate: isNonEmpty },
+    ],
+    buildFinalCommand: (c) => `QUOTE INVOICE SEND CONFIRM ${c.orderId} ${(c.channel || 'BOTH').toUpperCase()}${c.email ? ` ${c.email}` : ''}${c.template ? ` | ${c.template}` : ''}`,
   },
   MESSAGE_CUSTOMER: {
     key: 'MESSAGE_CUSTOMER',

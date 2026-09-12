@@ -24,6 +24,7 @@
     "deploy:validate:staging": "bash ./scripts/validate-deploy-env.sh staging deploy.env.staging.yaml",
     "deploy:validate:prod": "bash ./scripts/validate-deploy-env.sh production deploy.env.production.yaml",
     "deploy:staging": "bash ./deploy.sh staging",
+    "deploy:vps-staging": "bash ./scripts/deploy-vps-staging.sh",
     "deploy:prod": "bash ./deploy.sh production",
     "smoke": "bash ./scripts/smoke-check.sh",
     "evidence": "bash ./scripts/generate-deploy-evidence.sh",

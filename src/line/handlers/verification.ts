@@ -4,6 +4,9 @@ import { createBotTextFlexMessage } from '../templates';
 import type { UserLanguage } from '../../services/firestore';
 import { syncStaffProfile } from '../quote-access';
 import { buildHomeMenuMessage } from '../command-router';
+import { DEFAULT_CHANNEL_ID } from '../channels';
+import { linkUserRichMenu } from '../rich-menu';
+import { clearSalesLogin } from '../../services/sales-session';
 
 const tr = (language: UserLanguage, th: string, en: string): string => (language === 'en' ? en : th);
 
@@ -92,7 +95,29 @@ const verifyStatusHandler: CommandHandler = {
   },
 };
 
+const verifySignoutHandler: CommandHandler = {
+  name: 'verify-signout',
+  match: (u) => u === 'VERIFY SIGNOUT',
+  handle: async (ctx) => {
+    const { userLanguage, userId, agentName, channel, profile } = ctx;
+    await clearSalesLogin(userId);
+    if (!ctx.isGroupContext) {
+      await linkUserRichMenu(userId, userLanguage, channel?.channelId || DEFAULT_CHANNEL_ID, 'default', false);
+    }
+    return [
+      createBotTextFlexMessage({
+        title: tr(userLanguage, 'ออกจากระบบแล้ว', 'Signed out'),
+        body: tr(userLanguage, `${agentName} ยกเลิกการยืนยันแล้ว แตะ Verify เพื่อเข้าอีกครั้ง`, `${agentName} verification is off. Tap Verify to sign in again.`),
+        language: userLanguage,
+        tone: 'success',
+      }),
+      buildHomeMenuMessage(userLanguage, agentName, channel, profile.role === 'admin', false),
+    ];
+  },
+};
+
 export const verificationHandlers: CommandHandler[] = [
+  verifySignoutHandler,
   verifyStartHandler,
   verifyOtpHandler,
   verifyStatusHandler,

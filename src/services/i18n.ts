@@ -79,6 +79,7 @@ export const UI_STRINGS = {
     th: 'ใบเสนอราคานี้ไม่ได้ผูกกับบัญชีของคุณ',
   },
   quoteApproved: { en: 'Quotation approved. Thank you!', th: 'อนุมัติใบเสนอราคาแล้ว ขอบคุณค่ะ' },
+  quoteApprovedStaff: { en: 'Customer approved. Next: Invoice or Send Invoice.', th: 'ลูกค้าอนุมัติแล้ว ขั้นถัดไป: ใบแจ้งหนี้ หรือ ส่งใบแจ้งหนี้' },
   quoteNotFound: { en: 'Quotation not found.', th: 'ไม่พบใบเสนอราคานี้' },
   addItem: { en: 'Add item', th: 'เพิ่มรายการ' },
   editItem: { en: 'Edit item', th: 'แก้ไขรายการ' },

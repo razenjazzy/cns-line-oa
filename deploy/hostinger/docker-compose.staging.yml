@@ -1,0 +1,33 @@
+# Staging on Hostinger VPS. Env file is on the server only — never commit secrets.
+services:
+  cns-line-oa:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: cns-line-oa-staging
+    restart: unless-stopped
+    env_file:
+      - /opt/cns-line-oa/.env
+    environment:
+      APP_ENV: staging
+      NODE_ENV: production
+      PORT: "8080"
+      PUBLIC_BASE_URL: https://amardhaka.io
+      ENABLE_DEMO_CONTROL_PANEL: "true"
+      ENABLE_WEBHOOK_TEST: "true"
+      ENABLE_GRAPHQL: "true"
+      ENABLE_API_DOCS: "true"
+      CLAWFRAMEWORK_ENABLED: "false"
+      LINE_WEBHOOK_ASYNC: "false"
+      OPS_JOBS_ASYNC: "false"
+      RUN_BULLMQ_WORKER: "false"
+      MONGO_VECTOR_ENABLED: "false"
+      RATE_LIMIT_STORE: memory
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

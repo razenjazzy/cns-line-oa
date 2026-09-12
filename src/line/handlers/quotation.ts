@@ -1,5 +1,5 @@
 import type { CommandHandler } from './index';
-import { createBotTextFlexMessage, createFormPromptFlexMessage, createQuotationEditFlexMessage, createQuotationJourneyFlexMessage, createQuotationListFlexMessage, createQuotationMoreFlexMessage, createQuoteSendComposerFlexMessage } from '../templates';
+import { createBotTextFlexMessage, createFormPromptFlexMessage, createQuotationEditFlexMessage, createQuotationJourneyFlexMessage, createQuotationListFlexMessage, createQuotationMoreFlexMessage } from '../templates';
 import { DEFAULT_CHANNEL_ID, getBrandTitle } from '../channels';
 import {
   getSaleOrderById,
@@ -30,6 +30,7 @@ import { decodeQuoteListCursor, encodeQuoteListCursor } from '../quote-list-curs
 import { FLOW_SPECS } from '../../services/guided-forms';
 import { canManageQuoteLines, isQuoteStaff, quoteJourneyRole, syncStaffProfile } from '../quote-access';
 import { appLogger } from '../../services/logger';
+import { hasActiveSalesSession } from '../../services/sales-session';
 
 const tr = (language: UserLanguage, th: string, en: string): string => (language === 'en' ? en : th);
 
@@ -110,23 +111,25 @@ export const parseOrderId = (text: string, prefix: string): number | null => {
 
 const isEmailLike = (value: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
-export const parseOrderIdAndOptionalEmail = (text: string, prefix: string): { orderId: number; channel: QuoteSendChannel; email?: string } | null => {
+export const parseOrderIdAndOptionalEmail = (text: string, prefix: string): { orderId: number; channel: QuoteSendChannel; email?: string; template?: string } | null => {
   const raw = text.trim().replace(new RegExp(`^${prefix}\\s*`, 'i'), '').trim();
-  const [idRaw, ...rest] = raw.split(/\s+/);
+  const [beforePipe, ...pipeRest] = raw.split('|');
+  const template = pipeRest.join('|').trim() || undefined;
+  const [idRaw, ...rest] = beforePipe.trim().split(/\s+/);
   const orderId = Number(idRaw);
   if (!Number.isFinite(orderId) || orderId <= 0) return null;
-  if (!rest.length) return { orderId, channel: 'both' };
+  if (!rest.length) return { orderId, channel: 'both', ...(template ? { template } : {}) };
 
   const first = rest[0].toLowerCase();
   if (first === 'line' || first === 'email' || first === 'both') {
     const email = rest.slice(1).join(' ').trim();
     if (email && !isEmailLike(email)) return null;
-    return { orderId, channel: first, ...(email ? { email: email.toLowerCase() } : {}) };
+    return { orderId, channel: first, ...(email ? { email: email.toLowerCase() } : {}), ...(template ? { template } : {}) };
   }
 
   const email = rest.join(' ').trim();
   if (!isEmailLike(email)) return null;
-  return { orderId, channel: 'both', email: email.toLowerCase() };
+  return { orderId, channel: 'both', email: email.toLowerCase(), ...(template ? { template } : {}) };
 };
 
 // "<prefix> <orderId> <product>,<qty>" — the orderId is a separate token
@@ -189,7 +192,7 @@ const parseOrderIdAndMessage = (text: string, prefix: string): { orderId: number
 // change (e.g. QUOTE CONFIRM). Silent no-op when LINE cannot reach them
 // yet (they have not messaged the OA). They do not need identity VERIFY
 // to receive the quotation.
-const sendChannelSummary = (
+export const sendChannelSummary = (
   language: UserLanguage,
   result: { customerLineId: string | null; emailed: boolean },
   wanted: QuoteSendChannel,
@@ -199,9 +202,36 @@ const sendChannelSummary = (
   if (wanted === 'line' && !lineOk) return t('quoteNotLinked', language);
   if (wanted === 'email' && !emailOk) return t('noPartnerEmail', language);
   if (!lineOk && !emailOk) return t('quoteNotLinked', language);
-  if (lineOk && emailOk) return t('sentViaBoth', language);
-  if (lineOk) return t('quoteSentToAdmin', language);
-  return t('sentViaEmail', language);
+  if (lineOk && emailOk) return `${t('sentViaBoth', language)} ${tr(language, 'รอการอนุมัติจากลูกค้า', 'Waiting for customer approval.')}`;
+  if (lineOk) return `${t('quoteSentToAdmin', language)} ${tr(language, 'รอการอนุมัติจากลูกค้า', 'Waiting for customer approval.')}`;
+  return `${t('sentViaEmail', language)} ${tr(language, 'รอการอนุมัติจากลูกค้า', 'Waiting for customer approval.')}`;
+};
+
+const startQuoteSendFlow = async (
+  ctx: { userId: string; userLanguage: UserLanguage; agentName: string },
+  orderId: number,
+  kind: 'QUOTE_SEND' | 'INVOICE_SEND',
+  partnerEmail?: string,
+) => {
+  const flowSpec = FLOW_SPECS[kind];
+  const collected = { orderId: String(orderId), ...(partnerEmail ? { email: partnerEmail } : {}) };
+  await setUserPendingFlow(ctx.userId, {
+    flow: flowSpec.key,
+    stepIndex: 0,
+    collected,
+    expiresAt: new Date(Date.now() + Number(process.env.GUIDED_FORM_TTL_MINUTES || 10) * 60 * 1000).toISOString(),
+  });
+  const options = flowSpec.fields[0].loadOptions
+    ? await flowSpec.fields[0].loadOptions(collected).catch(() => [])
+    : undefined;
+  return [createFormPromptFlexMessage({
+    title: tr(ctx.userLanguage, `${ctx.agentName} ${flowSpec.labelTh}`, `${ctx.agentName} ${flowSpec.labelEn}`),
+    prompt: tr(ctx.userLanguage, flowSpec.fields[0].promptTh, flowSpec.fields[0].promptEn),
+    stepIndex: 0,
+    totalSteps: flowSpec.fields.length,
+    language: ctx.userLanguage,
+    options,
+  })];
 };
 
 const notifyCustomerOfOrderUpdate = async (order: OdooSaleOrder, channelId: string | undefined, actorUserId?: string): Promise<void> => {
@@ -286,11 +316,11 @@ const quoteSendOptionsHandler: CommandHandler = {
     const order = await getSaleOrderById(orderId);
     if (!order || !order.partner_id) return [notFoundReply(userLanguage)];
     const partner = await getPartnerById(order.partner_id[0]);
-    return [createQuoteSendComposerFlexMessage(order, partner?.email, userLanguage, 'quotation', partner?.phone)];
+    return startQuoteSendFlow(ctx, orderId, 'QUOTE_SEND', partner?.email);
   },
 };
 
-// QUOTE SEND <orderId> — staff footer Send opens the email/LINE composer.
+// QUOTE SEND <orderId> — staff footer Send opens the guided send form.
 const quoteSendHandler: CommandHandler = {
   name: 'quote-send',
   match: (u) => u.startsWith('QUOTE SEND') && !u.startsWith('QUOTE SEND CONFIRM') && !u.startsWith('QUOTE SEND OPTIONS'),
@@ -303,7 +333,7 @@ const quoteSendHandler: CommandHandler = {
     const order = await getSaleOrderById(orderId);
     if (!order || !order.partner_id) return [notFoundReply(userLanguage)];
     const partner = await getPartnerById(order.partner_id[0]);
-    return [createQuoteSendComposerFlexMessage(order, partner?.email, userLanguage, 'quotation', partner?.phone)];
+    return startQuoteSendFlow(ctx, orderId, 'QUOTE_SEND', partner?.email);
   },
 };
 
@@ -332,6 +362,12 @@ const quoteSendConfirmHandler: CommandHandler = {
     const sentOrder = (await getSaleOrderById(orderId)) || order;
     const viaLine = sendChannel !== 'email';
     const viaEmail = sendChannel !== 'line';
+    const { portalLink, pdfLink } = await getOrderLinks(orderId);
+    const defaultBody = userLanguage === 'en'
+      ? `Please review quotation ${order.name}. Confirm or approve: ${portalLink || ''}`.trim()
+      : `กรุณาตรวจสอบใบเสนอราคา ${order.name} ยืนยันหรืออนุมัติ: ${portalLink || ''}`.trim();
+    let body = parsed.template?.trim() || defaultBody;
+    if (portalLink && !body.includes(portalLink)) body = `${body}\n${portalLink}`;
     const result = await notifyQuoteParties({
       order: sentOrder,
       channelId: channel?.channelId,
@@ -340,13 +376,9 @@ const quoteSendConfirmHandler: CommandHandler = {
       email: viaEmail && sendEmailAddr ? {
         to: sendEmailAddr,
         subject: userLanguage === 'en' ? `Quotation ${order.name}` : `ใบเสนอราคา ${order.name}`,
-        body: userLanguage === 'en'
-          ? `Please review quotation ${order.name}. Confirm in LINE to proceed.`
-          : `กรุณาตรวจสอบใบเสนอราคา ${order.name} ยืนยันใน LINE เพื่อดำเนินการต่อ`,
+        body,
       } : undefined,
     });
-
-    const { portalLink, pdfLink } = await getOrderLinks(orderId);
     recordAuditEvent({
       action: 'quote_send',
       outcome: result.customerLineId || result.emailed ? 'success' : 'failure',
@@ -450,8 +482,13 @@ const quoteApproveHandler: CommandHandler = {
     }
     const confirmed = (await getSaleOrderById(orderId)) || order;
     const { portalLink, pdfLink } = await getOrderLinks(orderId);
-    notifyQuoteParties({ order: confirmed, channelId: channel?.channelId, actorUserId: userId, notifyCustomer: false })
-      .catch(err => console.warn('quote-approve: sales notify failed (non-fatal):', err));
+    notifyQuoteParties({
+      order: confirmed,
+      channelId: channel?.channelId,
+      actorUserId: userId,
+      notifyCustomer: false,
+      salesIntro: t('quoteApprovedStaff', userLanguage),
+    }).catch(err => console.warn('quote-approve: sales notify failed (non-fatal):', err));
 
     return [
       botText(t('quoteApproved', userLanguage), userLanguage),
@@ -631,7 +668,11 @@ const quoteCancelHandler: CommandHandler = {
       .catch(err => console.warn('quote-cancel: customer notify failed (non-fatal):', err));
 
     const { portalLink, pdfLink } = await getOrderLinks(orderId);
-    return [createQuotationJourneyFlexMessage(order, staffCardOptions(profile, { portalLink, pdfLink }, order), userLanguage)];
+    const { buildHomeMenuMessage } = await import('../command-router');
+    return [
+      createQuotationJourneyFlexMessage(order, staffCardOptions(profile, { portalLink, pdfLink }, order), userLanguage),
+      buildHomeMenuMessage(userLanguage, getBrandTitle(userLanguage), channel, profile.role === 'admin', hasActiveSalesSession(profile)),
+    ];
   },
 };
 
@@ -647,7 +688,7 @@ const quoteInvoiceSendHandler: CommandHandler = {
     const order = await getSaleOrderById(orderId);
     if (!order || order.state !== 'sale' || !order.partner_id) return [notFoundReply(userLanguage)];
     const partner = await getPartnerById(order.partner_id[0]);
-    return [createQuoteSendComposerFlexMessage(order, partner?.email, userLanguage, 'invoice', partner?.phone)];
+    return startQuoteSendFlow(ctx, orderId, 'INVOICE_SEND', partner?.email);
   },
 };
 
@@ -682,6 +723,12 @@ const quoteInvoiceSendConfirmHandler: CommandHandler = {
     const invoicedOrder = (await getSaleOrderById(orderId)) || order;
     const viaLine = sendChannel !== 'email';
     const viaEmail = sendChannel !== 'line';
+    const { portalLink, pdfLink } = await getOrderLinks(orderId);
+    const defaultBody = userLanguage === 'en'
+      ? `Please review invoice ${order.name}. ${portalLink || ''}`.trim()
+      : `กรุณาตรวจสอบใบแจ้งหนี้ ${order.name} ${portalLink || ''}`.trim();
+    let body = parsed.template?.trim() || defaultBody;
+    if (portalLink && !body.includes(portalLink)) body = `${body}\n${portalLink}`;
     const result = await notifyQuoteParties({
       order: invoicedOrder,
       channelId: channel?.channelId,
@@ -690,13 +737,10 @@ const quoteInvoiceSendConfirmHandler: CommandHandler = {
       email: viaEmail && sendEmailAddr ? {
         to: sendEmailAddr,
         subject: userLanguage === 'en' ? `Invoice ${order.name}` : `ใบแจ้งหนี้ ${order.name}`,
-        body: userLanguage === 'en'
-          ? `Please review invoice ${order.name}.`
-          : `กรุณาตรวจสอบใบแจ้งหนี้ ${order.name}`,
+        body,
       } : undefined,
     });
 
-    const { portalLink, pdfLink } = await getOrderLinks(orderId);
     recordAuditEvent({
       action: 'quote_invoice',
       outcome: result.customerLineId || result.emailed ? 'success' : 'failure',
@@ -707,6 +751,7 @@ const quoteInvoiceSendConfirmHandler: CommandHandler = {
       detail: `${sendChannel}:${result.customerLineId ? 'line' : 'no_line'}:${result.emailed ? 'email' : 'no_email'}`,
     });
 
+    const { buildHomeMenuMessage } = await import('../command-router');
     return [
       botText(
         sendChannelSummary(userLanguage, result, sendChannel),
@@ -715,6 +760,7 @@ const quoteInvoiceSendConfirmHandler: CommandHandler = {
         result.inviteUri ? { label: t('addFriend', userLanguage), uri: result.inviteUri } : undefined,
       ),
       createQuotationJourneyFlexMessage(invoicedOrder, staffCardOptions(profile, { portalLink, pdfLink }, invoicedOrder), userLanguage),
+      buildHomeMenuMessage(userLanguage, getBrandTitle(userLanguage), channel, profile.role === 'admin', hasActiveSalesSession(profile)),
     ];
   },
 };

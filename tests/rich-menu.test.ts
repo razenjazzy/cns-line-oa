@@ -89,7 +89,7 @@ describe('richMenuIdForLanguage', () => {
     };
     expect(richMenuIdForLanguage('en', withSession, 'default', true)).toBe('richmenu-en-verified');
     expect(richMenuIdForLanguage('en', withSession, 'home', true)).toBe('richmenu-en-verified');
-    expect(richMenuIdForLanguage('en', withSession, 'verify', true)).toBe('richmenu-en-verified');
+    expect(richMenuIdForLanguage('en', withSession, 'verify', true)).toBe('richmenu-en-verify');
   });
 });
 
@@ -102,5 +102,24 @@ describe('trayVariantForCommand', () => {
     expect(trayVariantForCommand('GUIDE')).toBe('help');
     expect(trayVariantForCommand('LANG')).toBe('language');
     expect(trayVariantForCommand('QUOTE CREATE x')).toBeUndefined();
+  });
+});
+
+describe('native tray Language / Verify fills', () => {
+  const GOLD = '#A97A2B';
+  const TEAL_TINT = '#E3F0EE';
+  const tileFills = (svg: string) => [...svg.matchAll(/<rect x="\d+" y="\d+"[^>]*fill="(#[A-F0-9]+)"/g)].map(m => m[1]);
+
+  it('golds Language on English rest and uses regular teal for Verify', () => {
+    const fills = tileFills(readFileSync('assets/rich-menu/menu-en.svg', 'utf8'));
+    expect(fills).toHaveLength(6);
+    expect(fills[1]).toBe(TEAL_TINT);
+    expect(fills[5]).toBe(GOLD);
+  });
+
+  it('uses regular teal for Language on Thai rest', () => {
+    const fills = tileFills(readFileSync('assets/rich-menu/menu-th.svg', 'utf8'));
+    expect(fills[5]).toBe(TEAL_TINT);
+    expect(fills[1]).toBe(TEAL_TINT);
   });
 });

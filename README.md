@@ -106,19 +106,19 @@ All ERP calls go through `getErpAdapter()` (`src/erp/registry.ts` → `odoo-adap
 
 ## Environments
 
-Same codebase. Lane is `APP_ENV`, not `NODE_ENV`. Docker sets `NODE_ENV=production`. **Unset `APP_ENV` + `NODE_ENV=production` fails closed to production** (demo and webhook-test off). Railway **must** set `APP_ENV=staging`.
+Same codebase. Lane is `APP_ENV`, not `NODE_ENV`. Docker sets `NODE_ENV=production`. **Unset `APP_ENV` + `NODE_ENV=production` fails closed to production** (demo and webhook-test off). Staging **must** set `APP_ENV=staging`.
 
 | Lane | `APP_ENV` | Host | `/demo` | `/webhook-test` |
 |---|---|---|---|---|
 | Dev | `development` | laptop | on | on |
-| Staging | `staging` | Railway | if `ENABLE_DEMO_CONTROL_PANEL` | if `ENABLE_WEBHOOK_TEST` |
+| Staging | `staging` | `https://amardhaka.io` | if `ENABLE_DEMO_CONTROL_PANEL` | if `ENABLE_WEBHOOK_TEST` |
 | Production | `production` | delivery (Cloud Run when cut) | **off** | **off** |
 
-Canonical keys: `src/http/env-params.ts`. Copy-paste: `.env.example`, `deploy.env.staging.example`, `deploy.env.production.example`. Full table: `documents/ENVIRONMENTS.md`. Railway: `documents/RAILWAY_STAGING.md`.
+Canonical keys: `src/http/env-params.ts`. Copy-paste: `.env.example`, `deploy.env.staging.example`, `deploy.env.production.example`. Full table: `documents/ENVIRONMENTS.md`. Staging host: `documents/VPS_STAGING.md`.
 
 ### Required for staging / production (values in the host secret store)
 
-`APP_ENV`, `LINE_CHANNEL_SECRET`, `LINE_CHANNEL_ACCESS_TOKEN`, `ADMIN_USER_ID`, `GOOGLE_CLOUD_PROJECT`, Odoo URL/DB/user/key, `ERP_PROVIDER=odoo`, `PUBLIC_BASE_URL`, `OPS_API_TOKEN`. Railway also needs `GOOGLE_APPLICATION_CREDENTIALS_JSON`. Optional: Gemini (`GOOGLE_AI_STUDIO_API_KEY`), rich-menu ids, `LINE_CHANNEL_BASIC_ID` (`@handle` for Return to chat), `SALES_SESSION_TTL_HOURS` (default 24).
+`APP_ENV`, `LINE_CHANNEL_SECRET`, `LINE_CHANNEL_ACCESS_TOKEN`, `ADMIN_USER_ID`, `GOOGLE_CLOUD_PROJECT`, Odoo URL/DB/user/key, `ERP_PROVIDER=odoo`, `PUBLIC_BASE_URL`, `OPS_API_TOKEN`. Off-GCP hosts also need `GOOGLE_APPLICATION_CREDENTIALS_JSON`. Optional: Gemini (`GOOGLE_AI_STUDIO_API_KEY`), rich-menu ids, `LINE_CHANNEL_BASIC_ID` (`@handle` for Return to chat), `SALES_SESSION_TTL_HOURS` (default 24).
 
 Leave unset unless provisioned: `LINE_WEBHOOK_ASYNC`, `CLAWFRAMEWORK_ENABLED`, `MONGO_VECTOR_ENABLED`, `RUN_BULLMQ_WORKER`.
 
@@ -128,9 +128,9 @@ Leave unset unless provisioned: `LINE_WEBHOOK_ASYNC`, `CLAWFRAMEWORK_ENABLED`, `
 
 Full tap order, filenames, and freeze rules: **[documents/USER_JOURNEY.md](documents/USER_JOURNEY.md)**. Recapture after UI changes; LINE does not update old cards.
 
-**Setup:** friend the OA → English default → tray 2×3 (Home, Verify, Products & Quotes, Order Status, Help, Language). Gold is **Language** while English is on, and **Verify** while a sales VERIFY session is on (`SALES_SESSION_TTL_HOURS`). Publish trays with `npm run rich-menu:generate` then `npm run rich-menu:upload` on a laptop; set `LINE_RICH_MENU_EN` / `_TH` / `_JSON` on Railway. The image host does not publish LINE rich menus.
+**Setup:** friend the OA → English default → tray 2×3 (Home, Verify, Products & Quotes, Order Status, Help, Language). Gold is **Language** while English is on, and **Verify** while a sales VERIFY session is on (`SALES_SESSION_TTL_HOURS`). Publish trays with `npm run rich-menu:generate` then `npm run rich-menu:upload` on a laptop; set `LINE_RICH_MENU_EN` / `_TH` / `_JSON` on the VPS. The image host does not publish LINE rich menus.
 
-**Staff (verified sales):** Products & Quotes → Create quote (chips under the composer) → Action Verify on create → card with **Confirm | Send**, footer **View Quote | Download**, **More**, **Home**. Send delivers the customer card without forcing identity VERIFY. Confirm after action-verify opens the Odoo portal when the action is a portal command; Send returns to chat with a next-step Flex.
+**Staff (verified sales):** Products & Quotes → Create quote (chips under the composer) → Action Verify on create → card with **Confirm | Send**, footer **View Quote | Download**, **More**, **Home**. Send is a guided form (channel, template, email). LINE is skipped until the customer is an OA friend (Add-friend URL). Staff wait for approval; NAV HOME only after **Send Invoice** or cancel. Confirm after action-verify opens the Odoo portal when the action is a portal command; Send returns to chat with the next Flex.
 
 **Customer:** Confirm / View Quote / Download (portal URIs). No Send, More, or Home. After sale: Invoice link on the customer card.
 

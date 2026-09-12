@@ -5,10 +5,10 @@ Three lanes. Same codebase. Different `APP_ENV`. The Docker image always sets `N
 | Lane | `APP_ENV` | Host | `/demo` | `/webhook-test` | GraphiQL | GraphQL / `/api-docs` |
 |---|---|---|---|---|---|---|
 | Dev | `development` | laptop (`npm run dev`) | on | on | on | on |
-| Staging | `staging` | Railway | if `ENABLE_DEMO_CONTROL_PANEL` | if `ENABLE_WEBHOOK_TEST` | if GraphQL enabled | if `ENABLE_*` |
+| Staging | `staging` | Hostinger VPS `amardhaka.io` | if `ENABLE_DEMO_CONTROL_PANEL` | if `ENABLE_WEBHOOK_TEST` | if GraphQL enabled | if `ENABLE_*` |
 | Production | `production` | final delivery | **off** | **off** | **off** | only if `ENABLE_GRAPHQL` / `ENABLE_API_DOCS` + ops token |
 
-If `APP_ENV` is unset and `NODE_ENV=production`, the process **fails closed to production**. Railway must set `APP_ENV=staging`.
+If `APP_ENV` is unset and `NODE_ENV=production`, the process **fails closed to production**. The VPS must set `APP_ENV=staging`.
 
 ## 1. Development (local + API test)
 
@@ -19,7 +19,7 @@ NODE_ENV=development
 
 Use `.env` locally (never commit). Hit `/webhook-test` and `/demo` without extra flags. Cursor MCP (`.cursor/mcp.json`) points at `http://127.0.0.1:8080` and uses `OPS_API_TOKEN` from your shell, not from git.
 
-## 2. Staging (Railway + demo)
+## 2. Staging (Hostinger VPS + demo)
 
 ```text
 APP_ENV=staging
@@ -31,7 +31,7 @@ ENABLE_GRAPHQL=true          # optional
 ENABLE_API_DOCS=true         # optional
 ```
 
-Plus LINE test OA, Firestore JSON credentials, sandbox Odoo, `ADMIN_USER_ID`, `OPS_API_TOKEN`, `PUBLIC_BASE_URL`. See `documents/RAILWAY_STAGING.md`.
+Plus LINE test OA, Firestore JSON credentials, sandbox Odoo, `ADMIN_USER_ID`, `OPS_API_TOKEN`, `PUBLIC_BASE_URL=https://amardhaka.io`. See `documents/VPS_STAGING.md`.
 
 ## 3. Production (final delivery)
 
